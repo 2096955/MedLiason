@@ -60,6 +60,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [ragData, _setRagData] = useState<RAGSearchResult[]>([]);
     const ragDataRef = useRef<RAGSearchResult[]>([]);
     const [ragEnabled] = useState<boolean>(true);
+    const ragAutoOpenedTasksRef = useRef<Set<string>>(new Set());
 
     // Wrapper to keep ref in sync with state
     const setRagData = useCallback((data: RAGSearchResult[] | ((prev: RAGSearchResult[]) => RAGSearchResult[])) => {
@@ -823,6 +824,11 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         }
     }, []);
 
+    const openSidePanelTabRef = useRef(openSidePanelTab);
+    useEffect(() => {
+        openSidePanelTabRef.current = openSidePanelTab;
+    }, [openSidePanelTab]);
+
     const closeCurrentEventSource = useCallback(() => {
         if (cancelTimeoutRef.current) {
             clearTimeout(cancelTimeoutRef.current);
@@ -1253,6 +1259,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                                 return [...prev, newEntry];
                                             }
                                         });
+
+                                        // Auto-open Sources tab on first RAG data for this task
+                                        if (currentTaskIdFromResult && !ragAutoOpenedTasksRef.current.has(currentTaskIdFromResult)) {
+                                            ragAutoOpenedTasksRef.current.add(currentTaskIdFromResult);
+                                            openSidePanelTabRef.current("rag");
+                                        }
                                     }
                                     break;
                                 }
@@ -1369,6 +1381,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                             } else {
                                                 // For regular web search: append as before
                                                 setRagData(prev => [...prev, ragSearchResult]);
+                                            }
+
+                                            // Auto-open Sources tab on first RAG data for this task
+                                            if (currentTaskIdFromResult && !ragAutoOpenedTasksRef.current.has(currentTaskIdFromResult)) {
+                                                ragAutoOpenedTasksRef.current.add(currentTaskIdFromResult);
+                                                openSidePanelTabRef.current("rag");
                                             }
                                         }
                                     }

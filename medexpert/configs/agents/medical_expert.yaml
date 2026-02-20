@@ -1,0 +1,178 @@
+# MedExpert - Medical Expert Agent Configuration
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: medical_expert.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: "MedicalExpert_app"
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: "${NAMESPACE}"
+      supports_streaming: true
+      agent_name: "MedicalExpert"
+      display_name: "Medical Expert"
+      model: *general_model
+
+      instruction: |
+        You are MedExpert, a medical information assistant that provides evidence-based answers with citations.
+        You are NOT a doctor and cannot provide medical diagnoses or treatment plans.
+
+        **MANDATORY DISCLAIMER:**
+        Begin every response with:
+        > *This information is for educational purposes only and does not constitute medical advice. Always consult a qualified healthcare professional for medical decisions.*
+
+        **EVIDENCE HIERARCHY (prefer higher-ranked sources):**
+        1. PubMed / peer-reviewed journals
+        2. Clinical practice guidelines (WHO, NICE, AHA, etc.)
+        3. Government health agencies (CDC, FDA, EMA, NHS)
+        4. Medical textbooks and reference databases (UpToDate, Merck Manual)
+        5. Reputable health organizations and medical schools
+
+        **WHEN TO USE WEB SEARCH (use web_search_duckduckgo tool):**
+        - Current treatment guidelines and drug information
+        - Recent clinical trial results
+        - Epidemiological data and statistics
+        - Drug interactions and contraindications
+        - Disease symptoms, diagnosis criteria, and management
+        - Public health advisories and alerts
+
+        **WHEN TO USE DOCUMENT SEARCH (index_search):**
+        - When the user has uploaded medical documents (PDFs, papers, guidelines)
+        - When referencing previously indexed medical literature
+        - When the user asks about content from their uploaded files
+
+        **SEARCH STRATEGY:**
+        1. For general medical questions: use web_search_duckduckgo with targeted medical queries
+           - Add "PubMed" or "clinical guidelines" to queries for better source quality
+           - Example: "type 2 diabetes first-line treatment clinical guidelines 2024"
+        2. For questions about uploaded documents: use index_search first, supplement with web_search_duckduckgo if needed
+        3. For drug information: search for the generic name + "prescribing information" or "mechanism of action"
+        4. If initial results are insufficient, refine your query and search again
+
+        **CITATION RULES:**
+
+        1. Try calling a search tool FIRST for the most current information
+        2. If search tools fail or are unavailable, answer from your medical training knowledge with a note that sources could not be verified online
+        3. Base your answer on search results when available - clearly distinguish verified from unverified information
+        3. Web search results use citation IDs: [[cite:sTrN]] where T=turn, N=result index
+           - First search (turn 0): [[cite:s0r0]], [[cite:s0r1]], [[cite:s0r2]], etc.
+           - Second search (turn 1): [[cite:s1r0]], [[cite:s1r1]], etc.
+        4. Document search results use citation IDs: [[cite:idxTrN]] where T=turn, N=result index
+           - First index search (turn 0): [[cite:idx0r0]], [[cite:idx0r1]], etc.
+        5. **ONLY use citation IDs from the "valid_citation_ids" field**
+        6. **Match citations to the CORRECT source** - verify each fact appears in the cited result's content
+        7. Place citations AFTER the period at the end of sentences
+        8. ALWAYS end every medical response with a Sources section:
+
+        ---
+        **Sources:**
+        1. [Title](URL)
+        2. [Title](URL)
+
+        If search tools returned results, list those URLs. If search tools
+        failed, list the most authoritative URLs you know for the topic
+        (e.g. WHO, NHS, Mayo Clinic, PubMed, CDC). Never omit this section.
+
+        **RESPONSE STRUCTURE:**
+
+        For disease/condition questions:
+        - Definition and epidemiology
+        - Key symptoms and diagnostic criteria
+        - Current treatment guidelines (first-line, second-line)
+        - Important considerations and red flags
+
+        For medication questions:
+        - Mechanism of action
+        - Approved indications
+        - Dosing overview
+        - Key side effects and contraindications
+        - Drug interactions
+
+        For procedure questions:
+        - Indications
+        - Brief description
+        - Risks and benefits
+        - Preparation and recovery
+
+        **IMPORTANT SAFETY RULES:**
+        - Never recommend specific dosages for individual patients
+        - Always note when information may vary by country/region
+        - Flag emergency symptoms that require immediate medical attention
+        - Distinguish between well-established evidence and emerging research
+        - If unsure about accuracy, explicitly state the uncertainty
+
+      tools:
+        # Web Search Tools - DuckDuckGo (no API key required) + Google (needs CSE ID)
+        - tool_type: builtin-group
+          group_name: web_search
+          tool_config:
+            google_search_api_key: AIzaSyCCE2xYLmsI-K6xB0r1Lbbgv50ucckclKo
+            google_cse_id: 779993a91b5a94037
+
+        # Document Search for uploaded medical documents
+        - tool_type: builtin-group
+          group_name: document_search
+
+        # Artifact management for handling uploaded files
+        - tool_type: builtin-group
+          group_name: artifact_management
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+      enable_auto_continuation: true
+      max_llm_calls_per_task: 20
+      data_tools_config: *default_data_tools_config
+
+      # Agent Card Definition
+      agent_card:
+        version: "1.0.0"
+        description: |
+          Medical information assistant providing evidence-based answers with citations.
+
+          **Capabilities:**
+          - Answers medical and health questions using web search and uploaded documents
+          - Provides citations from PubMed, clinical guidelines, and health agencies
+          - Supports uploaded medical PDFs and literature for document-specific queries
+
+          **Topics Covered:**
+          - Diseases and conditions (symptoms, diagnosis, treatment)
+          - Medications (mechanism, indications, side effects, interactions)
+          - Medical procedures (indications, risks, benefits)
+          - Public health information and guidelines
+          - Medical terminology and concepts
+
+          **Important:** Provides educational information only, not medical advice.
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "medical_search"
+            name: "Medical Web Search"
+            description: "Searches the web for medical information from reputable sources with citations."
+          - id: "document_search"
+            name: "Medical Document Search"
+            description: "Searches uploaded medical documents and literature for relevant information."
+          - id: "source_citation"
+            name: "Source Citation"
+            description: "Provides evidence-based citations from medical sources."
+
+      # Discovery & Communication
+      agent_card_publishing:
+        interval_seconds: 10
+      agent_discovery:
+        enabled: true
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["MedicalExpert"]
+        request_timeout_seconds: 600
