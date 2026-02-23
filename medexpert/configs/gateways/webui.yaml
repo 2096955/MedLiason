@@ -1,0 +1,83 @@
+# MedExpert - Web UI Gateway Configuration
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: webui.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: medexpert_webui_app
+    app_base_path: .
+    app_module: solace_agent_mesh.gateway.http_sse.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      session_secret_key: "${SESSION_SECRET_KEY}"
+
+      artifact_service: *default_artifact_service
+      session_service:
+        type: "sql"
+        database_url: "sqlite:///medexpert_webui_gateway.db"
+        default_behavior: "PERSISTENT"
+
+      model: *general_model
+      fastapi_host: ${FASTAPI_HOST, localhost}
+      fastapi_port: ${FASTAPI_PORT, 8000}
+      cors_allowed_origins:
+        - "http://localhost:3000"
+        - "http://127.0.0.1:3000"
+
+      enable_embed_resolution: true
+      gateway_artifact_content_limit_bytes: 10000000
+      sse_max_queue_size: 200
+
+      system_purpose: >
+        MedExpert is a medical information assistant that provides evidence-based
+        answers with citations from reputable medical sources. It searches the web
+        for current medical literature, clinical guidelines, and health information.
+        Users can also upload medical documents for document-specific queries.
+        **Important:** MedExpert provides educational information only and does not
+        constitute medical advice. Always consult a healthcare professional for
+        medical decisions.
+        **Always return useful artifacts and files to the user.**
+        Provide a status update before each tool call.
+
+      response_format: >
+        Responses should be formatted in Markdown. Include citation markers
+        in the format [[cite:sTrN]] for web sources and [[cite:idxTrN]] for
+        document sources. Use headers, bullet points, and bold text for readability.
+        Begin medical responses with a disclaimer notice.
+
+      # Frontend branding
+      frontend_welcome_message: "Welcome to MedExpert! Ask me any medical or health question and I'll provide evidence-based answers with citations from reputable sources. You can also upload medical documents for analysis."
+      frontend_bot_name: "MedExpert"
+      frontend_collect_feedback: true
+
+      frontend_use_authorization: false
+
+      task_logging:
+        enabled: true
+        hybrid_buffer:
+          enabled: false
+          flush_threshold: 10
+        log_status_updates: true
+        log_artifact_events: true
+        log_file_parts: true
+        max_file_part_size_bytes: 10240
+
+      feedback_publishing:
+        enabled: true
+        topic: "${NAMESPACE}/sam/feedback/v1"
+        include_task_info: "stim"
+        max_payload_size_bytes: 9000000
+
+      frontend_feature_enablement:
+        background_tasks: true
+        auto_title_generation: true
+
+      background_tasks:
+        default_timeout_ms: 3600000

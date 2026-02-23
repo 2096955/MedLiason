@@ -114,8 +114,8 @@ apps:
         - tool_type: builtin-group
           group_name: web_search
           tool_config:
-            google_search_api_key: AIzaSyCCE2xYLmsI-K6xB0r1Lbbgv50ucckclKo
-            google_cse_id: 779993a91b5a94037
+            google_search_api_key: ${GOOGLE_SEARCH_API_KEY}
+            google_cse_id: ${GOOGLE_CSE_ID}
 
         # Document Search for uploaded medical documents
         - tool_type: builtin-group

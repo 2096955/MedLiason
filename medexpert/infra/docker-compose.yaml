@@ -1,0 +1,195 @@
+version: "3.9"
+
+x-common-env: &common-env
+  SOLACE_DEV_MODE: "true"
+  SOLACE_BROKER_URL: "ws://broker:8008"
+  SOLACE_BROKER_USERNAME: "default"
+  SOLACE_BROKER_PASSWORD: "default"
+  SOLACE_BROKER_VPN: "default"
+  USE_TEMPORARY_QUEUES: "true"
+  NAMESPACE: "medexpert"
+  REDIS_URL: "redis://redis:6379/0"
+
+x-agent-base: &agent-base
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile.agent
+  environment:
+    <<: *common-env
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+x-mcp-base: &mcp-base
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile.mcp
+  restart: unless-stopped
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── MCP Servers ─────────────────────────────────────────────
+  mcp-pubmed:
+    <<: *mcp-base
+    command: ["mcp_servers.pubmed.server"]
+    ports: ["9001:9001"]
+    environment:
+      MCP_PORT: "9001"
+
+  mcp-clinicaltrials:
+    <<: *mcp-base
+    command: ["mcp_servers.clinicaltrials.server"]
+    ports: ["9002:9002"]
+    environment:
+      MCP_PORT: "9002"
+
+  mcp-openfda:
+    <<: *mcp-base
+    command: ["mcp_servers.openfda.server"]
+    ports: ["9003:9003"]
+    environment:
+      MCP_PORT: "9003"
+
+  mcp-cdc:
+    <<: *mcp-base
+    command: ["mcp_servers.cdc.server"]
+    ports: ["9004:9004"]
+    environment:
+      MCP_PORT: "9004"
+
+  mcp-regulatory:
+    <<: *mcp-base
+    command: ["mcp_servers.regulatory.server"]
+    ports: ["9005:9005"]
+    environment:
+      MCP_PORT: "9005"
+
+  mcp-seer:
+    <<: *mcp-base
+    command: ["mcp_servers.seer.server"]
+    ports: ["9006:9006"]
+    environment:
+      MCP_PORT: "9006"
+
+  mcp-genomic:
+    <<: *mcp-base
+    command: ["mcp_servers.genomic.server"]
+    ports: ["9007:9007"]
+    environment:
+      MCP_PORT: "9007"
+
+  mcp-environmental:
+    <<: *mcp-base
+    command: ["mcp_servers.environmental.server"]
+    ports: ["9008:9008"]
+    environment:
+      MCP_PORT: "9008"
+
+  mcp-census-sdoh:
+    <<: *mcp-base
+    command: ["mcp_servers.census_sdoh.server"]
+    ports: ["9009:9009"]
+    environment:
+      MCP_PORT: "9009"
+
+  mcp-provider-intel:
+    <<: *mcp-base
+    command: ["mcp_servers.provider_intel.server"]
+    ports: ["9010:9010"]
+    environment:
+      MCP_PORT: "9010"
+
+  mcp-knowledge-graph:
+    <<: *mcp-base
+    command: ["mcp_servers.knowledge_graph.server"]
+    ports: ["9011:9011"]
+    environment:
+      MCP_PORT: "9011"
+
+  mcp-societies:
+    <<: *mcp-base
+    command: ["mcp_servers.societies.server"]
+    ports: ["9012:9012"]
+    environment:
+      MCP_PORT: "9012"
+
+  mcp-vigibase:
+    <<: *mcp-base
+    command: ["mcp_servers.vigibase.server"]
+    ports: ["9013:9013"]
+    environment:
+      MCP_PORT: "9013"
+
+  # ── Agents ──────────────────────────────────────────────────
+  orchestrator:
+    <<: *agent-base
+    command: ["configs/agents/orchestrator.yaml"]
+    depends_on:
+      redis:
+        condition: service_healthy
+      mcp-pubmed:
+        condition: service_started
+      mcp-clinicaltrials:
+        condition: service_started
+
+  literature-specialist:
+    <<: *agent-base
+    command: ["configs/agents/literature_specialist.yaml"]
+
+  clinical-trials-specialist:
+    <<: *agent-base
+    command: ["configs/agents/clinical_trials_specialist.yaml"]
+
+  drug-specialist:
+    <<: *agent-base
+    command: ["configs/agents/drug_specialist.yaml"]
+
+  regulatory-specialist:
+    <<: *agent-base
+    command: ["configs/agents/regulatory_specialist.yaml"]
+
+  epidemiology-specialist:
+    <<: *agent-base
+    command: ["configs/agents/epidemiology_specialist.yaml"]
+
+  genomics-specialist:
+    <<: *agent-base
+    command: ["configs/agents/genomics_specialist.yaml"]
+
+  environmental-specialist:
+    <<: *agent-base
+    command: ["configs/agents/environmental_specialist.yaml"]
+
+  provider-intel-specialist:
+    <<: *agent-base
+    command: ["configs/agents/provider_intel_specialist.yaml"]
+
+  verifier:
+    <<: *agent-base
+    command: ["configs/agents/verifier.yaml"]
+
+  reviser:
+    <<: *agent-base
+    command: ["configs/agents/reviser.yaml"]
+
+  # ── Gateway ─────────────────────────────────────────────────
+  webui:
+    <<: *agent-base
+    command: ["configs/gateways/webui.yaml"]
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+      FASTAPI_HOST: "0.0.0.0"
+      FASTAPI_PORT: "8000"

@@ -1,0 +1,86 @@
+# MedExpert - Clinical Trials Specialist Agent
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: clinical_trials_specialist.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: clinical_trials_specialist_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ClinicalTrialsSpecialist"
+      display_name: "Clinical Trials Specialist"
+      model: *specialist_model
+
+      instruction: |
+        You are the Clinical Trials Specialist for MedExpert. You search
+        ClinicalTrials.gov for active, completed, and planned clinical trials.
+
+        **WORKFLOW:**
+        1. Receive a sub-question about clinical trials
+        2. Search trials by condition, intervention, or general query
+        3. Retrieve detailed trial information for relevant results
+        4. Grade the evidence quality of trial designs
+        5. Store findings in memory_plane (namespace: evidence)
+        6. Return structured trial summaries
+
+        **KEY INFORMATION TO EXTRACT:**
+        - NCT ID, phase, status (recruiting/completed/terminated)
+        - Study design (randomized, blinded, controlled)
+        - Primary and secondary endpoints
+        - Enrollment numbers and eligibility criteria
+        - Sponsor and principal investigators
+        - Results if available (for completed trials)
+
+        **CITATION FORMAT:** [[cite:nct:NCTXXXXXXXX]]
+
+      tools:
+        - tool_type: mcp
+          name: clinicaltrials_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9002/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "Clinical trials specialist. Searches ClinicalTrials.gov for trial data, enrollment status, and results."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: trial_search
+            name: Clinical Trial Search
+            description: Searches ClinicalTrials.gov by condition, intervention, or keyword.
+          - id: trial_analysis
+            name: Trial Design Analysis
+            description: Analyzes trial designs and extracts key endpoints and results.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["ClinicalTrialsSpecialist"]
+        request_timeout_seconds: 600

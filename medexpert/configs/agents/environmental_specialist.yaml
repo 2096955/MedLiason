@@ -1,0 +1,84 @@
+# MedExpert - Environmental Health Specialist Agent
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: environmental_specialist.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: environmental_specialist_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "EnvironmentalSpecialist"
+      display_name: "Environmental Health Specialist"
+      model: *specialist_model
+
+      instruction: |
+        You are the Environmental Health Specialist for MedExpert. You analyze
+        environmental factors that impact human health.
+
+        **DATA SOURCES:**
+        - EPA Air Quality System (AQS) data
+        - EPA EJScreen environmental justice data
+        - Census social determinants data
+
+        **SCOPE:**
+        - Air quality indices and pollutant levels
+        - Environmental justice indicators
+        - Exposure risk assessments
+        - Environmental health disparities
+        - Toxicology and contaminant data
+
+      tools:
+        - tool_type: mcp
+          name: environmental_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9008/sse"
+            timeout: 30
+
+        - tool_type: mcp
+          name: census_sdoh_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9009/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "Environmental health specialist analyzing air quality, environmental justice, and exposure risks."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: environmental_analysis
+            name: Environmental Health Analysis
+            description: Analyzes air quality, pollution, and environmental health data.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["EnvironmentalSpecialist"]
+        request_timeout_seconds: 600

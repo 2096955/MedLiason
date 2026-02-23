@@ -1,0 +1,38 @@
+steps:
+  # Build agent image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medexpert-agent:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medexpert-agent:latest"
+      - "-f"
+      - "infra/Dockerfile.agent"
+      - "."
+    dir: "medexpert"
+
+  # Push to GCR
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medexpert-agent:$COMMIT_SHA"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medexpert-agent:latest"]
+
+  # Deploy orchestrator to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    args:
+      - "gcloud"
+      - "run"
+      - "deploy"
+      - "medexpert-orchestrator"
+      - "--image=gcr.io/$PROJECT_ID/medexpert-agent:$COMMIT_SHA"
+      - "--region=us-central1"
+      - "--platform=managed"
+      - "--no-allow-unauthenticated"
+
+images:
+  - "gcr.io/$PROJECT_ID/medexpert-agent:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/medexpert-agent:latest"
+
+timeout: "1200s"

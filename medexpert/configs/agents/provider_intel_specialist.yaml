@@ -1,0 +1,82 @@
+# MedExpert - Provider Intelligence Specialist Agent
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: provider_intel_specialist.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: provider_intel_specialist_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ProviderIntelSpecialist"
+      display_name: "Provider Intelligence Specialist"
+      model: *specialist_model
+
+      instruction: |
+        You are the Provider Intelligence Specialist for MedExpert. You provide
+        information about healthcare providers, quality metrics, and financial
+        transparency data.
+
+        **DATA SOURCES:**
+        - CMS Provider Data: quality ratings, specialties
+        - CMS Open Payments: financial relationships with industry
+
+        **SCOPE:**
+        - Provider quality comparisons
+        - Specialty and practice information
+        - Industry payment transparency
+        - Healthcare facility data
+
+        **ETHICAL NOTE:** Open Payments data represents legally disclosed
+        financial relationships. These should be presented neutrally without
+        implying wrongdoing.
+
+      tools:
+        - tool_type: mcp
+          name: provider_intel_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9010/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "Provider intelligence specialist for healthcare provider quality data and CMS Open Payments transparency."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: provider_search
+            name: Provider Search
+            description: Searches CMS provider quality and practice data.
+          - id: payment_transparency
+            name: Payment Transparency
+            description: Searches CMS Open Payments financial disclosure data.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["ProviderIntelSpecialist"]
+        request_timeout_seconds: 600

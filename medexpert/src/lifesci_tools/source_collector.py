@@ -121,6 +121,18 @@ class SourceCollectorTool(DynamicTool):
                                 type=adk_types.Type.STRING,
                                 description="Explicit URL (used if no identifier provided).",
                             ),
+                            "agent_name": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="Name of the agent that provided this source.",
+                            ),
+                            "mcp_server": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="Name of the MCP server used to retrieve this source.",
+                            ),
+                            "api_endpoint": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="API endpoint that returned this data.",
+                            ),
                         },
                         required=["title", "snippet"],
                     ),
@@ -131,12 +143,13 @@ class SourceCollectorTool(DynamicTool):
 
     async def _run_async_impl(
         self,
+        args: dict,
         tool_context: ToolContext,
-        query: str,
-        sources: List[Dict[str, Any]],
-        **kwargs,
+        credential: Optional[str] = None,
     ) -> Dict[str, Any]:
         log_id = "[publish_sources]"
+        query = args.get("query", "")
+        sources = args.get("sources") or []
 
         if not sources:
             logger.warning("%s Called with empty sources list", log_id)
@@ -173,6 +186,9 @@ class SourceCollectorTool(DynamicTool):
                         if url
                         else ""
                     ),
+                    "agent_name": src.get("agent_name", ""),
+                    "mcp_server": src.get("mcp_server", ""),
+                    "api_endpoint": src.get("api_endpoint", ""),
                 },
             )
             rag_sources.append(rag_source)
@@ -202,6 +218,10 @@ class SourceCollectorTool(DynamicTool):
             lines.append(f"CITATION ID: [[cite:{cid}]]")
             lines.append(f"TITLE: {src.get('title', 'N/A')}")
             lines.append(f"URL: {_build_url(src)}")
+            if src.get("agent_name"):
+                lines.append(f"AGENT: {src.get('agent_name')}")
+            if src.get("mcp_server"):
+                lines.append(f"MCP SERVER: {src.get('mcp_server')}")
             lines.append(f"CONTENT: {src.get('snippet', 'N/A')}")
             lines.append(f"USE [[cite:{cid}]] to cite facts from THIS source only")
             lines.append("")

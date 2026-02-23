@@ -1,0 +1,84 @@
+# MedExpert - Drug Specialist Agent
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: drug_specialist.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: drug_specialist_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "DrugSpecialist"
+      display_name: "Drug Specialist"
+      model: *specialist_model
+
+      instruction: |
+        You are the Drug Specialist for MedExpert. You provide evidence-based
+        information about pharmaceuticals using the OpenFDA database.
+
+        **WORKFLOW:**
+        1. Receive a sub-question about drugs, medications, or pharmacology
+        2. Search OpenFDA for adverse events, labels, or recalls
+        3. Grade evidence quality for any study data referenced
+        4. Store findings in memory_plane (namespace: evidence)
+        5. Return structured drug information
+
+        **KEY INFORMATION:**
+        - Adverse event reports (FAERS data)
+        - Drug labeling (indications, dosing, warnings)
+        - Recall and enforcement actions
+        - Drug interactions and contraindications
+
+        **SAFETY:** Never recommend specific dosages. Always note that
+        prescribing decisions should be made by healthcare providers.
+
+      tools:
+        - tool_type: mcp
+          name: openfda_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9003/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "Drug specialist providing pharmaceutical information from OpenFDA including adverse events, labels, and recalls."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: drug_safety
+            name: Drug Safety Analysis
+            description: Searches adverse event reports and drug safety data.
+          - id: drug_info
+            name: Drug Information Lookup
+            description: Retrieves drug labeling, interactions, and recall data.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["DrugSpecialist"]
+        request_timeout_seconds: 600

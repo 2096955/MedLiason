@@ -1,0 +1,37 @@
+[
+  {
+    "question": "What is the first-line treatment for type 2 diabetes?",
+    "expected_keywords": ["metformin", "first-line", "HbA1c"],
+    "expected_agents": ["LiteratureSpecialist", "DrugSpecialist"],
+    "min_citation_count": 1,
+    "category": "treatment"
+  },
+  {
+    "question": "What are the cardiovascular benefits of GLP-1 receptor agonists?",
+    "expected_keywords": ["cardiovascular", "semaglutide", "MACE"],
+    "expected_agents": ["LiteratureSpecialist"],
+    "min_citation_count": 1,
+    "category": "treatment"
+  },
+  {
+    "question": "What clinical trials are currently recruiting for NASH treatment?",
+    "expected_keywords": ["NASH", "clinical trial", "recruiting"],
+    "expected_agents": ["ClinicalTrialsSpecialist"],
+    "min_citation_count": 0,
+    "category": "clinical_trials"
+  },
+  {
+    "question": "What are the FDA-approved indications for pembrolizumab?",
+    "expected_keywords": ["pembrolizumab", "FDA", "approved"],
+    "expected_agents": ["RegulatorySpecialist", "DrugSpecialist"],
+    "min_citation_count": 1,
+    "category": "regulatory"
+  },
+  {
+    "question": "What is the pathogenic significance of BRCA1 mutations in breast cancer?",
+    "expected_keywords": ["BRCA1", "breast cancer", "pathogenic"],
+    "expected_agents": ["GenomicsSpecialist", "LiteratureSpecialist"],
+    "min_citation_count": 1,
+    "category": "genomics"
+  }
+]

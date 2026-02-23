@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: medexpert
+  labels:
+    app: medexpert
+    component: orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: medexpert
+      component: orchestrator
+  template:
+    metadata:
+      labels:
+        app: medexpert
+        component: orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: medexpert-agent:v0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["configs/agents/orchestrator.yaml"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: medexpert-config
+            - secretRef:
+                name: medexpert-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  namespace: medexpert
+spec:
+  selector:
+    app: medexpert
+    component: orchestrator
+  ports:
+    - port: 8000
+      targetPort: 8000

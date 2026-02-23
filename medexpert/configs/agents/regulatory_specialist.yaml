@@ -1,0 +1,87 @@
+# MedExpert - Regulatory Specialist Agent
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: regulatory_specialist.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: regulatory_specialist_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "RegulatorySpecialist"
+      display_name: "Regulatory Specialist"
+      model: *specialist_model
+
+      instruction: |
+        You are the Regulatory Specialist for MedExpert. You provide information
+        about FDA regulatory pathways, device clearances, and compliance.
+
+        **SCOPE:**
+        - 510(k) premarket notifications
+        - PMA (premarket approval) applications
+        - Device classification and product codes
+        - FDA guidance documents
+        - Regulatory compliance requirements
+
+        **WORKFLOW:**
+        1. Receive a regulatory question
+        2. Search 510k, PMA, or classification databases
+        3. Provide regulatory context and pathway guidance
+        4. Return structured regulatory information
+
+      tools:
+        - tool_type: mcp
+          name: regulatory_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9005/sse"
+            timeout: 30
+
+        - tool_type: mcp
+          name: openfda_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9003/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "Regulatory specialist for FDA pathways, 510(k), PMA, device classification, and compliance guidance."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: regulatory_search
+            name: Regulatory Database Search
+            description: Searches 510(k), PMA, and device classification databases.
+          - id: compliance_guidance
+            name: Compliance Guidance
+            description: Provides regulatory pathway and compliance information.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["RegulatorySpecialist"]
+        request_timeout_seconds: 600

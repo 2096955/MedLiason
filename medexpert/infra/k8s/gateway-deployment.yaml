@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webui-gateway
+  namespace: medexpert
+  labels:
+    app: medexpert
+    component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: medexpert
+      component: gateway
+  template:
+    metadata:
+      labels:
+        app: medexpert
+        component: gateway
+    spec:
+      containers:
+        - name: webui
+          image: medexpert-agent:v0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["configs/gateways/webui.yaml"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          ports:
+            - containerPort: 8000
+          env:
+            - name: FASTAPI_HOST
+              value: "0.0.0.0"
+            - name: FASTAPI_PORT
+              value: "8000"
+          envFrom:
+            - configMapRef:
+                name: medexpert-config
+            - secretRef:
+                name: medexpert-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webui-gateway
+  namespace: medexpert
+spec:
+  type: LoadBalancer
+  selector:
+    app: medexpert
+    component: gateway
+  ports:
+    - port: 80
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: medexpert-ingress
+  namespace: medexpert
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  rules:
+    - host: medexpert.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webui-gateway
+                port:
+                  number: 80
