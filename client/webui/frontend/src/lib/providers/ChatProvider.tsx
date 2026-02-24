@@ -142,7 +142,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     // Side Panel Control State
     const [isSidePanelCollapsed, setIsSidePanelCollapsed] = useState<boolean>(true);
-    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag" | "datasources">("files");
+    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag" | "datasources" | "memory">("files");
 
     // Feedback State
     const [submittedFeedback, setSubmittedFeedback] = useState<Record<string, { type: "up" | "down"; text: string }>>({});
@@ -819,7 +819,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
     const [isLoadingSession, setIsLoadingSession] = useState<boolean>(false);
 
-    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag" | "datasources") => {
+    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag" | "datasources" | "memory") => {
         setIsSidePanelCollapsed(false);
         setActiveSidePanelTab(tab);
 
