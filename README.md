@@ -1,223 +1,315 @@
 <p align="center">
-  <img src="./docs/static/img/logo.png" alt="Solace Agent Mesh Logo" width="100"/>
+  <img src="./docs/static/img/logo.png" alt="MedExpert Logo" width="100"/>
 </p>
-<h2 align="center">
-  Solace Agent Mesh
-</h2>
-<h3 align="center">Open-source framework for building event driven multi-agent AI systems</h3>
-<h5 align="center">Star ⭐️ this repo to stay updated as we ship new features and improvements.</h5>
+<h2 align="center">MedExpert</h2>
+<h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
-  <a href="https://github.com/SolaceLabs/solace-agent-mesh/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/SolaceLabs/solace-agent-mesh" alt="License">
-  </a>
-  <a href="https://pypi.org/project/solace-agent-mesh">
-    <img src="https://img.shields.io/pypi/v/solace-agent-mesh.svg" alt="PyPI - Version">
-  </a>
-  <a href="https://pypi.org/project/solace-agent-mesh">
-    <img src="https://img.shields.io/pypi/pyversions/solace-agent-mesh.svg" alt="PyPI - Python Version">
-  </a>
-  <a href="https://pypi.org/project/solace-agent-mesh">
-      <img alt="PyPI - Downloads" src="https://img.shields.io/pypi/dm/solace-agent-mesh?color=00C895">
-  </a>
-</p>
-<p align="center">
-  <a href="#-key-features">Key Features</a> •
-  <a href="#-quick-start-5-minutes">Quickstart</a> •
-  <a href="#️-next-steps">Next Steps</a>
+  <a href="#architecture">Architecture</a> &middot;
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#research-protocol">Research Protocol</a> &middot;
+  <a href="#development">Development</a>
 </p>
 
+---
+
+MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 12 specialized agents across a rigorous 12-step research protocol. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
+
+Every answer goes through a Generator-Verifier-Reviser (GVR) loop: the orchestrator synthesizes a report, a verifier agent (using a stronger model at low temperature) fact-checks each claim against its cited sources, and a reviser corrects any issues before the answer reaches the user.
+
+Built on the **Solace Agent Mesh (SAM)** framework for event-driven, broker-based agent communication using the A2A protocol.
 
 ---
 
-**Solace Agent Mesh** is a framework that supports building AI applications where multiple specialized AI agents work together to solve complex problems. It uses the event messaging of [Solace Platform](https://solace.com) for true scalability and reliability.
+## Architecture
 
-With Solace Agent Mesh (SAM), you can create teams of AI agents, each having distinct skills and access to specific tools. For example, you could have a Database Agent that can make SQL queries to fetch data or a MultiModal Agent that can help create images, audio files and reports.
-
-The framework handles the communication between agents automatically, so you can focus on building great AI experiences.
-
-SAM creates a standardized communication layer where AI agents can:
-* Delegate tasks to peer agents
-* Share data and artifacts
-* Connect with diverse user interfaces and external systems
-* Execute multi-step workflows with minimal coupling
-
-SAM is built on top of the Solace AI Connector (SAC) which allows Solace Platform Event Brokers to connect to AI models and services and Google's Agent Development Kit (ADK) for AI logic and tool integrations.
-
-<p align="center">
-<img src="docs/static/img/Solace_AI_Framework_With_Broker.png" width="640" alt="SAM Architecture Diagram" />
-</p>
-
-
-The result? A fully asynchronous, event-driven and decoupled AI agent architecture ready for production deployment. It is robust, reliable and easy to maintain. 
-
-
----
-
-## 🔑 Key Features 
-- **[Multi-Agent Event-Driven Architecture](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/getting-started/architecture)** – Agents communicate via the Solace Event Mesh for true scalability
-- **[Agent Orchestration](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/agents)** – Complex tasks are automatically broken down and delegated by the [Orchestrator](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/orchestrator) agent
-- **[Flexible Interfaces](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/gateways)** – Integrate with REST API, web UI, [Slack](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/slack-integration), or build your own integration
-- **[Extensible](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/plugins)** – Add your own agents, gateways, or services with minimal code
-- **[Agent-to-Agent Communication](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/getting-started/architecture)** – Agents can discover and delegate tasks to each other seamlessly using the Agent2Agent (A2A) Protocol
-- **[Dynamic Embeds](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/builtin-tools/embeds)** – Embed dynamic content like real-time data, calculations and file contents in responses
-
-📚 **Want to know more?** Check out the full Solace Agent Mesh [documentation](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/getting-started/introduction/).
-
----
-
-## 🚀 Quick Start (5 minutes)
-
-Set up Solace Agent Mesh in just a few steps.
-
-### ⚙️ System Requirements
-
-To run Solace Agent Mesh locally, you'll need:
-
-- **Python 3.10.16+**
-- **pip** (comes with Python)
-- **OS**: MacOS, Linux, or Windows (with [WSL](https://learn.microsoft.com/en-us/windows/wsl/))
-- **LLM API key** (any major provider or custom endpoint)
-
-### 🎸 Vibe Coding
-To quickly setup and customize your Agent Mesh, check out the [Vibe Coding Quickstart Guide](docs/docs/documentation/vibe_coding.md). This guide walks you through the essential steps to get Solace Agent Mesh up and running with minimal effort.
-
-### 💻 Setup Steps
-
-#### 1. Create a directory for a new project
-```bash
-mkdir my-sam && cd my-sam
 ```
-#### 2. Create and activate a Python virtual environment
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-```
-#### 3. Install Solace Agent Mesh (SAM)
-Check if you have a version of SAM already installed.
-```bash
-sam -v
-```
-If you have an earlier version, uninstall it and **start from scratch**:
-```bash
-pip3 uninstall solace-agent-mesh
-```
-Note: Optionally, you can try to upgrade versions but this action is not officially supported at this time. (`pip3 install --upgrade solace-agent-mesh`)
-
-If no previous version exists, install the latest version with:
-```bash
-pip3 install solace-agent-mesh
-```
-#### 4. Initialize the new project via a GUI tool
-```bash
-sam init --gui
-```
-Note: This initialization UI runs on port 5002
-#### 5. Run the project
-```bash
-sam run
-```
-#### 6. Verify SAM is running
-Open the Web UI at [http://localhost:8000](http://localhost:8000) for the chat interface and ask a question
-
-### 🔧 Customize SAM
-
-#### New agents can be added via a GUI interface
-```bash
-sam add agent --gui
+User Query
+    |
+    v
+Orchestrator (12-step protocol)
+    |
+    +---> 8 Specialist Agents (literature, clinical trials, drug,
+    |     regulatory, epidemiology, genomics, environmental, provider intel)
+    |
+    +---> 15 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
+    |     SEER, EPA, ClinVar, Census SDOH, ...)
+    |
+    +---> MedicalExpert Agent (web search for simple questions)
+    |
+    v
+GVR Loop: Generate --> Verify --> Revise
+    |
+    v
+Evidence-graded report with citations
 ```
 
-#### Existing plugins can be installed
-```bash
-sam plugin add <your-component-name> --plugin <plugin-name>
-```
+### How the Agents Reason
 
----
+MedExpert agents don't just call APIs — they implement structured reasoning patterns that mirror how medical researchers think.
 
-## 🏗️ Architecture Overview
+**Orchestrator: Protocol-Driven Decomposition**
 
-Solace Agent Mesh provides a "Universal A2A Agent Host," a flexible and configurable runtime environment built by integrating Google's Agent Development Kit (ADK) with the Solace AI Connector (SAC) framework.
+The orchestrator uses a prescriptive 12-step protocol (not free-form chain-of-thought) to ensure systematic coverage. It decomposes complex questions into domain-routed sub-questions using keyword heuristics, delegates to specialists in priority order, then reflectively identifies gaps before synthesizing. This is closer to a research methodology than a chatbot prompt.
 
-The system allows you to:
+Key reasoning mechanisms:
+- **Query decomposition** — Breaks multi-faceted questions into domain-specific sub-questions (e.g., "What are the drug interactions and genomic factors for metformin?" becomes separate queries for DrugSpecialist and GenomicsSpecialist)
+- **Reflective gap analysis** — After collecting evidence, explicitly identifies contradictions, missing perspectives, and logical gaps before synthesis
+- **Advisory board deliberation** — Generates 6 distinct analytical perspectives (Clinical Pragmatist, Research Methodologist, Patient Advocate, Health Economist, Bioethicist, Global Health Specialist) to prevent single-perspective bias, then synthesizes consensus and dissent
+- **Learned routing** — Seeds each session with historical intelligence from the cold store (which specialists and sources worked well for similar queries in the past)
 
-- Host AI agents developed with Google ADK within the SAC framework
-- Define agent capabilities (LLM model, instructions, tools) primarily through SAC YAML configuration
-- Use Solace Platform as the transport for standard Agent-to-Agent (A2A) protocol communication
-- Enable dynamic discovery of peer agents running within the same ecosystem
-- Allow agents to delegate tasks to discovered peers via the A2A protocol over Solace
-- Manage file artifacts using built-in tools with automatic metadata injection
-- Perform data analysis using built-in SQL, JQ, and visualization tools
-- Use dynamic embeds for context-dependent information resolution
+**Specialists: Evidence-First Retrieval**
+
+Each specialist follows a strict evidence-first workflow: search external sources via MCP tools, grade the evidence using GRADE methodology, store graded evidence in the shared memory plane, then synthesize. Specialists never answer from LLM memory alone — every claim must trace to a retrieved source.
+
+The Literature Specialist, for example:
+1. Searches PubMed for peer-reviewed articles
+2. Retrieves full abstracts for top results
+3. Grades each using evidence_grader (meta-analysis > RCT > cohort > case-control > case report)
+4. Stores graded evidence in Redis memory plane
+5. Returns structured summary with PMIDs
+
+**Verifier: Independent Fact-Checking**
+
+The verifier uses a stronger model (gemini-2.5-pro) at very low temperature (0.1) to independently assess the draft report. Its reasoning is three-stage:
+
+1. **Structural validation** — Checks that every `[[cite:X]]` marker points to an actual source in the citation list
+2. **Entailment analysis** — For each claim, uses LLM-based entailment classification (ENTAILS / CONTRADICTS / NEUTRAL) to assess whether the cited source actually supports the claim
+3. **Keyword fallback** — If LLM entailment is ambiguous, falls back to Jaccard similarity (keyword overlap >= 0.15 = supported)
+
+The verifier also cross-references against the raw evidence in the memory plane and historical source reliability from the cold store. It never modifies the report — it only produces a pass/fail assessment.
+
+**Memory Plane: Shared Reasoning State**
+
+All agents share a Redis-backed memory plane scoped by session. This creates a shared "working memory" that enables reasoning across agent boundaries:
+- Specialists write evidence → orchestrator reads to detect gaps
+- Orchestrator writes coverage metrics → verifier reads to calibrate strictness
+- Verifier writes verdict → orchestrator reads to decide revision
+- All signals auto-flush to SQLite cold store for cross-session learning
+
+### Agents
+
+| Agent | Role | Model |
+|-------|------|-------|
+| **Orchestrator** | Coordinates 12-step protocol, hosts 6 advisory board personas | gemini-2.5-flash (temp 0.2) |
+| **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-2.5-flash (temp 0.3) |
+| **Verifier** | Fact-checks claims against cited sources | gemini-2.5-pro (temp 0.1) |
+| **Reviser** | Surgically corrects issues flagged by verifier | gemini-2.5-flash (temp 0.3) |
+| **MedicalExpert** | Web search for simple factual questions | gemini-2.5-flash |
+
+### Data Sources (15 MCP Servers)
+
+PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease surveillance, SEER cancer statistics, Census ACS (social determinants), EPA air quality, ClinVar/dbSNP genomics, CMS provider/payment data, FDA regulatory pathways, medical imaging archives, pharmacovigilance, medical society guidelines, VigiBase (WHO), knowledge graph (Neo4j).
 
 ### Key Components
 
-- **SAC** handles broker connections, configuration loading, and component lifecycle
-- **ADK** provides the agent runtime, LLM interaction, tool execution, and state management
-- **A2A Protocol** enables communication between clients and agents, and between peer agents
-- **Dynamic Embeds** allow placeholders in responses that are resolved with context-dependent information
-- **File Management** provides built-in tools for artifact creation, listing, loading, and metadata handling
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Agent hosting | Google ADK + Solace AI Connector | LLM orchestration + broker connectivity |
+| Communication | A2A protocol over Solace Event Mesh | Async agent-to-agent messaging |
+| Web UI | React + Vite + SSE streaming | Chat interface with citations panel |
+| MCP servers | FastMCP 2.x (SSE transport) | External API integration |
+| Memory plane | Redis | Shared state across agents per session |
+| Cold store | SQLite | Learning from past research sessions |
+| LLM abstraction | LiteLLM | Provider-agnostic model access |
 
 ---
 
-## ➡️ Next Steps
+## Research Protocol
 
-Want to go further? Here are some hands-on tutorials to help you get started:
+The orchestrator executes a 12-step protocol for every complex query:
 
-| 🔧 Integration | ⏱️ Est. Time | 📘 Tutorial |
-|----------------|--------------|-------------|
-| 🌤️ **Weather Agent**<br>Learn how to build an agent that gives Solace Agent Mesh the ability to access real-time weather information.  | **~15 min** | [Weather Agent Plugin](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/custom-agent) |
-| 🗃️ **SQL Database Integration**<br>Enable Solace Agent Mesh to answer company-specific questions using a sample coffee company database.| **~10–15 min** | [SQL Database Tutorial](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/sql-database) |
-| 🧠 **MCP Integration**<br>Integrating a Model Context Protocol (MCP) Servers into Solace Agent Mesh. | **~10–15 min** | [MCP Integration Tutorial](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/mcp-integration) |
-| 💬 **Slack Integration**<br>Chat with Solace Agent Mesh directly from Slack. | **~20–30 min** | [Slack Integration Tutorial](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/slack-integration) |
-| 👔 **Microsoft Teams Integration (Enterprise)**<br>Connect Solace Agent Mesh Enterprise to Microsoft Teams with Azure AD authentication. | **~30–40 min** | [Teams Integration Tutorial](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/developing/tutorials/teams-integration) |
+| Step | Name | What Happens |
+|------|------|-------------|
+| 0 | SEED | Load learned routing hints from past sessions |
+| 1 | DECOMPOSE | Break query into domain-routed sub-questions |
+| 2 | DELEGATE | Assign sub-questions to specialist agents |
+| 3 | COLLECT | Gather evidence, publish source citations |
+| 4 | REFLECT | Identify gaps, contradictions, missing perspectives |
+| 5 | RE-QUERY | Targeted follow-up queries for gaps found |
+| 6 | VALIDATE | Check research completeness (target: 70%+ coverage) |
+| 7 | ADVISORY | 6-persona advisory board deliberation |
+| 8 | SYNTHESIZE | Generate evidence-graded report with citations |
+| 9 | VERIFY | Verifier agent checks claim-citation alignment |
+| 10 | REVISE | Reviser fixes issues (skipped if verification passes) |
+| 11 | PERSIST | Save session signals to cold store for learning |
 
----
+Simple factual questions bypass the protocol and route directly to the MedicalExpert agent.
 
-## 👥 Contributors
+### GVR Loop Detail
 
-Solace Agent Mesh is built with the help of our amazing community. Thanks to everyone who has contributed ideas, code and time to make this project better!
+The Generator-Verifier-Reviser loop is the quality gate that prevents unverified medical claims from reaching users:
 
-View the full list of contributors here: [GitHub Contributors](https://github.com/SolaceLabs/solace-agent-mesh/graphs/contributors) 💚
-
-**Looking to contribute?** Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get started and see how you can help!
-
----
-
-## 📄 License
-
-This project is licensed under the **Apache 2.0 License**. See the full license text in the [LICENSE](LICENSE) file.
-
----
-
-## 🧪 Running Tests
-
-This project uses `pytest` for testing. You can run tests using either `hatch` or `pytest` directly.
-
-### Using Hatch
-
-The recommended way to run tests is through the `hatch` environment, which ensures all dependencies are managed correctly.
-
-```bash
-# Run all tests
-hatch test
-
-# Run tests with tags
-hatch test -m "<tag>"
+```
+Orchestrator (SYNTHESIZE)
+    |
+    | Draft report with [[cite:...]] markers
+    v
+Verifier Agent (gemini-2.5-pro, temp 0.1)
+    |
+    |--- For each claim:
+    |      1. Does the cited source exist? (structural)
+    |      2. Does the source support the claim? (LLM entailment)
+    |      3. Keyword overlap fallback (Jaccard >= 0.15)
+    |
+    |--- Verdict:
+    |      PASS (score >= 0.7) ---------> Output report
+    |      MINOR_ISSUES (0.4-0.7) -----> Output with notes
+    |      CRITICAL_ISSUES (< 0.4) -----> Revise
+    |                                       |
+    v                                       v
+                                    Reviser Agent
+                                        |
+                                        | Surgical corrections
+                                        v
+                                    Re-Verify (1 cycle max)
+                                        |
+                                  PASS? --> Output revised report
+                                  FAIL? --> "Research Inconclusive" + failed claims list
 ```
 
-### Using Pytest Directly
+If re-verification still fails after revision, MedExpert withholds the report entirely and explains which claims could not be verified. This is a deliberate safety measure — no unverifiable medical information is delivered.
 
-If you prefer to use `pytest` directly, you must first install the project with its test dependencies.
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.10.16+
+- Redis (for memory plane)
+- API key for Gemini, OpenAI, or Anthropic
+
+### Setup
 
 ```bash
-# Install the project in editable mode with the 'test' extras
-pip install -e .[test]
+cd medexpert
+cp .env.example .env          # Fill in API keys
+pip install -e ".[dev]"
+```
 
-# Run all tests
-pytest
+### Run the full stack
+
+```bash
+./scripts/start_all.sh        # Redis check -> MCP servers -> Agents -> Gateway
+```
+
+This starts:
+1. Config validation (fails fast on missing keys)
+2. Redis health check
+3. 15 MCP servers on ports 9001-9015
+4. 12 agents + orchestrator
+5. Web UI gateway on http://localhost:8000
+
+### Run components individually
+
+```bash
+./scripts/start_mcp_servers.sh    # MCP servers only
+./scripts/start_agents.sh         # Agents + gateway (assumes MCP servers running)
 ```
 
 ---
 
-<h3 align="center">
-  <img src="./docs/static/img/solace-logo-text.svg" alt="Solace Agent Mesh Logo" width="100"/>
-</h3>
+## Development
+
+### SAM Framework (root)
+
+```bash
+make dev-setup              # Create venv, sync deps, install Playwright
+make test                   # Run tests (excluding stress)
+make test-unit              # Unit tests only
+make test-cov               # Tests with 70% coverage threshold
+uv run ruff check .         # Lint
+uv run ruff format .        # Format
+```
+
+### MedExpert Application (medexpert/)
+
+```bash
+cd medexpert
+pytest tests/unit -v        # Unit tests (tools + MCP servers)
+pytest tests/contract -v    # Contract tests (cassette-based HTTP replay)
+pytest tests/integration -v # GVR loop + orchestration pipeline
+pytest -m contract          # By marker
+
+# Evaluation
+python tests/eval_runner.py --mode golden      # Golden dataset
+python tests/eval_runner.py --mode red-team    # Adversarial prompts
+```
+
+### Frontend (client/webui/frontend/)
+
+```bash
+cd client/webui/frontend
+npm install
+npm run dev                 # Vite dev server on http://localhost:3000
+npm run lint                # ESLint
+npm run build-package       # Production build
+```
+
+---
+
+## Security
+
+MedExpert includes security hardening for deployments handling medical data:
+
+- **CORS**: Configurable origins, methods, headers. Wildcard + credentials rejected at startup.
+- **Session secrets**: Fail-fast validation rejects default placeholder values when auth is enabled.
+- **Rate limiting**: Per-session token bucket on task creation endpoints (configurable, off by default).
+- **Redis auth**: Startup warning when Redis has no password outside development mode.
+- **PHI redaction**: Presidio-based (ML) or regex-based detection and redaction of protected health information.
+- **Input sanitization**: SQL/SoQL injection prevention on all MCP server queries.
+- **Evidence verification**: Every synthesized answer is fact-checked by a dedicated verifier agent before delivery.
+
+See the [ARB remediation commit](https://github.com/2096955/MedLiason/commit/a93f9b37) for the full security hardening changelog.
+
+---
+
+## Project Structure
+
+```
+solace-agent-mesh/              # SAM framework (agent hosting, gateway, A2A)
+  src/solace_agent_mesh/
+    agent/                      # Agent hosting, ADK integration, tools
+    gateway/http_sse/           # FastAPI + SSE web UI gateway
+    common/                     # A2A helpers, registries, services
+    workflow/                   # DAG workflow execution
+
+medexpert/                      # Life sciences research application
+  configs/
+    agents/                     # YAML configs for all 12 agents
+    gateways/webui.yaml         # Web UI gateway config
+    shared_config.yaml          # Model anchors, broker, services
+  src/
+    lifesci_tools/              # 11 custom DynamicTool implementations
+    lifesci_common/             # Constants, config validator, utilities
+    mcp_servers/                # 15 FastMCP SSE servers
+  tests/                        # Unit, contract, integration, eval runner
+  scripts/                      # Startup scripts
+  infra/                        # Terraform, K8s, Docker
+
+client/webui/frontend/          # React + Vite chat UI
+config_portal/                  # Agent/gateway configuration wizard
+```
+
+---
+
+## Environment Variables
+
+Copy `medexpert/.env.example` and fill in:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GEMINI_API_KEY` | Yes (or another LLM key) | LLM provider API key |
+| `REDIS_URL` | Yes | Memory plane backend |
+| `SESSION_SECRET_KEY` | Yes (production) | Session cookie signing |
+| `NCBI_API_KEY` | Recommended | PubMed rate limit (3 -> 10 req/s) |
+| `CENSUS_API_KEY` | Optional | Census ACS SDOH data |
+| `EPA_AQS_EMAIL` / `EPA_AQS_KEY` | Optional | EPA air quality data |
+| `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Optional | Knowledge graph |
+
+---
+
+## License
+
+Apache 2.0. See [LICENSE](LICENSE).
