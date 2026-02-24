@@ -1,7 +1,4 @@
-<p align="center">
-  <img src="./docs/static/img/logo.png" alt="MedExpert Logo" width="100"/>
-</p>
-<h2 align="center">MedExpert</h2>
+<h1 align="center">MedExpert</h1>
 <h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
