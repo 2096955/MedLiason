@@ -138,7 +138,7 @@ async def _mock_query(question: str) -> dict:
         agents = ["LiteratureSpecialist", "GenomicsSpecialist"]
     else:
         text = f"This is a mock response to: {question}"
-        agents = ["MedicalExpert"]
+        agents = ["OrchestratorAgent"]
 
     return {
         "text": text,

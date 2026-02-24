@@ -70,6 +70,7 @@ function parseCitationId(citationId: string): { type: "search" | "research"; sou
         };
     }
 
+    console.warn(`[citations] Failed to parse citation ID: "${citationId}"`);
     return null;
 }
 

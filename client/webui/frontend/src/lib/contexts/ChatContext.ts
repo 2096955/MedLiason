@@ -36,9 +36,10 @@ export interface ChatState {
     // RAG State
     ragData: RAGSearchResult[];
     ragEnabled: boolean;
+    highlightedSourceId: string | null;
     // Side Panel Control State
     isSidePanelCollapsed: boolean;
-    activeSidePanelTab: "files" | "activity" | "rag";
+    activeSidePanelTab: "files" | "activity" | "rag" | "datasources";
     // Delete Modal State
     isDeleteModalOpen: boolean;
     artifactToDelete: ArtifactInfo | null;
@@ -78,8 +79,8 @@ export interface ChatActions {
     uploadArtifactFile: (file: File, overrideSessionId?: string, description?: string, silent?: boolean) => Promise<{ uri: string; sessionId: string } | { error: string } | null>;
     /** Side Panel Control Actions */
     setIsSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag">>;
-    openSidePanelTab: (tab: "files" | "activity" | "rag") => void;
+    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources">>;
+    openSidePanelTab: (tab: "files" | "activity" | "rag" | "datasources") => void;
 
     openDeleteModal: (artifact: ArtifactInfo) => void;
     closeDeleteModal: () => void;
@@ -108,6 +109,7 @@ export interface ChatActions {
     handleFeedbackSubmit: (taskId: string, feedbackType: "up" | "down", feedbackText: string) => Promise<void>;
 
     displayError: ({ title, error }: { title: string; error: string }) => void;
+    setHighlightedSourceId: React.Dispatch<React.SetStateAction<string | null>>;
 
     /** Background Task Monitoring Actions */
     isTaskRunningInBackground: (taskId: string) => boolean;

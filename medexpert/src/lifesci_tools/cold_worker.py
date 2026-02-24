@@ -11,6 +11,7 @@ Lifecycle:
 
 import atexit
 import logging
+import os
 import queue
 import threading
 import time
@@ -22,6 +23,10 @@ log = logging.getLogger(__name__)
 
 # Refresh learned strategies every N sessions
 REFRESH_INTERVAL = 10
+
+# Retention policy (configurable via environment)
+PRUNE_MAX_AGE_DAYS = int(os.environ.get("COLD_STORE_MAX_AGE_DAYS", "90"))
+PRUNE_MAX_SESSIONS = int(os.environ.get("COLD_STORE_MAX_SESSIONS", "10000"))
 
 # Retry settings
 MAX_RETRIES = 3
@@ -160,6 +165,11 @@ def _worker_loop(db_path: str) -> None:
                 try:
                     conn = cold_store.get_connection(effective_path)
                     cold_store.refresh_learned_strategies(conn)
+                    cold_store.prune_cold_store(
+                        conn,
+                        max_age_days=PRUNE_MAX_AGE_DAYS,
+                        max_sessions=PRUNE_MAX_SESSIONS,
+                    )
                     conn.close()
                     sessions_since_refresh = 0
                     log.info("Refreshed learned strategies after %d sessions", REFRESH_INTERVAL)

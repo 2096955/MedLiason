@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-import { PanelRightIcon, FileText, Network, RefreshCw, Link2 } from "lucide-react";
+import { PanelRightIcon, FileText, Network, RefreshCw, Link2, Database } from "lucide-react";
 
 import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@/lib/components/ui";
 import { useTaskContext, useChatContext } from "@/lib/hooks";
@@ -11,6 +11,7 @@ import { hasSourcesWithUrls } from "@/lib/utils";
 import { ArtifactPanel } from "./artifact/ArtifactPanel";
 import { FlowChartDetails } from "../activities/FlowChartDetails";
 import { RAGInfoPanel } from "./rag/RAGInfoPanel";
+import { DataSourcesPanel } from "./DataSourcesPanel";
 
 interface ChatSidePanelProps {
     onCollapsedToggle: (isSidePanelCollapsed: boolean) => void;
@@ -20,7 +21,7 @@ interface ChatSidePanelProps {
 }
 
 export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle, isSidePanelCollapsed, setIsSidePanelCollapsed, isSidePanelTransitioning }) => {
-    const { activeSidePanelTab, setActiveSidePanelTab, setPreviewArtifact, taskIdInSidePanel, ragData, ragEnabled } = useChatContext();
+    const { activeSidePanelTab, setActiveSidePanelTab, setPreviewArtifact, taskIdInSidePanel, ragData, ragEnabled, highlightedSourceId, setHighlightedSourceId } = useChatContext();
     const { isReconnecting, isTaskMonitorConnecting, isTaskMonitorConnected, monitoredTasks, connectTaskMonitorStream, loadTaskFromBackend } = useTaskContext();
     const [visualizedTask, setVisualizedTask] = useState<VisualizedTask | null>(null);
     const [isLoadingTask, setIsLoadingTask] = useState<boolean>(false);
@@ -149,7 +150,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
         onCollapsedToggle(newCollapsed);
     };
 
-    const handleTabClick = (tab: "files" | "activity" | "rag") => {
+    const handleTabClick = (tab: "files" | "activity" | "rag" | "datasources") => {
         if (tab === "files") {
             setPreviewArtifact(null);
         }
@@ -157,7 +158,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
         setActiveSidePanelTab(tab);
     };
 
-    const handleIconClick = (tab: "files" | "activity" | "rag") => {
+    const handleIconClick = (tab: "files" | "activity" | "rag" | "datasources") => {
         if (isSidePanelCollapsed) {
             setIsSidePanelCollapsed(false);
             onCollapsedToggle?.(false);
@@ -180,15 +181,19 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                     <FileText className="size-5" />
                 </Button>
 
-                <Button variant="ghost" size="sm" onClick={() => handleIconClick("activity")} className={hasSourcesInSession ? "mb-2 h-10 w-10 p-0" : "h-10 w-10 p-0"} tooltip="Activity">
+                <Button variant="ghost" size="sm" onClick={() => handleIconClick("activity")} className="mb-2 h-10 w-10 p-0" tooltip="Activity">
                     <Network className="size-5" />
                 </Button>
 
                 {hasSourcesInSession && (
-                    <Button variant="ghost" size="sm" onClick={() => handleIconClick("rag")} className="h-10 w-10 p-0" tooltip="Sources">
+                    <Button variant="ghost" size="sm" onClick={() => handleIconClick("rag")} className="mb-2 h-10 w-10 p-0" tooltip="Sources">
                         <Link2 className="size-5" />
                     </Button>
                 )}
+
+                <Button variant="ghost" size="sm" onClick={() => handleIconClick("datasources")} className="h-10 w-10 p-0" tooltip="Data Sources">
+                    <Database className="size-5" />
+                </Button>
             </div>
         );
     }
@@ -197,7 +202,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
     return (
         <div className="bg-background flex h-full flex-col border-l">
             <div className="m-1 min-h-0 flex-1">
-                <Tabs value={activeSidePanelTab} onValueChange={value => handleTabClick(value as "files" | "activity" | "rag")} className="flex h-full flex-col">
+                <Tabs value={activeSidePanelTab} onValueChange={value => handleTabClick(value as "files" | "activity" | "rag" | "datasources")} className="flex h-full flex-col">
                     <div className="@container flex gap-2 p-2">
                         <Button data-testid="collapsePanel" variant="ghost" onClick={toggleCollapsed} className="shrink-0 p-1" tooltip="Collapse Panel">
                             <PanelRightIcon className="size-5" />
@@ -215,7 +220,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                             <TabsTrigger
                                 value="activity"
                                 title="Activity"
-                                className={`border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none border-x-0 border-y px-2 data-[state=active]:z-10 ${!hasSourcesInSession ? "rounded-r-md border-r" : ""}`}
+                                className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none border-x-0 border-y px-2 data-[state=active]:z-10"
                             >
                                 <Network className="h-4 w-4 shrink-0" />
                                 <span className="ml-1.5 hidden truncate @[240px]:inline">Activity</span>
@@ -224,12 +229,20 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                                 <TabsTrigger
                                     value="rag"
                                     title="Sources"
-                                    className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none rounded-r-md border border-l-0 px-2 data-[state=active]:z-10"
+                                    className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none border-x-0 border-y px-2 data-[state=active]:z-10"
                                 >
                                     <Link2 className="h-4 w-4 shrink-0" />
                                     <span className="ml-1.5 hidden truncate @[240px]:inline">Sources</span>
                                 </TabsTrigger>
                             )}
+                            <TabsTrigger
+                                value="datasources"
+                                title="Data Sources"
+                                className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none rounded-r-md border border-l-0 px-2 data-[state=active]:z-10"
+                            >
+                                <Database className="h-4 w-4 shrink-0" />
+                                <span className="ml-1.5 hidden truncate @[240px]:inline">Data</span>
+                            </TabsTrigger>
                         </TabsList>
                     </div>
                     <div className="min-h-0 flex-1">
@@ -281,10 +294,16 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                         {hasSourcesInSession && (
                             <TabsContent value="rag" className="m-0 h-full">
                                 <div className="h-full">
-                                    <RAGInfoPanel ragData={taskIdInSidePanel ? ragData.filter(r => r.taskId === taskIdInSidePanel) : ragData} enabled={ragEnabled} />
+                                    <RAGInfoPanel ragData={taskIdInSidePanel ? ragData.filter(r => r.taskId === taskIdInSidePanel) : ragData} enabled={ragEnabled} highlightedSourceId={highlightedSourceId} onHighlightConsumed={() => setHighlightedSourceId(null)} />
                                 </div>
                             </TabsContent>
                         )}
+
+                        <TabsContent value="datasources" className="m-0 h-full">
+                            <div className="h-full">
+                                <DataSourcesPanel isActive={activeSidePanelTab === "datasources"} />
+                            </div>
+                        </TabsContent>
                     </div>
                 </Tabs>
             </div>

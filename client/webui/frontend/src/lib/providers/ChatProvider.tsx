@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useCallback, useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef, type FormEvent, type ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 // Wrapper to force uuid to use crypto.getRandomValues() fallback instead of crypto.randomUUID()
@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 const v4 = () => uuidv4({});
 
 import { api } from "@/lib/api";
-import { ChatContext, type ChatContextValue, type PendingPromptData } from "@/lib/contexts";
+import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
 import { useProjectContext, registerProjectDeletedCallback } from "@/lib/providers";
 import { getErrorMessage, fileToBase64, migrateTask, CURRENT_SCHEMA_VERSION, getApiBearerToken, internalToDisplayText } from "@/lib/utils";
@@ -57,6 +57,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [isResponding, setIsResponding] = useState<boolean>(false);
 
     // RAG State
+    const [highlightedSourceId, setHighlightedSourceId] = useState<string | null>(null);
     const [ragData, _setRagData] = useState<RAGSearchResult[]>([]);
     const ragDataRef = useRef<RAGSearchResult[]>([]);
     const [ragEnabled] = useState<boolean>(true);
@@ -77,6 +78,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [isCancelling, setIsCancelling] = useState<boolean>(false); // New state for cancellation
 
     const savingTasksRef = useRef<Set<string>>(new Set());
+
+    // Chat SSE reconnection state
+    const chatSseReconnectionAttemptsRef = useRef(0);
+    const chatSseReconnectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const CHAT_SSE_MAX_ATTEMPTS = 5;
+    const CHAT_SSE_BASE_DELAY_MS = 1000;
+    const CHAT_SSE_MAX_DELAY_MS = 16000;
 
     // Track isCancelling in ref to access in async callbacks
     const isCancellingRef = useRef(isCancelling);
@@ -134,7 +142,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     // Side Panel Control State
     const [isSidePanelCollapsed, setIsSidePanelCollapsed] = useState<boolean>(true);
-    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag">("files");
+    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag" | "datasources">("files");
 
     // Feedback State
     const [submittedFeedback, setSubmittedFeedback] = useState<Record<string, { type: "up" | "down"; text: string }>>({});
@@ -811,7 +819,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
     const [isLoadingSession, setIsLoadingSession] = useState<boolean>(false);
 
-    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag") => {
+    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag" | "datasources") => {
         setIsSidePanelCollapsed(false);
         setActiveSidePanelTab(tab);
 
@@ -853,6 +861,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 rpcResponse = JSON.parse(event.data) as SendStreamingMessageSuccessResponse | JSONRPCErrorResponse;
             } catch (error: unknown) {
                 console.error("Failed to parse SSE message:", error);
+                addNotification("Failed to process a server event. Some data may be missing.", "warning");
                 return;
             }
 
@@ -2217,13 +2226,49 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     );
 
     const handleSseOpen = useCallback(() => {
-        /* console.log for SSE open */
+        // Reset reconnection state on successful connection
+        chatSseReconnectionAttemptsRef.current = 0;
+        if (chatSseReconnectionTimeoutRef.current) {
+            clearTimeout(chatSseReconnectionTimeoutRef.current);
+            chatSseReconnectionTimeoutRef.current = null;
+        }
     }, []);
 
     const handleSseError = useCallback(() => {
+        // If actively responding and not finalizing/cancelling, attempt reconnection
         if (isResponding && !isFinalizing.current && !isCancellingRef.current) {
-            setError({ title: "Connection Failed", error: "Connection lost. Please try again." });
+            if (chatSseReconnectionAttemptsRef.current < CHAT_SSE_MAX_ATTEMPTS) {
+                const attempt = chatSseReconnectionAttemptsRef.current;
+                const exponentialDelay = Math.min(CHAT_SSE_BASE_DELAY_MS * Math.pow(2, attempt), CHAT_SSE_MAX_DELAY_MS);
+                const delay = Math.round(exponentialDelay * (0.9 + Math.random() * 0.2));
+                console.log(`[ChatSSE] Connection lost. Reconnecting attempt ${attempt + 1}/${CHAT_SSE_MAX_ATTEMPTS} in ${delay}ms...`);
+
+                chatSseReconnectionAttemptsRef.current += 1;
+                latestStatusText.current = "Reconnecting...";
+
+                // Close the broken connection
+                closeCurrentEventSource();
+
+                // Schedule reconnection by re-setting currentTaskId after a delay
+                // The useEffect watching currentTaskId will re-establish the SSE connection
+                const taskIdToReconnect = currentTaskId;
+                chatSseReconnectionTimeoutRef.current = setTimeout(() => {
+                    chatSseReconnectionTimeoutRef.current = null;
+                    if (taskIdToReconnect) {
+                        // Briefly clear and re-set to trigger the useEffect
+                        setCurrentTaskId(null);
+                        // Use microtask to ensure the null is processed first
+                        queueMicrotask(() => setCurrentTaskId(taskIdToReconnect));
+                    }
+                }, delay);
+                return;
+            }
+            // Max attempts reached — show error
+            setError({ title: "Connection Failed", error: "Connection lost after multiple retry attempts. Please try again." });
+            chatSseReconnectionAttemptsRef.current = 0;
         }
+
+        // Original cleanup for non-reconnectable cases or max attempts exceeded
         if (!isFinalizing.current) {
             setIsResponding(false);
             if (!isCancellingRef.current) {
@@ -2233,7 +2278,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             latestStatusText.current = null;
         }
         setMessages(prev => prev.filter(msg => !msg.isStatusBubble).map((m, i, arr) => (i === arr.length - 1 && !m.isUser ? { ...m, isComplete: true } : m)));
-    }, [closeCurrentEventSource, isResponding, setError]);
+    }, [closeCurrentEventSource, isResponding, currentTaskId, setError]);
 
     const cleanupUploadedFiles = useCallback(async (uploadedFiles: Array<{ filename: string; sessionId: string }>) => {
         if (uploadedFiles.length === 0) {
@@ -2839,12 +2884,58 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             };
         } else {
             closeCurrentEventSource();
+            // Clean up any pending reconnection timeout
+            if (chatSseReconnectionTimeoutRef.current) {
+                clearTimeout(chatSseReconnectionTimeoutRef.current);
+                chatSseReconnectionTimeoutRef.current = null;
+            }
+            chatSseReconnectionAttemptsRef.current = 0;
         }
     }, [currentTaskId, closeCurrentEventSource]);
+
+    // --- Sub-context memoized values (Phase E Round 1) ---
+    const notificationValue = useMemo(
+        () => ({
+            notifications,
+            configCollectFeedback,
+            submittedFeedback,
+            addNotification,
+            handleFeedbackSubmit,
+            displayError: setError,
+        }),
+        [notifications, configCollectFeedback, submittedFeedback, addNotification, handleFeedbackSubmit, setError]
+    );
+
+    const agentValue = useMemo(
+        () => ({
+            agents,
+            agentsError,
+            agentsLoading,
+            agentsRefetch,
+            agentNameDisplayNameMap,
+        }),
+        [agents, agentsError, agentsLoading, agentsRefetch, agentNameDisplayNameMap]
+    );
+
+    const sidePanelValue = useMemo(
+        () => ({
+            isSidePanelCollapsed,
+            activeSidePanelTab,
+            taskIdInSidePanel,
+            setIsSidePanelCollapsed,
+            setActiveSidePanelTab,
+            openSidePanelTab,
+            setTaskIdInSidePanel,
+        }),
+        [isSidePanelCollapsed, activeSidePanelTab, taskIdInSidePanel, openSidePanelTab]
+    );
+    // --- End sub-context values ---
 
     const contextValue: ChatContextValue = {
         ragData,
         ragEnabled,
+        highlightedSourceId,
+        setHighlightedSourceId,
         configCollectFeedback,
         submittedFeedback,
         handleFeedbackSubmit,
@@ -2944,22 +3035,28 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     }, []);
 
     return (
-        <ChatContext.Provider value={contextValue}>
-            {children}
-            <ErrorDialog />
-            {/* Warning dialog when user tries to navigate away while a task is running and background tasks are disabled */}
-            <ConfirmationDialog
-                open={runningTaskWarningOpen}
-                title="Task in Progress"
-                description="A task is currently running. If you navigate away now, you may lose the response. Are you sure you want to leave?"
-                onOpenChange={setRunningTaskWarningOpen}
-                onConfirm={handleConfirmNavigation}
-                onCancel={handleCancelNavigation}
-                actionLabels={{
-                    cancel: "Stay",
-                    confirm: "Leave Anyway",
-                }}
-            />
-        </ChatContext.Provider>
+        <NotificationContext.Provider value={notificationValue}>
+            <AgentContext.Provider value={agentValue}>
+                <SidePanelContext.Provider value={sidePanelValue}>
+                    <ChatContext.Provider value={contextValue}>
+                        {children}
+                        <ErrorDialog />
+                        {/* Warning dialog when user tries to navigate away while a task is running and background tasks are disabled */}
+                        <ConfirmationDialog
+                            open={runningTaskWarningOpen}
+                            title="Task in Progress"
+                            description="A task is currently running. If you navigate away now, you may lose the response. Are you sure you want to leave?"
+                            onOpenChange={setRunningTaskWarningOpen}
+                            onConfirm={handleConfirmNavigation}
+                            onCancel={handleCancelNavigation}
+                            actionLabels={{
+                                cancel: "Stay",
+                                confirm: "Leave Anyway",
+                            }}
+                        />
+                    </ChatContext.Provider>
+                </SidePanelContext.Provider>
+            </AgentContext.Provider>
+        </NotificationContext.Provider>
     );
 };

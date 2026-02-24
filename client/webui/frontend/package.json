@@ -1,20 +1,20 @@
 {
-    "name": "@SolaceLabs/solace-agent-mesh-ui",
+    "name": "@MedExpert/medexpert-ui",
     "version": "1.48.0",
-    "description": "Solace Agent Mesh UI components - React library for building agent communication interfaces",
-    "author": "SolaceLabs <solacelabs@solace.com>",
+    "description": "MedExpert UI components - React library for building agent communication interfaces",
+    "author": "MedExpert",
     "license": "Apache-2.0",
     "repository": {
         "type": "git",
-        "url": "https://github.com/SolaceLabs/solace-agent-mesh",
+        "url": "https://github.com/MedExpert/medexpert",
         "directory": "client/webui/frontend"
     },
-    "homepage": "https://github.com/SolaceLabs/solace-agent-mesh/tree/main/client/webui/frontend",
+    "homepage": "https://github.com/MedExpert/medexpert/tree/main/client/webui/frontend",
     "bugs": {
-        "url": "https://github.com/SolaceLabs/solace-agent-mesh/issues"
+        "url": "https://github.com/MedExpert/medexpert/issues"
     },
     "keywords": [
-        "solace",
+        "medexpert",
         "agent-mesh",
         "ai",
         "react",
@@ -31,7 +31,7 @@
             "import": "./dist/index.js",
             "require": "./dist/index.cjs"
         },
-        "./dist/solace-agent-mesh-ui.css": "./dist/solace-agent-mesh-ui.css"
+        "./dist/medexpert-ui.css": "./dist/medexpert-ui.css"
     },
     "files": [
         "dist",
@@ -82,6 +82,7 @@
         "@stepperize/react": "^5.1.9",
         "@tanstack/react-query": "5.90.16",
         "@tanstack/react-table": "^8.21.3",
+        "@tanstack/react-virtual": "^3.13.19",
         "@use-gesture/react": "^10.3.1",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",

@@ -17,6 +17,22 @@
     animation: pulse-generating 1.5s ease-in-out infinite;
 }
 
+/* Highlight animation for citation scroll-to-source */
+@keyframes highlight-pulse {
+    0% {
+        background-color: hsl(var(--primary) / 0.25);
+        box-shadow: 0 0 0 2px hsl(var(--primary) / 0.3);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+.highlight-pulse {
+    animation: highlight-pulse 2s ease-out;
+}
+
 @theme inline {
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
@@ -60,7 +76,7 @@
 :root {
     --radius: 0.625rem;
 
-    /* Light theme - referencing Solace palette variables */
+    /* Light theme - referencing MedExpert palette variables */
     /* These variables are injected by applyCustomTheme() function */
     --background: var(--color-background-w10);
     --foreground: var(--color-primary-text-wMain);
@@ -100,7 +116,7 @@
 }
 
 .dark {
-    /* Dark theme - referencing Solace palette variables */
+    /* Dark theme - referencing MedExpert palette variables */
     /* These variables are injected by applyCustomTheme() function */
     --background: var(--color-background-w100);
     --foreground: var(--color-primary-text-w10);
@@ -317,8 +333,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background-color: hsl(var(--muted) / 0.5);
-    border: 1px solid hsl(var(--border));
+    background-color: color-mix(in srgb, var(--muted) 50%, transparent);
+    border: 1px solid var(--border);
     border-radius: 0.375rem;
     padding: 0.5rem 0.75rem;
     margin-bottom: 0.75rem;
@@ -331,12 +347,12 @@
     flex-shrink: 0;
     width: 1rem;
     height: 1rem;
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
 }
 
 .context-quote-text {
     font-style: italic;
-    color: hsl(var(--muted-foreground));
+    color: var(--muted-foreground);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

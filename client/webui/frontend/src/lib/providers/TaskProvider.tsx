@@ -33,6 +33,8 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
     const [reconnectionAttempts, setReconnectionAttempts] = useState<number>(0);
     const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
     const maxReconnectionAttempts = 10;
+    const BASE_RECONNECT_DELAY_MS = 1000;
+    const MAX_RECONNECT_DELAY_MS = 30000;
 
     const taskMonitorEventSourceRef = useRef<EventSource | null>(null);
     const taskMonitorSseStreamIdRef = useRef<string | null>(null);
@@ -203,7 +205,8 @@ export const TaskProvider: React.FC<TaskProviderProps> = ({ children }) => {
             return;
         }
 
-        const delay = 2000;
+        const exponentialDelay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectionAttempts), MAX_RECONNECT_DELAY_MS);
+        const delay = Math.round(exponentialDelay * (0.9 + Math.random() * 0.2));
         console.log(`TaskMonitorContext: Attempting reconnection ${reconnectionAttempts + 1}/${maxReconnectionAttempts} in ${delay}ms...`);
 
         setIsReconnecting(true);

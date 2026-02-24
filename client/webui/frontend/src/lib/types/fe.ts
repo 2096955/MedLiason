@@ -7,7 +7,7 @@ import type { AgentCard, AgentSkill, Part } from "./be";
 export interface A2AEventSSEPayload {
     event_type: "a2a_message" | string;
     timestamp: string; // ISO 8601
-    solace_topic: string;
+    medexpert_topic: string;
     direction: "request" | "response" | "status_update" | "artifact_update" | "discovery" | string;
     source_entity: string;
     target_entity: string;
@@ -61,6 +61,8 @@ export interface AgentCardInfo extends AgentInfo {
     peerAgents?: string[];
     tools?: AgentSkill[];
     isWorkflow?: boolean;
+    healthStatus?: "online" | "offline";
+    lastSeenSecondsAgo?: number;
 }
 
 // This is a UI-specific type for managing artifacts in the side panel.
@@ -241,7 +243,7 @@ export interface RAGSource {
 export interface RAGSearchResult {
     query: string;
     title?: string; // LLM-generated human-readable title for deep research
-    searchType: "file_search" | "kb_search" | "deep_research" | "web_search";
+    searchType: "file_search" | "kb_search" | "deep_research" | "web_search" | "document_search";
     turnNumber?: number; // Turn number for citation tracking
     timestamp: string;
     sources: RAGSource[];

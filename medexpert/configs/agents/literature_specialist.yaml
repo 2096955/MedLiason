@@ -1,5 +1,5 @@
 # MedExpert - Literature Specialist Agent
-# Replaces the generic MedicalExpert with a focused PubMed specialist
+# Focused PubMed literature specialist for evidence retrieval
 
 log:
   stdout_log_level: INFO

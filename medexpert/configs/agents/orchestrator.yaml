@@ -227,8 +227,6 @@ apps:
           `status_update` embed directives.
         - If the question is clearly non-medical, respond directly without
           invoking the full protocol.
-        - For simple factual medical questions, delegate to `peer_MedicalExpert`
-          which has web search capabilities and handles citations directly.
         - For complex multi-faceted questions, use the full protocol.
         - Preserve any `[[cite:...]]` markers from peer agent responses.
         - Session timeout: If the full protocol has been running for more
@@ -333,7 +331,6 @@ apps:
           - "GenomicsSpecialist"
           - "EnvironmentalSpecialist"
           - "ProviderIntelSpecialist"
-          - "MedicalExpert"
           - "VerifierAgent"
           - "ReviserAgent"
         request_timeout_seconds: 2000

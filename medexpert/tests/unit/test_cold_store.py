@@ -509,3 +509,193 @@ def test_get_strategy_by_type(db):
 
 def test_get_strategy_by_type_missing(db):
     assert cold_store.get_strategy_by_type(db, "routing", "nonexistent") is None
+
+
+# ── fuzzy query matching (Jaccard) ────────────────────────────
+
+
+def test_jaccard_similarity():
+    assert cold_store._jaccard_similarity({"a", "b", "c"}, {"b", "c", "d"}) == pytest.approx(0.5)
+    assert cold_store._jaccard_similarity({"a", "b"}, {"a", "b"}) == 1.0
+    assert cold_store._jaccard_similarity({"a"}, {"b"}) == 0.0
+    assert cold_store._jaccard_similarity(set(), {"a"}) == 0.0
+    assert cold_store._jaccard_similarity(set(), set()) == 0.0
+
+
+def test_get_query_intelligence_exact_match_returns_similarity_one(db):
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="effects metformin side",
+        domain="drugs",
+        coverage_pct=0.8,
+        verification_score=0.9,
+    )
+    db.commit()
+    intel = cold_store.get_query_intelligence(db, "effects metformin side")
+    assert intel is not None
+    assert intel["similarity"] == 1.0
+    assert intel["template"] == "effects metformin side"
+
+
+def test_get_query_intelligence_fuzzy_match(db):
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="effects metformin side",
+        domain="drugs",
+        coverage_pct=0.8,
+        verification_score=0.9,
+    )
+    db.commit()
+    # "adverse effects metformin" has 2 tokens overlapping with 3-token template
+    # Jaccard = 2 / 4 = 0.5 — right at threshold
+    intel = cold_store.get_query_intelligence(db, "adverse effects metformin")
+    assert intel is not None
+    assert intel["similarity"] >= 0.5
+    assert intel["template"] == "effects metformin side"
+
+
+def test_get_query_intelligence_below_threshold(db):
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="diabetes treatment insulin",
+        domain="drugs",
+        coverage_pct=0.7,
+        verification_score=0.8,
+    )
+    db.commit()
+    # Zero token overlap
+    intel = cold_store.get_query_intelligence(db, "cardiac stent placement")
+    assert intel is None
+
+
+def test_get_query_intelligence_best_of_multiple(db):
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="effects metformin side",
+        domain="drugs",
+        coverage_pct=0.8,
+        verification_score=0.9,
+    )
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="metformin dosage diabetes",
+        domain="drugs",
+        coverage_pct=0.6,
+        verification_score=0.7,
+    )
+    db.commit()
+    # "metformin side" overlaps with first: 2/3=0.67, with second: 1/4=0.25
+    intel = cold_store.get_query_intelligence(db, "metformin side")
+    assert intel is not None
+    assert intel["template"] == "effects metformin side"
+
+
+def test_get_query_intelligence_custom_threshold(db):
+    cold_store.upsert_query_pattern(
+        db,
+        normalized_template="abc def ghi",
+        domain="drugs",
+        coverage_pct=0.8,
+        verification_score=0.9,
+    )
+    db.commit()
+    # "abc xyz" has Jaccard = 1/4 = 0.25
+    assert cold_store.get_query_intelligence(db, "abc xyz") is None
+    intel = cold_store.get_query_intelligence(db, "abc xyz", similarity_threshold=0.2)
+    assert intel is not None
+
+
+# ── pruning ──────────────────────────────────────────────────
+
+
+def test_prune_age_based(db):
+    """Sessions older than max_age_days are deleted."""
+    db.execute(
+        "INSERT INTO session_outcomes (session_id, query_domain, created_at) "
+        "VALUES ('old-1', 'drugs', datetime('now', '-100 days'))"
+    )
+    cold_store.write_session_outcome(db, session_id="new-1", query_domain="drugs")
+    db.commit()
+    assert cold_store.get_session_count(db) == 2
+
+    result = cold_store.prune_cold_store(db, max_age_days=90)
+    assert result["age_based"] == 1
+    assert cold_store.get_session_count(db) == 1
+
+
+def test_prune_count_based(db):
+    """Excess sessions beyond max_sessions are pruned (oldest first)."""
+    for i in range(15):
+        cold_store.write_session_outcome(
+            db, session_id=f"cnt-{i:03d}", query_domain="drugs"
+        )
+    db.commit()
+    assert cold_store.get_session_count(db) == 15
+
+    result = cold_store.prune_cold_store(db, max_sessions=10, max_age_days=9999)
+    assert result["count_based"] == 5
+    assert cold_store.get_session_count(db) == 10
+
+
+def test_prune_cascades_to_children(db):
+    """Pruning sessions cascades to source_reliability and routing_patterns."""
+    db.execute(
+        "INSERT INTO session_outcomes (session_id, query_domain, created_at) "
+        "VALUES ('old-cascade', 'drugs', datetime('now', '-200 days'))"
+    )
+    cold_store.write_source_reliability(
+        db, session_id="old-cascade", source_name="pubmed"
+    )
+    cold_store.write_routing_pattern(
+        db, session_id="old-cascade", query_domain="drugs",
+        agent_name="DrugSpecialist",
+    )
+    db.commit()
+
+    cold_store.prune_cold_store(db, max_age_days=90)
+    assert len(db.execute(
+        "SELECT * FROM source_reliability WHERE session_id='old-cascade'"
+    ).fetchall()) == 0
+    assert len(db.execute(
+        "SELECT * FROM routing_patterns WHERE session_id='old-cascade'"
+    ).fetchall()) == 0
+
+
+def test_prune_vacuum_threshold(db):
+    """VACUUM runs only when > 100 rows are deleted."""
+    for i in range(150):
+        db.execute(
+            "INSERT INTO session_outcomes (session_id, query_domain, created_at) "
+            f"VALUES ('vac-{i:03d}', 'drugs', datetime('now', '-200 days'))"
+        )
+    db.commit()
+
+    result = cold_store.prune_cold_store(db, max_age_days=90)
+    assert result["vacuumed"] is True
+
+
+def test_prune_no_op_when_within_limits(db):
+    """Pruning with nothing to prune returns zeroes."""
+    cold_store.write_session_outcome(db, session_id="ok-1", query_domain="drugs")
+    db.commit()
+    result = cold_store.prune_cold_store(db, max_age_days=90, max_sessions=10000)
+    assert result["age_based"] == 0
+    assert result["count_based"] == 0
+    assert result["vacuumed"] is False
+
+
+def test_prune_cleans_old_query_patterns(db):
+    """Old query_patterns are pruned by age."""
+    db.execute(
+        "INSERT INTO query_patterns (normalized_template, domain, updated_at) "
+        "VALUES ('old pattern', 'drugs', datetime('now', '-100 days'))"
+    )
+    cold_store.upsert_query_pattern(
+        db, normalized_template="new pattern", domain="drugs"
+    )
+    db.commit()
+
+    cold_store.prune_cold_store(db, max_age_days=90)
+    rows = db.execute("SELECT * FROM query_patterns").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["normalized_template"] == "new pattern"

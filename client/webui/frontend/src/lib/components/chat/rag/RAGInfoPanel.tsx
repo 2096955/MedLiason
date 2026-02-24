@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink } from "lucide-react";
 // Web-only version - enterprise icons removed
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RAGSearchResult } from "@/lib/types";
 
 interface TimelineEvent {
@@ -17,6 +18,8 @@ interface TimelineEvent {
 interface RAGInfoPanelProps {
     ragData: RAGSearchResult[] | null;
     enabled: boolean;
+    highlightedSourceId?: string | null;
+    onHighlightConsumed?: () => void;
 }
 
 /**
@@ -46,7 +49,8 @@ const extractFilename = (filename: string | undefined): string => {
 
 const SourceCard: React.FC<{
     source: RAGSearchResult["sources"][0];
-}> = ({ source }) => {
+    isHighlighted?: boolean;
+}> = ({ source, isHighlighted }) => {
     const [isExpanded, setIsExpanded] = React.useState(false);
     const contentPreview = source.contentPreview;
     const sourceType = source.sourceType || "web";
@@ -72,7 +76,7 @@ const SourceCard: React.FC<{
     const showScore = source.relevanceScore !== 1.0;
 
     return (
-        <div className="bg-muted/50 border-border/50 flex flex-col rounded border p-3">
+        <div data-citation-id={source.citationId} className={`bg-muted/50 border-border/50 flex flex-col rounded border p-3 ${isHighlighted ? "highlight-pulse" : ""}`}>
             {/* Source Header */}
             <div className="mb-2 flex flex-shrink-0 items-center justify-between">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -142,7 +146,95 @@ const SourceCard: React.FC<{
     );
 };
 
-export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled }) => {
+/** Virtualized list for SourceCards — only virtualizes when items exceed VIRTUALIZE_THRESHOLD */
+const VIRTUALIZE_THRESHOLD = 20;
+
+const VirtualizedSourceCardList: React.FC<{
+    ragData: RAGSearchResult[];
+    highlightedSourceId?: string | null;
+}> = ({ ragData, highlightedSourceId }) => {
+    const parentRef = useRef<HTMLDivElement>(null);
+
+    // Flatten sources for virtualization
+    const flatSources = React.useMemo(() => {
+        const sources: RAGSearchResult["sources"][0][] = [];
+        ragData.forEach(search => {
+            search.sources.forEach(source => {
+                const sourceType = source.sourceType || "web";
+                if (sourceType === "image") {
+                    if (source.sourceUrl || source.metadata?.link) sources.push(source);
+                } else {
+                    sources.push(source);
+                }
+            });
+        });
+        return sources;
+    }, [ragData]);
+
+    const virtualizer = useVirtualizer({
+        count: flatSources.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 120,
+        overscan: 10,
+    });
+
+    // For small lists, skip virtualization
+    if (flatSources.length <= VIRTUALIZE_THRESHOLD) {
+        return (
+            <div className="space-y-2">
+                {flatSources.map((source, idx) => (
+                    <SourceCard key={idx} source={source} isHighlighted={highlightedSourceId === source.citationId} />
+                ))}
+            </div>
+        );
+    }
+
+    return (
+        <div ref={parentRef} className="overflow-y-auto" style={{ height: "100%", maxHeight: "calc(100vh - 200px)" }}>
+            <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+                {virtualizer.getVirtualItems().map(virtualRow => (
+                    <div
+                        key={virtualRow.key}
+                        ref={virtualizer.measureElement}
+                        data-index={virtualRow.index}
+                        style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            transform: `translateY(${virtualRow.start}px)`,
+                            paddingBottom: "8px",
+                        }}
+                    >
+                        <SourceCard source={flatSources[virtualRow.index]} isHighlighted={highlightedSourceId === flatSources[virtualRow.index].citationId} />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, highlightedSourceId, onHighlightConsumed }) => {
+    // Scroll to highlighted source when citation is clicked
+    useEffect(() => {
+        if (!highlightedSourceId) return;
+
+        // Small delay to ensure DOM is updated after tab switch
+        const timeout = setTimeout(() => {
+            const el = document.querySelector(`[data-citation-id="${highlightedSourceId}"]`);
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                el.classList.add("highlight-pulse");
+                setTimeout(() => {
+                    el.classList.remove("highlight-pulse");
+                    onHighlightConsumed?.();
+                }, 2000);
+            } else {
+                onHighlightConsumed?.();
+            }
+        }, 150);
+        return () => clearTimeout(timeout);
+    }, [highlightedSourceId, onHighlightConsumed]);
     if (!enabled) {
         return (
             <div className="flex h-full items-center justify-center p-4">
@@ -184,7 +276,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled }) 
     }, 0);
 
     // Simple source item component for deep research
-    const SimpleSourceItem: React.FC<{ source: RAGSearchResult["sources"][0] }> = ({ source }) => {
+    const SimpleSourceItem: React.FC<{ source: RAGSearchResult["sources"][0]; isHighlighted?: boolean }> = ({ source, isHighlighted }) => {
         const sourceType = source.sourceType || "web";
 
         // For image sources, use the source page link (not the imageUrl)
@@ -202,7 +294,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled }) 
         const favicon = source.metadata?.favicon || (url ? `https://www.google.com/s2/favicons?domain=${url}&sz=32` : "");
 
         return (
-            <div className="hover:bg-muted/50 -mx-2 flex items-center gap-2 rounded px-2 py-1.5">
+            <div data-citation-id={source.citationId} className={`hover:bg-muted/50 -mx-2 flex items-center gap-2 rounded px-2 py-1.5 ${isHighlighted ? "highlight-pulse" : ""}`}>
                 {favicon && (
                     <img
                         src={favicon}
@@ -519,20 +611,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled }) 
                             </p>
                         </div>
 
-                        <div className="space-y-2">
-                            {ragData.map((search, searchIdx) =>
-                                search.sources
-                                    .filter(source => {
-                                        const sourceType = source.sourceType || "web";
-                                        // Include images only if they have a source link
-                                        if (sourceType === "image") {
-                                            return source.sourceUrl || source.metadata?.link;
-                                        }
-                                        return true;
-                                    })
-                                    .map((source, sourceIdx) => <SourceCard key={`${searchIdx}-${sourceIdx}`} source={source} />)
-                            )}
-                        </div>
+                        <VirtualizedSourceCardList ragData={ragData} highlightedSourceId={highlightedSourceId} />
                     </TabsContent>
                 </Tabs>
             )}

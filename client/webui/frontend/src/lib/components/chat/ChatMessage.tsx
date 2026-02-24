@@ -127,7 +127,7 @@ const getUserFriendlyErrorMessage = (technicalMessage: string): string => {
 
 const MessageContent = React.memo<{ message: MessageFE; isStreaming?: boolean; highlightedText?: string | null }>(({ message, isStreaming, highlightedText }) => {
     const [renderError, setRenderError] = useState<string | null>(null);
-    const { sessionId, ragData, openSidePanelTab, setTaskIdInSidePanel } = useChatContext();
+    const { sessionId, ragData, openSidePanelTab, setTaskIdInSidePanel, setHighlightedSourceId } = useChatContext();
     const contentRef = React.useRef<HTMLDivElement>(null);
 
     // Effect to highlight specific text when highlightedText changes
@@ -475,11 +475,14 @@ const MessageContent = React.memo<{ message: MessageFE; isStreaming?: boolean; h
         return parseCitations(modifiedText, taskRagData);
     }, [modifiedText, taskRagData, message.isUser]);
 
-    const handleCitationClick = () => {
+    const handleCitationClick = (citation?: { citationId?: string }) => {
         // Open RAG panel when citation is clicked
         if (message.taskId) {
             setTaskIdInSidePanel(message.taskId);
             openSidePanelTab("rag");
+            if (citation?.citationId) {
+                setHighlightedSourceId(citation.citationId);
+            }
         }
     };
 

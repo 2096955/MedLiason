@@ -507,25 +507,77 @@ def get_source_rankings(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
     }
 
 
-def get_query_intelligence(
-    conn: sqlite3.Connection, normalized: str
-) -> Optional[dict[str, Any]]:
-    """Fetch historical stats for a normalised query template."""
-    row = conn.execute(
-        """SELECT normalized_template, domain, frequency,
-                  avg_coverage_pct, avg_verification_score
-           FROM query_patterns WHERE normalized_template = ?""",
-        (normalized,),
-    ).fetchone()
-    if not row:
-        return None
+def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
+    """Jaccard index: |intersection| / |union|."""
+    if not set_a or not set_b:
+        return 0.0
+    intersection = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return intersection / union if union else 0.0
+
+
+DEFAULT_SIMILARITY_THRESHOLD = 0.5
+
+
+def _row_to_query_intel(
+    row: sqlite3.Row, similarity: float = 1.0
+) -> dict[str, Any]:
+    """Convert a query_patterns row to a query intelligence dict."""
     return {
         "template": row["normalized_template"],
         "domain": row["domain"],
         "frequency": row["frequency"],
         "avg_coverage_pct": round(row["avg_coverage_pct"], 3),
         "avg_verification_score": round(row["avg_verification_score"], 3),
+        "similarity": similarity,
     }
+
+
+def get_query_intelligence(
+    conn: sqlite3.Connection,
+    normalized: str,
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+) -> Optional[dict[str, Any]]:
+    """Fetch historical stats for a normalised query template.
+
+    Tries exact match first.  If none found, computes Jaccard similarity
+    across all stored query_patterns and returns the best match above
+    *similarity_threshold*.
+    """
+    # Fast path: exact match
+    row = conn.execute(
+        """SELECT normalized_template, domain, frequency,
+                  avg_coverage_pct, avg_verification_score
+           FROM query_patterns WHERE normalized_template = ?""",
+        (normalized,),
+    ).fetchone()
+    if row:
+        return _row_to_query_intel(row, similarity=1.0)
+
+    # Fuzzy fallback: Jaccard over all patterns
+    query_tokens = set(normalized.split())
+    if not query_tokens:
+        return None
+
+    all_rows = conn.execute(
+        """SELECT normalized_template, domain, frequency,
+                  avg_coverage_pct, avg_verification_score
+           FROM query_patterns"""
+    ).fetchall()
+
+    best_row = None
+    best_sim = 0.0
+    for candidate in all_rows:
+        candidate_tokens = set(candidate["normalized_template"].split())
+        sim = _jaccard_similarity(query_tokens, candidate_tokens)
+        if sim > best_sim:
+            best_sim = sim
+            best_row = candidate
+
+    if best_row and best_sim >= similarity_threshold:
+        return _row_to_query_intel(best_row, similarity=round(best_sim, 3))
+
+    return None
 
 
 def get_best_agent_pairs(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
@@ -582,3 +634,82 @@ def normalize_query(text: str) -> str:
     text = re.sub(r"[^\w\s]", " ", text)
     tokens = [t for t in text.split() if t and t not in _STOP_WORDS]
     return " ".join(sorted(set(tokens)))
+
+
+# ---------------------------------------------------------------------------
+# Pruning
+# ---------------------------------------------------------------------------
+
+DEFAULT_MAX_AGE_DAYS = 90
+DEFAULT_MAX_SESSIONS = 10_000
+
+
+def prune_cold_store(
+    conn: sqlite3.Connection,
+    max_age_days: int = DEFAULT_MAX_AGE_DAYS,
+    max_sessions: int = DEFAULT_MAX_SESSIONS,
+) -> dict[str, Any]:
+    """Delete old session data and enforce row limits.
+
+    Deletes sessions older than *max_age_days* first, then trims the
+    oldest sessions if the count still exceeds *max_sessions*.
+    Child rows (source_reliability, routing_patterns) are removed
+    automatically via ON DELETE CASCADE.
+
+    Returns a dict with counts of deleted rows.
+    """
+    deleted: dict[str, Any] = {"age_based": 0, "count_based": 0, "vacuumed": False}
+
+    # 1. Age-based pruning
+    cursor = conn.execute(
+        "DELETE FROM session_outcomes "
+        "WHERE created_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+    deleted["age_based"] = cursor.rowcount
+
+    # 2. Count-based pruning (keep newest max_sessions)
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM session_outcomes"
+    ).fetchone()
+    current_count = row["cnt"] if row else 0
+
+    if current_count > max_sessions:
+        excess = current_count - max_sessions
+        conn.execute(
+            "DELETE FROM session_outcomes WHERE session_id IN ("
+            "  SELECT session_id FROM session_outcomes "
+            "  ORDER BY created_at ASC LIMIT ?"
+            ")",
+            (excess,),
+        )
+        deleted["count_based"] = excess
+
+    # 3. Prune old query_patterns
+    conn.execute(
+        "DELETE FROM query_patterns "
+        "WHERE updated_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+
+    # 4. Prune old agent_coactivation entries
+    conn.execute(
+        "DELETE FROM agent_coactivation "
+        "WHERE updated_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+
+    conn.commit()
+
+    total_deleted = deleted["age_based"] + deleted["count_based"]
+    if total_deleted > 100:
+        conn.execute("VACUUM")
+        deleted["vacuumed"] = True
+
+    log.info(
+        "Cold store pruned: %d age-based, %d count-based, vacuum=%s",
+        deleted["age_based"],
+        deleted["count_based"],
+        deleted["vacuumed"],
+    )
+    return deleted
