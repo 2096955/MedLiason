@@ -555,6 +555,9 @@ def get_query_intelligence(
         return _row_to_query_intel(row, similarity=1.0)
 
     # Fuzzy fallback: Jaccard over all patterns
+    # TODO(perf): This is O(n) where n = number of query_patterns rows. At 10K+ patterns,
+    # fetchall() loads everything into memory and iterates. Consider MinHash or BM25 index
+    # for large-scale deployments. Current max_sessions=10000 makes this bounded but slow.
     query_tokens = set(normalized.split())
     if not query_tokens:
         return None

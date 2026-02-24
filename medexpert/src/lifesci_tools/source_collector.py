@@ -133,6 +133,14 @@ class SourceCollectorTool(DynamicTool):
                                 type=adk_types.Type.STRING,
                                 description="API endpoint that returned this data.",
                             ),
+                            "evidence_grade": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="GRADE evidence quality: High, Moderate, Low, Very Low.",
+                            ),
+                            "study_type": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="Study design type: meta_analysis, rct, cohort, case_control, etc.",
+                            ),
                         },
                         required=["title", "snippet"],
                     ),
@@ -189,6 +197,8 @@ class SourceCollectorTool(DynamicTool):
                     "agent_name": src.get("agent_name", ""),
                     "mcp_server": src.get("mcp_server", ""),
                     "api_endpoint": src.get("api_endpoint", ""),
+                    "evidence_grade": src.get("evidence_grade", ""),
+                    "study_type": src.get("study_type", ""),
                 },
             )
             rag_sources.append(rag_source)

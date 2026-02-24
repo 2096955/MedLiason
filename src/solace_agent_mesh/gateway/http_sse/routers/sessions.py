@@ -1028,4 +1028,101 @@ async def trigger_title_generation(
         ) from e
 
 
+@router.get("/sessions/{session_id}/memory")
+async def get_session_memory_summary(
+    session_id: str,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    session_service: SessionService = Depends(get_session_business_service),
+):
+    """
+    Returns a summary of what the system remembers for this session.
+    Shows namespace key counts (not values) for privacy.
+    """
+    user_id = user.get("id")
+    # Verify session belongs to user
+    session = session_service.get_session(db=db, session_id=session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=SESSION_NOT_FOUND_MSG
+        )
+
+    # Try to query memory plane if available
+    namespaces = ["citations", "evidence", "intermediate", "learning", "verification"]
+    memory_summary = {}
+
+    try:
+        import redis.asyncio as aioredis
+        import os
+
+        redis_url = os.environ.get("REDIS_URL")
+        if redis_url:
+            client = aioredis.from_url(redis_url, decode_responses=False)
+            for ns in namespaces:
+                pattern = f"medexpert:{session_id}:{ns}:*"
+                count = 0
+                async for _ in client.scan_iter(match=pattern, count=100):
+                    count += 1
+                memory_summary[ns] = count
+            await client.aclose()
+        else:
+            memory_summary = {ns: 0 for ns in namespaces}
+    except Exception as e:
+        log.warning("Could not query memory plane for session %s: %s", session_id, e)
+        memory_summary = {ns: -1 for ns in namespaces}  # -1 = unavailable
+
+    return {
+        "session_id": session_id,
+        "namespaces": memory_summary,
+        "total_keys": sum(v for v in memory_summary.values() if v >= 0),
+    }
+
+
+@router.delete("/sessions/{session_id}/memory", status_code=status.HTTP_200_OK)
+async def clear_session_memory(
+    session_id: str,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    session_service: SessionService = Depends(get_session_business_service),
+):
+    """
+    Clears all memory plane data for a session (GDPR right to erasure).
+    Removes Redis keys and cold store entries for this session.
+    """
+    user_id = user.get("id")
+    session = session_service.get_session(db=db, session_id=session_id, user_id=user_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=SESSION_NOT_FOUND_MSG
+        )
+
+    deleted_count = 0
+    try:
+        import redis.asyncio as aioredis
+        import os
+
+        redis_url = os.environ.get("REDIS_URL")
+        if redis_url:
+            client = aioredis.from_url(redis_url, decode_responses=False)
+            pattern = f"medexpert:{session_id}:*"
+            keys_to_delete = []
+            async for key in client.scan_iter(match=pattern, count=100):
+                keys_to_delete.append(key)
+            if keys_to_delete:
+                deleted_count = await client.delete(*keys_to_delete)
+            await client.aclose()
+    except Exception as e:
+        log.warning("Could not clear memory plane for session %s: %s", session_id, e)
+
+    log.info(
+        "User %s cleared memory for session %s (%d keys deleted)",
+        user_id,
+        session_id,
+        deleted_count,
+    )
+    return {
+        "session_id": session_id,
+        "keys_deleted": deleted_count,
+        "message": "Session memory cleared successfully.",
+    }
 

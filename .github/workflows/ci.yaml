@@ -187,8 +187,8 @@ jobs:
           push: ${{ fromJSON(needs.prepare-metadata.outputs.docker_push) }}
           cache-from: ${{ steps.cache_list.outputs.cache_from }}
           cache-to: ${{ steps.image_name.outputs.cache_to }}
-          provenance: false
-          sbom: false
+          provenance: true
+          sbom: true
 
   # ----------------------------------------------------
   # PHASE 3: Merge Multi-Platform Manifest (Always)

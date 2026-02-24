@@ -238,6 +238,9 @@ export interface RAGSource {
     relevanceScore: number;
     retrievedAt?: string; // For deep_research timestamp
     metadata: Record<string, any>;
+    // MedExpert evidence quality fields
+    evidenceGrade?: "High" | "Moderate" | "Low" | "Very Low";
+    verificationStatus?: "verified" | "flagged" | "unverified";
 }
 
 export interface RAGSearchResult {

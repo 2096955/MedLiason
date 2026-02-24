@@ -161,6 +161,12 @@ def _worker_loop(db_path: str) -> None:
 
         if success:
             sessions_since_refresh += 1
+            # TODO(perf): Pruning runs every REFRESH_INTERVAL (10) sessions. Under high load,
+            # this triggers full table scans + VACUUM frequently. Consider time-based guard
+            # (e.g., skip if pruned < 1 hour ago) or increase REFRESH_INTERVAL.
+            # NOTE: SQLite VACUUM cannot run inside a transaction. The conn from
+            # get_connection() uses autocommit=True which avoids this issue, but verify
+            # under production connection settings if changed.
             if sessions_since_refresh >= REFRESH_INTERVAL:
                 try:
                     conn = cold_store.get_connection(effective_path)

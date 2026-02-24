@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time as _time
 from pathlib import Path
 
 import httpx
@@ -47,6 +48,107 @@ if TYPE_CHECKING:
     from .component import WebUIBackendComponent
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Rate Limiting Middleware (P1 Item 9)
+# ---------------------------------------------------------------------------
+
+
+class _TokenBucket:
+    """Simple token bucket for per-session rate limiting."""
+
+    __slots__ = ("rate", "burst", "tokens", "last_refill")
+
+    def __init__(self, rate: float, burst: int):
+        self.rate = rate  # tokens per second
+        self.burst = burst
+        self.tokens = float(burst)
+        self.last_refill = _time.monotonic()
+
+    def consume(self) -> bool:
+        now = _time.monotonic()
+        elapsed = now - self.last_refill
+        self.last_refill = now
+        self.tokens = min(self.burst, self.tokens + elapsed * self.rate)
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+            return True
+        return False
+
+    @property
+    def retry_after(self) -> int:
+        """Seconds until next token is available."""
+        if self.tokens >= 1.0:
+            return 0
+        return max(1, int((1.0 - self.tokens) / self.rate) + 1)
+
+
+class RateLimitMiddleware:
+    """Per-session token-bucket rate limiter for task creation endpoints."""
+
+    RATE_LIMITED_PREFIXES = ("/api/v1/tasks",)
+
+    def __init__(self, app, *, rate_per_minute: int = 30, burst: int = 5):
+        self.app = app
+        self.rate = rate_per_minute / 60.0  # tokens per second
+        self.burst = burst
+        self._buckets: dict[str, _TokenBucket] = {}
+        self._last_cleanup = _time.monotonic()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "GET")
+
+        # Only rate-limit POST requests to task endpoints
+        if method == "POST" and any(path.startswith(p) for p in self.RATE_LIMITED_PREFIXES):
+            # Extract session ID from cookies
+            session_key = self._extract_session_key(scope)
+            bucket = self._buckets.setdefault(
+                session_key, _TokenBucket(self.rate, self.burst)
+            )
+
+            if not bucket.consume():
+                retry_after = bucket.retry_after
+                response = JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "rate_limit_exceeded",
+                        "message": "Too many requests. Please wait before submitting another query.",
+                        "retry_after_seconds": retry_after,
+                    },
+                    headers={"Retry-After": str(retry_after)},
+                )
+                await response(scope, receive, send)
+                return
+
+            # Periodic cleanup of stale buckets (every 5 min)
+            now = _time.monotonic()
+            if now - self._last_cleanup > 300:
+                self._last_cleanup = now
+                cutoff = now - 600  # Remove buckets idle for 10 min
+                stale = [k for k, b in self._buckets.items() if b.last_refill < cutoff]
+                for k in stale:
+                    del self._buckets[k]
+
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    def _extract_session_key(scope) -> str:
+        """Extract a session identifier from cookies or fall back to client IP."""
+        headers = dict(scope.get("headers", []))
+        cookie_header = headers.get(b"cookie", b"").decode("utf-8", errors="ignore")
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith("session="):
+                return f"session:{part[8:40]}"  # First 32 chars of session token
+        # Fallback to client IP
+        client = scope.get("client")
+        return f"ip:{client[0]}" if client else "unknown"
 
 
 # OAuth helper functions - delegate to enterprise package if available
@@ -145,7 +247,7 @@ def _extract_user_identifier(user_info: dict, preferred_claim: str | None = None
 app = FastAPI(
     title="A2A Web UI Backend",
     version="1.0.0",  # Updated to reflect simplified architecture
-    description="Backend API and SSE server for the A2A Web UI, hosted by Solace AI Connector.",
+    description="Backend API and SSE server for the A2A Web UI, hosted by MedExpert AI Connector.",
 )
 
 
@@ -265,18 +367,44 @@ def setup_dependencies(component: "WebUIBackendComponent"):
 
 def _setup_middleware(component: "WebUIBackendComponent") -> None:
     allowed_origins = component.get_cors_origins()
+    allow_credentials = getattr(component, "cors_allow_credentials", False)
+    allow_methods = getattr(component, "cors_allow_methods", ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    allow_headers = getattr(component, "cors_allow_headers", ["Content-Type", "Authorization", "X-Requested-With"])
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=allow_credentials,
+        allow_methods=allow_methods,
+        allow_headers=allow_headers,
     )
-    log.info("CORSMiddleware added with origins: %s", allowed_origins)
+    log.info(
+        "CORSMiddleware added with origins: %s, credentials: %s",
+        allowed_origins,
+        allow_credentials,
+    )
 
     session_manager = component.get_session_manager()
-    app.add_middleware(SessionMiddleware, secret_key=session_manager.secret_key)
-    log.info("SessionMiddleware added.")
+    session_secure = component.get_config("session_cookie_secure", False)
+    session_samesite = component.get_config("session_cookie_samesite", "lax")
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=session_manager.secret_key,
+        https_only=session_secure,
+        same_site=session_samesite,
+    )
+    log.info(
+        "SessionMiddleware added (secure=%s, samesite=%s).",
+        session_secure,
+        session_samesite,
+    )
+
+    # Rate limiting (applied after session/auth in request flow due to ASGI LIFO ordering)
+    rate_limit_enabled = component.get_config("rate_limit_enabled", False)
+    if rate_limit_enabled:
+        rpm = component.get_config("rate_limit_requests_per_minute", 30)
+        burst = component.get_config("rate_limit_burst", 5)
+        app.add_middleware(RateLimitMiddleware, rate_per_minute=rpm, burst=burst)
+        log.info("RateLimitMiddleware added (%d req/min, burst %d)", rpm, burst)
 
     auth_middleware_class = create_oauth_middleware(component)
     app.add_middleware(auth_middleware_class, component=component)

@@ -1,4 +1,4 @@
-.PHONY: help check-uv dev-setup test-setup test test-all test-unit test-integration clean ui-test ui-build ui-lint install-playwright
+.PHONY: help check-uv dev-setup test-setup test test-cov test-all test-unit test-integration clean ui-test ui-build ui-lint install-playwright
 
 # Check if uv is installed
 check-uv:
@@ -59,6 +59,11 @@ install-playwright: check-uv
 test:
 	@echo "Running tests (excluding stress and long_soak)..."
 	uv run pytest -m "not stress and not long_soak"
+
+# Run tests with coverage enforcement (70% minimum)
+test-cov:
+	@echo "Running tests with coverage (70% threshold)..."
+	uv run pytest --cov=src --cov-fail-under=70 -m "not stress and not long_soak"
 
 # Run all tests
 test-all:

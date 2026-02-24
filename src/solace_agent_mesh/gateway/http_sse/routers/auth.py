@@ -41,8 +41,21 @@ async def initiate_login(
         raise HTTPException(
             status_code=501,
             detail="OAuth authentication requires enterprise package. "
-            "Install: pip install solace-agent-mesh-enterprise",
+            "Install: pip install medexpert-enterprise",
         )
+
+
+@router.get("/auth/status")
+async def auth_status(config: dict = Depends(get_api_config)):
+    """
+    Returns the current authentication configuration status.
+    Allows the frontend to display appropriate UI based on auth mode.
+    """
+    use_auth = config.get("frontend_use_authorization", False) if config else False
+    return {
+        "auth_enabled": use_auth,
+        "message": "Authentication enabled" if use_auth else "Running in development mode — authentication is disabled",
+    }
 
 
 @router.get("/csrf-token")
@@ -54,11 +67,12 @@ async def get_csrf_token(
     """
     csrf_token = secrets.token_urlsafe(32)
 
+    use_secure = bool(component.ssl_keyfile and component.ssl_certfile)
     response.set_cookie(
         key="csrf_token",
         value=csrf_token,
         httponly=False,
-        secure=False,
+        secure=use_secure,
         samesite="lax",
         max_age=3600,
     )
@@ -86,7 +100,7 @@ async def auth_callback(
         raise HTTPException(
             status_code=501,
             detail="OAuth authentication requires enterprise package. "
-            "Install: pip install solace-agent-mesh-enterprise",
+            "Install: pip install medexpert-enterprise",
         )
 
 
@@ -164,7 +178,7 @@ async def refresh_token(
         raise HTTPException(
             status_code=501,
             detail="OAuth authentication requires enterprise package. "
-            "Install: pip install solace-agent-mesh-enterprise",
+            "Install: pip install medexpert-enterprise",
         )
 
 

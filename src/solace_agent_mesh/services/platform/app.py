@@ -1,5 +1,5 @@
 """
-Platform Service App class for Solace Agent Mesh.
+Platform Service App class for MedExpert.
 Defines configuration schema and creates the PlatformServiceComponent.
 """
 
@@ -86,8 +86,8 @@ class PlatformServiceApp(SamAppBase):
             "name": "cors_allowed_origins",
             "required": False,
             "type": "list",
-            "default": ["*"],
-            "description": "List of allowed origins for CORS requests.",
+            "default": [],
+            "description": "List of allowed origins for CORS requests. Must be explicit origins (not '*') when cors_allow_credentials is true.",
         },
         {
             "name": "cors_allowed_origin_regex",

@@ -1,5 +1,5 @@
 """
-Custom Solace AI Connector App class for the Web UI Backend.
+Custom MedExpert AI Connector App class for the Web UI Backend.
 Defines configuration schema and programmatically creates the WebUIBackendComponent.
 """
 
@@ -34,6 +34,20 @@ class WebUIBackendApp(BaseGatewayApp):
             "description": "Secret key for signing web user sessions.",
         },
         {
+            "name": "session_cookie_secure",
+            "required": False,
+            "type": "boolean",
+            "default": False,
+            "description": "Set to true in production (HTTPS) to prevent session cookies from being sent over HTTP.",
+        },
+        {
+            "name": "session_cookie_samesite",
+            "required": False,
+            "type": "string",
+            "default": "lax",
+            "description": "SameSite policy for session cookies: 'lax', 'strict', or 'none'.",
+        },
+        {
             "name": "fastapi_host",
             "required": False,
             "type": "string",
@@ -58,8 +72,50 @@ class WebUIBackendApp(BaseGatewayApp):
             "name": "cors_allowed_origins",
             "required": False,
             "type": "list",
-            "default": ["*"],
-            "description": "List of allowed origins for CORS requests.",
+            "default": [],
+            "description": "List of allowed origins for CORS requests. Must be explicit origins (not '*') when cors_allow_credentials is true.",
+        },
+        {
+            "name": "cors_allow_credentials",
+            "required": False,
+            "type": "boolean",
+            "default": False,
+            "description": "Whether to allow credentials (cookies, auth headers) in CORS requests. Must not be used with wildcard origins.",
+        },
+        {
+            "name": "cors_allow_methods",
+            "required": False,
+            "type": "list",
+            "default": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "description": "List of allowed HTTP methods for CORS requests.",
+        },
+        {
+            "name": "cors_allow_headers",
+            "required": False,
+            "type": "list",
+            "default": ["Content-Type", "Authorization", "X-Requested-With"],
+            "description": "List of allowed HTTP headers for CORS requests.",
+        },
+        {
+            "name": "rate_limit_enabled",
+            "required": False,
+            "type": "boolean",
+            "default": False,
+            "description": "Enable per-session rate limiting on task creation endpoints.",
+        },
+        {
+            "name": "rate_limit_requests_per_minute",
+            "required": False,
+            "type": "integer",
+            "default": 30,
+            "description": "Maximum requests per minute per session when rate limiting is enabled.",
+        },
+        {
+            "name": "rate_limit_burst",
+            "required": False,
+            "type": "integer",
+            "default": 5,
+            "description": "Maximum burst size (requests allowed above the per-minute rate).",
         },
         {
             "name": "sse_max_queue_size",
@@ -278,7 +334,7 @@ class WebUIBackendApp(BaseGatewayApp):
                     "type": "string",
                     "required": False,
                     "default": "sam/feedback/v1",
-                    "description": "The Solace topic to publish feedback events to.",
+                    "description": "The MedExpert topic to publish feedback events to.",
                 },
                 "include_task_info": {
                     "type": "string",

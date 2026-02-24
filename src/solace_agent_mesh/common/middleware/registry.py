@@ -26,6 +26,7 @@ class MiddlewareRegistry:
     _resource_sharing_service: Optional[Type] = None
     _initialization_callbacks: List[callable] = []
     _post_migration_hooks: List[Callable[[str], None]] = []
+    _credential_rotation_callbacks: List[Callable[[], None]] = []
 
     @classmethod
     def bind_config_resolver(cls, resolver_class: Type):
@@ -198,7 +199,49 @@ class MiddlewareRegistry:
         cls._resource_sharing_service = None
         cls._initialization_callbacks = []
         cls._post_migration_hooks = []
+        cls._credential_rotation_callbacks = []
         log.info("%s Reset all middleware bindings", LOG_IDENTIFIER)
+
+    @classmethod
+    def register_credential_rotation_callback(cls, callback: Callable[[], None]):
+        """
+        Register a callback to be called when credentials should be rotated.
+
+        Plugins and enterprise packages can use this to implement
+        credential rotation for API keys, tokens, and secrets.
+
+        Args:
+            callback: Function to call during credential rotation
+        """
+        cls._credential_rotation_callbacks.append(callback)
+        log.info(
+            "%s Registered credential rotation callback: %s",
+            LOG_IDENTIFIER,
+            getattr(callback, "__name__", str(callback)),
+        )
+
+    @classmethod
+    def rotate_credentials(cls):
+        """
+        Invoke all registered credential rotation callbacks.
+
+        Call this periodically or on-demand to rotate API keys,
+        refresh tokens, and other credentials.
+        """
+        log.info(
+            "%s Rotating credentials (%d callbacks registered)",
+            LOG_IDENTIFIER,
+            len(cls._credential_rotation_callbacks),
+        )
+        for callback in cls._credential_rotation_callbacks:
+            try:
+                callback()
+            except Exception as exc:
+                log.error(
+                    "%s Credential rotation callback failed: %s",
+                    LOG_IDENTIFIER,
+                    exc,
+                )
 
     @classmethod
     def get_registry_status(cls) -> Dict[str, Any]:
@@ -217,5 +260,6 @@ class MiddlewareRegistry:
             ),
             "initialization_callbacks": len(cls._initialization_callbacks),
             "post_migration_hooks": len(cls._post_migration_hooks),
+            "credential_rotation_callbacks": len(cls._credential_rotation_callbacks),
             "has_custom_bindings": cls._config_resolver is not None or cls._resource_sharing_service is not None,
         }

@@ -11,7 +11,20 @@ import { MarkdownHTMLConverter } from "@/lib/components";
 import { getThemeHtmlStyles } from "@/lib/utils/themeHtmlStyles";
 import { getSourceUrl } from "@/lib/utils/sourceUrlHelpers";
 import { Popover, PopoverContent, PopoverTrigger } from "@/lib/components/ui/popover";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, CheckCircle, AlertTriangle, HelpCircle } from "lucide-react";
+
+const GRADE_COLORS: Record<string, string> = {
+    "High": "bg-green-500",
+    "Moderate": "bg-yellow-500",
+    "Low": "bg-orange-500",
+    "Very Low": "bg-red-500",
+};
+
+const VERIFICATION_ICONS: Record<string, { icon: typeof CheckCircle; className: string }> = {
+    "verified": { icon: CheckCircle, className: "text-green-500" },
+    "flagged": { icon: AlertTriangle, className: "text-amber-500" },
+    "unverified": { icon: HelpCircle, className: "text-gray-400" },
+};
 
 interface CitationProps {
     citation: CitationType;
@@ -153,15 +166,34 @@ export function Citation({ citation, onClick, maxLength = 30 }: CitationProps) {
         }
     };
 
+    // Evidence grade and verification from source (top-level or metadata)
+    const evidenceGrade = citation.source?.evidenceGrade
+        || citation.source?.metadata?.evidence_grade as string | undefined;
+    const verificationStatus = citation.source?.verificationStatus
+        || citation.source?.metadata?.verification_status as string | undefined;
+    const gradeColor = evidenceGrade ? GRADE_COLORS[evidenceGrade] : null;
+    const verification = verificationStatus ? VERIFICATION_ICONS[verificationStatus] : null;
+    const VerificationIcon = verification?.icon;
+
+    const gradeTitle = evidenceGrade
+        ? `${tooltip} | Evidence: ${evidenceGrade}${verificationStatus ? ` | ${verificationStatus}` : ""}`
+        : tooltip;
+
     return (
         <button
             onClick={handleClick}
             className="citation-badge mx-0.5 inline-flex cursor-pointer items-center gap-0.5 rounded-sm bg-gray-200 px-1.5 py-0 align-baseline text-[11px] font-normal whitespace-nowrap text-gray-800 transition-colors duration-150 hover:bg-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600"
-            title={tooltip}
-            aria-label={`Citation: ${tooltip}`}
+            title={gradeTitle}
+            aria-label={`Citation: ${gradeTitle}`}
             type="button"
         >
+            {gradeColor && (
+                <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${gradeColor}`} />
+            )}
             <span className="max-w-[200px] truncate">{displayText}</span>
+            {VerificationIcon && (
+                <VerificationIcon className={`h-2.5 w-2.5 flex-shrink-0 ${verification!.className}`} />
+            )}
             {hasClickableUrl && <ExternalLink className="h-2.5 w-2.5 flex-shrink-0" />}
         </button>
     );

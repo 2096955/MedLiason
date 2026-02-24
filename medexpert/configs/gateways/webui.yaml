@@ -30,6 +30,7 @@ apps:
       cors_allowed_origins:
         - "http://localhost:3000"
         - "http://127.0.0.1:3000"
+      cors_allow_credentials: true
 
       enable_embed_resolution: true
       gateway_artifact_content_limit_bytes: 10000000

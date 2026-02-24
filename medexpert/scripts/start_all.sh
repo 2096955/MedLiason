@@ -6,6 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== MedExpert Full Stack Startup ==="
 
+# 0. Validate configuration
+echo "[0/3] Validating configuration..."
+python -m lifesci_common.config_validator || exit 1
+
 # 1. Check Redis
 echo "[1/3] Checking Redis..."
 if redis-cli ping > /dev/null 2>&1; then

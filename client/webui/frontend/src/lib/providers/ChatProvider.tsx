@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 // Note: may be able to remove this workaround with next version of uuid
 const v4 = () => uuidv4({});
 
-import { api } from "@/lib/api";
+import { api, RateLimitError } from "@/lib/api";
 import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
 import { useProjectContext, registerProjectDeletedCallback } from "@/lib/providers";
@@ -1341,6 +1341,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                     // Don't return early - let the data part flow through to the message
                                     break;
                                 }
+                                case "research_protocol_progress": {
+                                    // MedExpert 12-step research protocol progress tracking
+                                    // Clear latestStatusText so LoadingMessageRow doesn't show duplicate status
+                                    latestStatusText.current = null;
+                                    // Don't return early - let the data part flow through to ChatMessage for rendering
+                                    break;
+                                }
                                 case "tool_result": {
                                     // Handle tool results that may contain RAG metadata
                                     const resultData = (data as any).result_data;
@@ -1410,25 +1417,26 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 }
             }
 
-            // Filter out data parts EXCEPT deep_research_progress which needs to be rendered
-            // Also filter out text parts when we have deep_research_progress to show progress-only
-            const hasDeepResearchProgress = messageToProcess?.parts?.some(p => {
+            // Filter out data parts EXCEPT progress types which need to be rendered
+            // Also filter out text parts when we have progress data to show progress-only
+            const VISIBLE_DATA_TYPES = new Set(["deep_research_progress", "research_protocol_progress"]);
+            const hasProgressData = messageToProcess?.parts?.some(p => {
                 if (p.kind === "data") {
                     const dataPart = p as DataPart;
-                    return dataPart.data && (dataPart.data as any).type === "deep_research_progress";
+                    return dataPart.data && VISIBLE_DATA_TYPES.has((dataPart.data as any).type);
                 }
                 return false;
             });
 
             const newContentParts =
                 messageToProcess?.parts?.filter(p => {
-                    // Keep deep_research_progress data parts
+                    // Keep visible data parts (progress indicators)
                     if (p.kind === "data") {
                         const dataPart = p as DataPart;
-                        return dataPart.data && (dataPart.data as any).type === "deep_research_progress";
+                        return dataPart.data && VISIBLE_DATA_TYPES.has((dataPart.data as any).type);
                     }
-                    // Filter out text parts if we have deep research progress (to show progress-only)
-                    if (p.kind === "text" && hasDeepResearchProgress) {
+                    // Filter out text parts if we have progress data (to show progress-only)
+                    if (p.kind === "text" && hasProgressData) {
                         return false;
                     }
                     // Keep files and artifacts
@@ -1451,8 +1459,8 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                     lastMessage = newMessages[newMessages.length - 1];
                 }
 
-                // Check if this is a deep research progress update
-                const isProgressUpdate = newContentParts.length === 1 && newContentParts[0].kind === "data" && (newContentParts[0] as DataPart).data && ((newContentParts[0] as DataPart).data as any).type === "deep_research_progress";
+                // Check if this is a progress update (deep research or protocol stepper)
+                const isProgressUpdate = newContentParts.length === 1 && newContentParts[0].kind === "data" && (newContentParts[0] as DataPart).data && VISIBLE_DATA_TYPES.has(((newContentParts[0] as DataPart).data as any).type);
 
                 // For progress updates, always update the same message (don't replace, just update the data)
                 // The InlineResearchProgress component will handle showing all stages
@@ -1483,9 +1491,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 } else {
                     // For failed tasks, always create a message bubble even if there are no content parts
                     // For other cases, only create a new bubble if there is visible content to render.
-                    // Include deep_research_progress data parts as visible content
+                    // Include progress data parts as visible content
                     const hasVisibleContent =
-                        isTaskFailed || newContentParts.some(p => (p.kind === "text" && (p as TextPart).text.trim()) || p.kind === "file" || (p.kind === "data" && (p as DataPart).data && (p as DataPart).data.type === "deep_research_progress"));
+                        isTaskFailed || newContentParts.some(p => (p.kind === "text" && (p as TextPart).text.trim()) || p.kind === "file" || (p.kind === "data" && (p as DataPart).data && VISIBLE_DATA_TYPES.has((p as DataPart).data.type)));
                     if (hasVisibleContent) {
                         const newBubble: MessageFE = {
                             role: "agent",
@@ -2591,7 +2599,14 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 // Update user message with taskId so it's included in final save
                 setMessages(prev => prev.map(msg => (msg.metadata?.messageId === userMsg.metadata?.messageId ? { ...msg, taskId: taskId } : msg)));
             } catch (error) {
-                setError({ title: "Message Failed", error: getErrorMessage(error, "An error occurred. Please try again.") });
+                if (error instanceof RateLimitError) {
+                    setError({
+                        title: "Rate Limited",
+                        error: `${error.message} (retry in ${error.retryAfterSeconds}s)`,
+                    });
+                } else {
+                    setError({ title: "Message Failed", error: getErrorMessage(error, "An error occurred. Please try again.") });
+                }
                 setIsResponding(false);
                 setMessages(prev => prev.filter(msg => !msg.isStatusBubble));
                 setCurrentTaskId(null);

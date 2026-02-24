@@ -10,6 +10,7 @@ import { useChatContext } from "@/lib/hooks";
 import type { ArtifactInfo, ArtifactPart, DataPart, FileAttachment, FilePart, MessageFE, RAGSearchResult, TextPart } from "@/lib/types";
 import type { ChatContextValue } from "@/lib/contexts";
 import { InlineResearchProgress, type ResearchProgressData } from "@/lib/components/research/InlineResearchProgress";
+import { ResearchProtocolStepper, type ResearchProtocolProgressData } from "@/lib/components/research/ResearchProtocolStepper";
 import { DeepResearchReportContent } from "@/lib/components/research/DeepResearchReportContent";
 import { Sources } from "@/lib/components/web/Sources";
 import { ImageSearchGrid } from "@/lib/components/research";
@@ -625,9 +626,25 @@ const getChatBubble = (
         return <AuthenticationMessage message={message} />;
     }
 
-    // Check for deep research progress data
+    // Check for research progress data (deep research or 12-step protocol)
     const progressPart = message.parts?.find(p => p.kind === "data") as DataPart | undefined;
-    const hasDeepResearchProgress = progressPart?.data && (progressPart.data as { type?: string }).type === "deep_research_progress";
+    const progressType = progressPart?.data ? (progressPart.data as { type?: string }).type : undefined;
+    const hasDeepResearchProgress = progressType === "deep_research_progress";
+    const hasProtocolProgress = progressType === "research_protocol_progress";
+
+    // Show 12-step protocol progress stepper.
+    // DEV: To test, inject mock data: { type: "research_protocol_progress", step: 3,
+    //   step_name: "COLLECT", total_steps: 12, detail: "Gathering from 3 specialists",
+    //   coverage_pct: null, gvr_cycle: 0, verification_verdict: null }
+    // as a DataPart in a status_update SSE event. See ResearchProtocolStepper.tsx for full type.
+    if (hasProtocolProgress && !message.isComplete) {
+        const data = progressPart!.data as unknown as ResearchProtocolProgressData;
+        return (
+            <div className="my-2">
+                <ResearchProtocolStepper progress={data} isComplete={false} />
+            </div>
+        );
+    }
 
     // Show progress block at the top if we have progress data and research is not complete
     if (hasDeepResearchProgress && !message.isComplete) {

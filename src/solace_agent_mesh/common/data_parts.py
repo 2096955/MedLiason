@@ -476,6 +476,35 @@ class DeepResearchReportData(BaseModel):
     sources_count: int = Field(default=0, description="Number of sources analyzed.")
 
 
+class ResearchProtocolProgressData(BaseModel):
+    """
+    Data model for MedExpert 12-step research protocol progress updates.
+    Provides structured step tracking for the orchestrator's research pipeline.
+    """
+
+    type: Literal["research_protocol_progress"] = Field(
+        "research_protocol_progress",
+        description="The constant type for this data part.",
+    )
+    step: int = Field(..., description="Current protocol step number (0-11)")
+    step_name: str = Field(
+        ...,
+        description="Step name: SEED, DECOMPOSE, DELEGATE, COLLECT, REFLECT, "
+        "RE_QUERY, VALIDATE, ADVISORY, SYNTHESIZE, VERIFY, REVISE, PERSIST",
+    )
+    total_steps: int = Field(default=12, description="Total steps in the protocol")
+    detail: str = Field(..., description="Human-readable description of current activity")
+    coverage_pct: Optional[float] = Field(
+        None, description="Research coverage percentage (set during VALIDATE step)"
+    )
+    gvr_cycle: int = Field(
+        default=0, description="GVR loop iteration (0 = first pass, 1 = after revision)"
+    )
+    verification_verdict: Optional[str] = Field(
+        None, description="Verification result: PASS, MINOR_ISSUES, or CRITICAL_ISSUES"
+    )
+
+
 SignalData = Union[
     ToolInvocationStartData,
     LlmInvocationData,
@@ -495,4 +524,5 @@ SignalData = Union[
     DeepResearchProgressData,
     RAGInfoUpdateData,
     DeepResearchReportData,
+    ResearchProtocolProgressData,
 ]

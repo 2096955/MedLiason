@@ -104,6 +104,34 @@ def _detect_with_presidio(text: str, entity_types: list[str] | None = None) -> l
 class PhiRedactorTool(DynamicTool):
     """Detects and optionally redacts PHI/PII from text."""
 
+    _presidio_available: bool = False
+
+    def __init__(self, tool_config=None):
+        super().__init__(tool_config=tool_config)
+        import logging as _log
+
+        log = _log.getLogger(__name__)
+
+        # Check Presidio availability at init time
+        try:
+            from presidio_analyzer import AnalyzerEngine  # noqa: F401
+
+            PhiRedactorTool._presidio_available = True
+            log.info("[phi_redactor] Presidio analyzer available — using ML-based detection")
+        except ImportError:
+            PhiRedactorTool._presidio_available = False
+            require_presidio = (tool_config or {}).get("require_presidio", False)
+            if require_presidio:
+                raise RuntimeError(
+                    "PHI redaction requires Presidio but it is not installed. "
+                    "Install with: pip install 'medexpert[phi]' — or set "
+                    "require_presidio: false in tool_config to use regex fallback."
+                )
+            log.warning(
+                "[phi_redactor] Presidio not installed — using regex fallback. "
+                "Install 'medexpert[phi]' for ML-based PHI detection in production."
+            )
+
     @property
     def tool_name(self) -> str:
         return "phi_redactor"

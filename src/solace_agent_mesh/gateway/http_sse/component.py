@@ -1,5 +1,5 @@
 """
-Custom Solace AI Connector Component to host the FastAPI backend for the Web UI.
+Custom MedExpert AI Connector Component to host the FastAPI backend for the Web UI.
 """
 
 import asyncio
@@ -119,7 +119,47 @@ class WebUIBackendComponent(BaseGatewayComponent):
             self.fastapi_port = self.get_config("fastapi_port", 8000)
             self.fastapi_https_port = self.get_config("fastapi_https_port", 8443)
             self.session_secret_key = self.get_config("session_secret_key")
-            self.cors_allowed_origins = self.get_config("cors_allowed_origins", ["*"])
+
+            # P0 Security: Reject banned default session secrets when auth is enabled
+            _BANNED_SECRETS = {"change-me-in-production", "change-me", ""}
+            use_auth = self.get_config("frontend_use_authorization", False)
+            if self.session_secret_key in _BANNED_SECRETS:
+                if use_auth:
+                    from ...common.exceptions import ComponentInitializationError
+                    raise ComponentInitializationError(
+                        component_identifier=self.log_identifier,
+                        original_error=ValueError("Insecure session_secret_key"),
+                        message=(
+                            "SECURITY: session_secret_key is set to an insecure default value "
+                            "while frontend_use_authorization is enabled. Generate a secure "
+                            "random secret (e.g., python -c \"import secrets; print(secrets.token_hex(32))\")."
+                        ),
+                    )
+                else:
+                    log.warning(
+                        "%s session_secret_key is using a default value. "
+                        "Generate a secure secret before production deployment.",
+                        self.log_identifier,
+                    )
+
+            self.cors_allowed_origins = self.get_config("cors_allowed_origins", [])
+            self.cors_allow_credentials = self.get_config("cors_allow_credentials", False)
+            self.cors_allow_methods = self.get_config("cors_allow_methods", ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            self.cors_allow_headers = self.get_config("cors_allow_headers", ["Content-Type", "Authorization", "X-Requested-With"])
+
+            # P0 Security: Reject CORS wildcard with credentials (RFC 6454 violation)
+            if self.cors_allow_credentials and "*" in self.cors_allowed_origins:
+                from ...common.exceptions import ComponentInitializationError
+                raise ComponentInitializationError(
+                    component_identifier=self.log_identifier,
+                    original_error=ValueError("CORS wildcard with credentials"),
+                    message=(
+                        "SECURITY: cors_allowed_origins contains '*' while cors_allow_credentials is true. "
+                        "This violates the CORS specification and creates a security vulnerability. "
+                        "Set explicit origins or set cors_allow_credentials to false."
+                    ),
+                )
+
             self.ssl_keyfile = self.get_config("ssl_keyfile", "")
             self.ssl_certfile = self.get_config("ssl_certfile", "")
             self.ssl_keyfile_password = self.get_config("ssl_keyfile_password", "")
@@ -847,7 +887,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
                                     break
                             else:
                                 subscribed_topics_for_stream = stream_config.get(
-                                    "solace_topics", set()
+                                    "medexpert_topics", set()
                                 )
                                 if any(
                                     a2a.topic_matches_subscription(topic, pattern)
@@ -864,7 +904,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
                             sse_event_payload = {
                                 "event_type": "a2a_message",
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "solace_topic": topic,
+                                "medexpert_topic": topic,
                                 "direction": event_details["direction"],
                                 "source_entity": event_details["source_entity"],
                                 "target_entity": event_details["target_entity"],
@@ -1012,7 +1052,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
         self, topic_str: str, stream_id: str
     ) -> bool:
         """
-        Adds a Solace topic subscription to the internal BrokerInput for visualization.
+        Adds a MedExpert topic subscription to the internal BrokerInput for visualization.
         Manages global subscription reference counts.
         """
         log_id_prefix = f"{self.log_identifier}[AddVizSub:{stream_id}]"
@@ -1120,7 +1160,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
                 )
 
             if stream_id in self._active_visualization_streams:
-                self._active_visualization_streams[stream_id]["solace_topics"].add(
+                self._active_visualization_streams[stream_id]["medexpert_topics"].add(
                     topic_str
                 )
                 log.debug(
@@ -1147,7 +1187,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
         self, topic_str: str, stream_id: str
     ) -> bool:
         """
-        Internal helper to remove a Solace topic subscription.
+        Internal helper to remove a MedExpert topic subscription.
         Assumes _visualization_stream_lock is already held by the caller.
         Manages global subscription reference counts.
         """
@@ -1220,9 +1260,9 @@ class WebUIBackendComponent(BaseGatewayComponent):
         if stream_id in self._active_visualization_streams:
             if (
                 topic_str
-                in self._active_visualization_streams[stream_id]["solace_topics"]
+                in self._active_visualization_streams[stream_id]["medexpert_topics"]
             ):
-                self._active_visualization_streams[stream_id]["solace_topics"].remove(
+                self._active_visualization_streams[stream_id]["medexpert_topics"].remove(
                     topic_str
                 )
                 log.debug(
@@ -1250,7 +1290,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
         self, topic_str: str, stream_id: str
     ) -> bool:
         """
-        Public method to remove a Solace topic subscription.
+        Public method to remove a MedExpert topic subscription.
         Acquires the lock before calling the internal no-lock version.
         """
         log_id_prefix = f"{self.log_identifier}[RemoveVizSubPub:{stream_id}]"
@@ -1700,7 +1740,7 @@ class WebUIBackendComponent(BaseGatewayComponent):
         self, topic: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Infers details for the visualization SSE payload from the Solace topic and A2A message.
+        Infers details for the visualization SSE payload from the MedExpert topic and A2A message.
         This version is updated to parse the official A2A SDK message formats.
         """
         details = {

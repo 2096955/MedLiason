@@ -11,12 +11,23 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+
+    _PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    _PLAYWRIGHT_AVAILABLE = False
 
 from google.adk.tools import ToolContext
 
 from markitdown import MarkItDown, UnsupportedFormatException
-from mermaid_cli import render_mermaid
+
+try:
+    from mermaid_cli import render_mermaid
+
+    _MERMAID_AVAILABLE = True
+except ImportError:
+    _MERMAID_AVAILABLE = False
 
 from ...agent.utils.artifact_helpers import (
     ensure_correct_extension,
@@ -300,6 +311,8 @@ async def _convert_svg_to_png_with_playwright(svg_data: str, scale: int = 2) -> 
     """
     Converts SVG data to a PNG image using Playwright.
 
+    Requires the 'charts' optional extra: pip install 'solace-agent-mesh[charts]'
+
     Args:
         svg_data (str): The SVG data to be converted.
         scale (int, optional): The scale factor for the PNG image. Defaults to 2.
@@ -311,6 +324,11 @@ async def _convert_svg_to_png_with_playwright(svg_data: str, scale: int = 2) -> 
         ValueError: If the SVG bounding box cannot be determined.
 
     """
+    if not _PLAYWRIGHT_AVAILABLE:
+        raise ImportError(
+            "Playwright is required for SVG-to-PNG conversion. "
+            "Install with: pip install 'solace-agent-mesh[charts]'"
+        )
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         context = await browser.new_context(device_scale_factor=scale)
@@ -363,6 +381,13 @@ async def mermaid_diagram_generator(
     """
     if not tool_context:
         return {"status": "error", "message": "ToolContext is missing."}
+
+    if not _MERMAID_AVAILABLE:
+        return {
+            "status": "error",
+            "message": "Mermaid diagram generation requires the 'charts' extra. "
+            "Install with: pip install 'solace-agent-mesh[charts]'",
+        }
 
     log_identifier = f"[GeneralTool:mermaid_diagram_generator]"
     if output_filename:

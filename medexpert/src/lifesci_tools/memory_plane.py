@@ -183,6 +183,21 @@ class MemoryPlaneTool(DynamicTool):
         if redis_url:
             try:
                 import redis.asyncio as aioredis
+                import os
+                from urllib.parse import urlparse
+
+                # P0 Security: Warn when Redis has no authentication outside dev
+                try:
+                    parsed = urlparse(redis_url)
+                    env_mode = os.environ.get("MEDEXPERT_ENV", "").lower()
+                    if not parsed.password and env_mode != "development":
+                        log.warning(
+                            "SECURITY: Redis connection has no password configured. "
+                            "Set REDIS_PASSWORD or use a redis:// URL with credentials "
+                            "for production deployments handling PHI/medical data."
+                        )
+                except Exception:
+                    pass  # Don't fail on URL parsing issues
 
                 client = aioredis.from_url(redis_url, decode_responses=False)
                 await client.ping()
@@ -509,10 +524,21 @@ class MemoryPlaneTool(DynamicTool):
 
             enqueued = enqueue_session_flush(payload)
             if not enqueued:
-                log.warning("Cold worker queue full, session %s dropped", payload["session_id"])
+                log.error(
+                    "Cold worker queue full — session %s learning data permanently lost. "
+                    "Consider increasing queue size or investigating cold store throughput.",
+                    payload["session_id"],
+                )
+                # Store overflow indicator in hot store so orchestrator can report it
+                try:
+                    overflow_key = self._make_key(session_id, "intermediate", "cold_store_overflow")
+                    await self._backend.set(overflow_key, "true", ex=self._ttl_seconds)
+                except Exception:
+                    pass
                 return {
                     "success": False,
-                    "error": "Cold worker queue is full — session data was not persisted",
+                    "warning": "cold_store_queue_full",
+                    "error": "Cold worker queue is full — session learning data was not persisted. Research results are unaffected.",
                     "session_id": payload["session_id"],
                 }
             return {

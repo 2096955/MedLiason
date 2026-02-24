@@ -139,10 +139,33 @@ const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
     return response;
 };
 
+/**
+ * Custom error class for rate limit (429) responses.
+ * Includes retry-after information for UI countdown display.
+ */
+export class RateLimitError extends Error {
+    retryAfterSeconds: number;
+    constructor(message: string, retryAfterSeconds: number) {
+        super(message);
+        this.name = "RateLimitError";
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+
 const fetchWithError = async (url: string, options: RequestInit = {}) => {
     const response = await authenticatedFetch(url, options);
 
     if (!response.ok) {
+        // Handle rate limiting with specific error type
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get("Retry-After") || "30", 10);
+            let message = "Too many requests. Please wait before submitting another query.";
+            try {
+                const body = await response.json();
+                message = body.message || message;
+            } catch { /* use default message */ }
+            throw new RateLimitError(message, retryAfter);
+        }
         throw new Error(await getErrorFromResponse(response));
     }
 
