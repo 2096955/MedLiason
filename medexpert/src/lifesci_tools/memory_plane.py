@@ -22,6 +22,24 @@ log = logging.getLogger(__name__)
 
 NAMESPACES = ("citations", "evidence", "intermediate", "learning", "verification")
 
+# ── Deterministic protocol step mapping ──────────────────────────────
+# Maps memory_plane operations + key patterns to protocol steps.
+# This emits ResearchProtocolProgressData without depending on LLM output.
+_STEP_MAP = {
+    "seed_session": (0, "SEED", "Loading learned strategies from past sessions"),
+    "flush_cold": (11, "PERSIST", "Saving session signals to cold store"),
+}
+_KEY_STEP_MAP = {
+    # store/append operations with these keys signal specific steps
+    ("intermediate", "specialists_used"): (3, "COLLECT", "Gathering evidence from specialists"),
+    ("intermediate", "query_domain"): (3, "COLLECT", "Gathering evidence from specialists"),
+    ("intermediate", "coverage_pct"): (6, "VALIDATE", "Checking research completeness"),
+    ("verification", "verification_verdict"): (9, "VERIFY", "Verifying claims against sources"),
+    ("verification", "verification_score"): (9, "VERIFY", "Verifying claims against sources"),
+    ("intermediate", "revision_triggered"): (10, "REVISE", "Revising flagged claims"),
+    ("verification", "re_verification_verdict"): (10, "REVISE", "Re-verifying revised report"),
+}
+
 
 class DictBackend:
     """In-memory fallback when Redis is not available."""
@@ -219,6 +237,65 @@ class MemoryPlaneTool(DynamicTool):
         return f"medexpert:{session_id}:*"
 
     # ------------------------------------------------------------------
+    # Deterministic protocol progress emission
+    # ------------------------------------------------------------------
+
+    async def _emit_protocol_progress(
+        self, tool_context: ToolContext, step: int, step_name: str, detail: str,
+        session_id: str,
+    ) -> None:
+        """Emit ResearchProtocolProgressData via SSE. Deterministic — tied to tool calls."""
+        try:
+            a2a_context = tool_context.state.get("a2a_context")
+            if not a2a_context:
+                return
+            inv = getattr(tool_context, "_invocation_context", None)
+            if not inv:
+                return
+            agent = getattr(inv, "agent", None)
+            host = getattr(agent, "host_component", None) if agent else None
+            if not host:
+                return
+
+            from solace_agent_mesh.common.data_parts import ResearchProtocolProgressData
+
+            # Read coverage + verdict from memory if available
+            coverage_pct = None
+            verdict = None
+            try:
+                raw_cp = await self._backend.get(
+                    self._make_key(session_id, "intermediate", "coverage_pct")
+                )
+                if raw_cp:
+                    coverage_pct = float(raw_cp)
+                raw_v = await self._backend.get(
+                    self._make_key(session_id, "verification", "verification_verdict")
+                )
+                if raw_v:
+                    verdict = raw_v
+            except Exception:
+                pass
+
+            progress = ResearchProtocolProgressData(
+                step=step,
+                step_name=step_name,
+                total_steps=12,
+                detail=detail,
+                coverage_pct=coverage_pct,
+                gvr_cycle=0,
+                verification_verdict=verdict,
+            )
+
+            host.publish_data_signal_from_thread(
+                a2a_context=a2a_context,
+                signal_data=progress,
+                skip_buffer_flush=False,
+                log_identifier="[MemoryPlane:Progress]",
+            )
+        except Exception as exc:
+            log.debug("[MemoryPlane:Progress] Could not emit progress: %s", exc)
+
+    # ------------------------------------------------------------------
     # Hot-store auto-collection helpers for flush_cold
     # ------------------------------------------------------------------
 
@@ -405,6 +482,20 @@ class MemoryPlaneTool(DynamicTool):
                 "success": False,
                 "error": f"Memory plane is read-only for this agent. Cannot perform '{operation}'.",
             }
+
+        # ── Deterministic protocol progress emission ──────────────
+        # Emit SSE progress signals based on which operation/key is being called.
+        # This is tied to actual tool invocations, not LLM output parsing.
+        if operation in _STEP_MAP:
+            step_num, step_name, detail = _STEP_MAP[operation]
+            await self._emit_protocol_progress(
+                tool_context, step_num, step_name, detail, session_id
+            )
+        elif operation in ("store", "append") and (namespace, key) in _KEY_STEP_MAP:
+            step_num, step_name, detail = _KEY_STEP_MAP[(namespace, key)]
+            await self._emit_protocol_progress(
+                tool_context, step_num, step_name, detail, session_id
+            )
 
         if operation == "store":
             if not key:

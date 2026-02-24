@@ -187,8 +187,10 @@ export function Citation({ citation, onClick, maxLength = 30 }: CitationProps) {
             aria-label={`Citation: ${gradeTitle}`}
             type="button"
         >
-            {gradeColor && (
+            {gradeColor ? (
                 <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${gradeColor}`} />
+            ) : (
+                <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-400" title="Ungraded" />
             )}
             <span className="max-w-[200px] truncate">{displayText}</span>
             {VerificationIcon && (

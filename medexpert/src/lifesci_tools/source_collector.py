@@ -163,6 +163,20 @@ class SourceCollectorTool(DynamicTool):
             logger.warning("%s Called with empty sources list", log_id)
             return {"status": "no_sources", "valid_citation_ids": []}
 
+        # Default evidence grade mapping by source type when not explicitly provided.
+        # This ensures citations always have a grade badge in the UI.
+        _DEFAULT_GRADES = {
+            "pubmed": "Moderate",       # Varies; Moderate as safe default
+            "clinical_trial": "High",   # RCTs by design
+            "fda": "High",              # Regulatory data
+            "regulatory": "High",
+            "cdc": "Moderate",          # Surveillance data
+            "genomic": "Moderate",
+            "environmental": "Low",     # Observational
+            "provider": "Low",          # Administrative data
+            "web": "Very Low",          # Unreviewed web content
+        }
+
         # Build RAG sources and citation IDs
         rag_sources = []
         valid_citation_ids = []
@@ -197,7 +211,8 @@ class SourceCollectorTool(DynamicTool):
                     "agent_name": src.get("agent_name", ""),
                     "mcp_server": src.get("mcp_server", ""),
                     "api_endpoint": src.get("api_endpoint", ""),
-                    "evidence_grade": src.get("evidence_grade", ""),
+                    "evidence_grade": src.get("evidence_grade")
+                        or _DEFAULT_GRADES.get(src.get("source_type", ""), ""),
                     "study_type": src.get("study_type", ""),
                 },
             )
