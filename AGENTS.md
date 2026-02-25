@@ -47,9 +47,49 @@ This repo contains **Solace Agent Mesh (SAM)** (Python framework at root) and **
 - **Install**: `npm install`
 - **Dev server**: `npm start` (Docusaurus on port 3000)
 
+### Editable install symlinks
+
+The hatch wheel build uses `force-include` to map `cli/`, `templates/`, and `evaluation/` into the `solace_agent_mesh` package. For editable installs, these don't exist inside `src/solace_agent_mesh/`. Create symlinks:
+```
+cd src/solace_agent_mesh && ln -sf ../../cli cli && ln -sf ../../templates templates && ln -sf ../../evaluation evaluation
+```
+Also add `/workspace` to the `.pth` file (`_solace_agent_mesh.pth`) so that top-level packages like `config_portal` and `cli` are importable:
+```
+printf '/workspace/src\n/workspace\n' > .venv/lib/python3.12/site-packages/_solace_agent_mesh.pth
+```
+
 ### MedExpert application
 
 - **Location**: `medexpert/`
-- Requires Redis, LLM API key (GEMINI_API_KEY), and `.env` file (copy from `.env.example`)
-- Full stack start: `./scripts/start_all.sh`
+- Requires Redis (`sudo apt-get install -y redis-server && redis-server --daemonize yes`), a `GEMINI_API_KEY`, and `.env` file (copy from `.env.example`)
+- Set `MEDEXPERT_ENV=development` in `.env` to bypass session secret validation in dev
+- Install: `uv pip install -e medexpert/ --no-deps` (the `solace-agent-mesh>=0.9,<1.0` constraint conflicts with the local 1.x editable install; use `--no-deps` and install extras separately: `uv pip install "biopython>=1.83,<2.0" "redis[hiredis]>=5.0,<6.0"`)
 - Tests: `pytest tests/unit -v`, `pytest tests/contract -v`
+
+### Running the full MedExpert stack
+
+**Critical**: In dev mode (`SOLACE_DEV_MODE=true`), the DevBroker is in-process only. All agents and the gateway **must** run in a single `sam run` process. Do NOT start them as separate processes (as `start_agents.sh` does) or they cannot communicate.
+
+Start the full stack:
+```bash
+cd medexpert && set -a && source .env && set +a && sam run configs/
+```
+
+This starts all 11 agents + the gateway in one process. MCP servers are separate Python processes (started by `scripts/start_mcp_servers.sh`) and don't use the broker.
+
+To send queries via CLI (bypasses frontend SSE issues): `sam task send "Your question" --agent OrchestratorAgent`
+
+### Gemini model alias workaround
+
+The `shared_config.yaml` uses `openai/gemini-2.5-flash-001` and `openai/gemini-2.5-pro-001` model names. The `-001` suffixed model versions are no longer available on Google's OpenAI-compatible API. Set these env vars in `.env`:
+```
+OPENAI_API_KEY=<same as GEMINI_API_KEY>
+OPENAI_API_BASE=https://generativelanguage.googleapis.com/v1beta/openai/
+```
+Also install a litellm model alias map in the venv (maps `-001` to non-suffixed names). See `_litellm_aliases.py` + `litellm_aliases.pth` in `.venv/lib/python3.12/site-packages/`.
+
+### Known pre-existing issues
+
+- **Gateway visualization KeyError**: `KeyError: 'medexpert_topics'` in `component.py:1163` causes 500 errors on SSE visualization subscriptions, blocking the frontend chat UI from displaying messages. The CLI (`sam task send`) works as a workaround.
+- **Ruff lint**: ~11k pre-existing lint errors (mostly import ordering)
+- **TypeScript types**: `npm run build-types` has 3 pre-existing TS errors in the WebUI
