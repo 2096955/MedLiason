@@ -17,8 +17,8 @@ const handlers = [
         return HttpResponse.json({
             products: [
                 {
-                    id: "solace-agent-mesh",
-                    name: "Solace Agent Mesh",
+                    id: "medexpert",
+                    name: "MedExpert",
                     description: "Multi-agent orchestration platform",
                     version: "1.0.0",
                 },

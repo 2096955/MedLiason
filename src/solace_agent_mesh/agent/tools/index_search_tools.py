@@ -1,5 +1,5 @@
 """
-Index Search Tools for Solace Agent Mesh
+Index Search Tools for MedExpert
 
 Provides BM25-based document search capabilities for project documents.
 Searches across uploaded files (PDFs, DOCX, PPTX, text files) with precise location citations.

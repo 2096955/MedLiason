@@ -5,7 +5,7 @@
 # Author: __PLUGIN_AUTHOR_NAME__ <__PLUGIN_AUTHOR_EMAIL__>
 # 
 # --- Start of Custom Configuration Template ---
-# Solace Agent Mesh: Custom Configuration Template
+# MedExpert: Custom Configuration Template
 #
 # This file serves as a template for creating new custom configurations from this plugin.
 # Use placeholders like __COMPONENT_KEBAB_CASE_NAME__, __COMPONENT_PASCAL_CASE_NAME__,
@@ -16,11 +16,11 @@
 
 shared_config:
   - broker_connection: &broker_connection
-      dev_mode: ${SOLACE_DEV_MODE, false}
-      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
-      broker_username: ${SOLACE_BROKER_USERNAME, default}
-      broker_password: ${SOLACE_BROKER_PASSWORD, default}
-      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      dev_mode: ${MEDEXPERT_DEV_MODE, false}
+      broker_url: ${MEDEXPERT_BROKER_URL, ws://localhost:8008}
+      broker_username: ${MEDEXPERT_BROKER_USERNAME, default}
+      broker_password: ${MEDEXPERT_BROKER_PASSWORD, default}
+      broker_vpn: ${MEDEXPERT_BROKER_VPN, default}
       temporary_queue: ${USE_TEMPORARY_QUEUES, true}
 
 

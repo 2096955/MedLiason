@@ -1,6 +1,6 @@
 # SAM REST API Client
 
-A Python client library for interacting with Solace Agent Mesh (SAM) REST API Gateway.
+A Python client library for interacting with MedExpert (SAM) REST API Gateway.
 
 This library simplifies task submission and result retrieval by abstracting the underlying HTTP calls, including the polling mechanism for asynchronous tasks.
 
@@ -12,7 +12,7 @@ pip install sam-rest-client
 
 ## Prerequisite
 
-Ensure you have an instance of Solace Agent Mesh running with the [REST Gateway](https://solacelabs.github.io/solace-agent-mesh/docs/documentation/tutorials/rest-gateway) configured
+Ensure you have an instance of MedExpert running with the [REST Gateway](https://medexpert.com/docs/documentation/tutorials/rest-gateway) configured
 
 ## Usage
 

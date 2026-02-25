@@ -12,15 +12,61 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
 # Stop words removed during query normalisation
 _STOP_WORDS = frozenset(
-    "a an and are as at be by can do does for from has have how in is it "
-    "its may not of on or so that the their them then there these this "
-    "to was we were what when where which who why will with would".split()
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "has",
+        "have",
+        "how",
+        "in",
+        "is",
+        "it",
+        "its",
+        "may",
+        "not",
+        "of",
+        "on",
+        "or",
+        "so",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "this",
+        "to",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "will",
+        "with",
+        "would",
+    ]
 )
 
 # ---------------------------------------------------------------------------
@@ -95,6 +141,49 @@ CREATE TABLE IF NOT EXISTS learned_strategies (
     updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(strategy_type, domain_or_key)
 );
+
+CREATE TABLE IF NOT EXISTS prompt_versions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name    TEXT    NOT NULL,
+    version       INTEGER NOT NULL,
+    instruction   TEXT    NOT NULL,
+    model         TEXT    NOT NULL DEFAULT 'openai/gemini-2.5-flash-001',
+    temperature   REAL    NOT NULL DEFAULT 0.3,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    metadata_json TEXT,
+    is_active     INTEGER NOT NULL DEFAULT 0,
+    is_baseline   INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(agent_name, version)
+);
+
+CREATE TABLE IF NOT EXISTS prompt_scores (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name      TEXT    NOT NULL,
+    prompt_version  INTEGER NOT NULL,
+    session_id      TEXT    NOT NULL,
+    entity_score    REAL,
+    fidelity_score  REAL,
+    citation_score  REAL,
+    quality_score   REAL,
+    llm_judge_score REAL,
+    composite_score REAL    NOT NULL,
+    grader_detail   TEXT,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES session_outcomes(session_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS prompt_promotions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name            TEXT    NOT NULL,
+    from_version          INTEGER NOT NULL,
+    to_version            INTEGER NOT NULL,
+    reason                TEXT    NOT NULL,
+    composite_before      REAL,
+    composite_after       REAL,
+    regression_passed     INTEGER NOT NULL DEFAULT 1,
+    regression_detail     TEXT,
+    promoted_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -149,6 +238,53 @@ _MIGRATIONS = [
         ALTER TABLE routing_patterns_new RENAME TO routing_patterns;
         """,
     ),
+    # M2: Add prompt evolution tables.  check_sql detects whether the table
+    # already exists (e.g. created by _SCHEMA_SQL on a fresh DB).
+    (
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prompt_versions'",
+        """
+        CREATE TABLE IF NOT EXISTS prompt_versions (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name    TEXT    NOT NULL,
+            version       INTEGER NOT NULL,
+            instruction   TEXT    NOT NULL,
+            model         TEXT    NOT NULL DEFAULT 'openai/gemini-2.5-flash-001',
+            temperature   REAL    NOT NULL DEFAULT 0.3,
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+            metadata_json TEXT,
+            is_active     INTEGER NOT NULL DEFAULT 0,
+            is_baseline   INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(agent_name, version)
+        );
+        CREATE TABLE IF NOT EXISTS prompt_scores (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name      TEXT    NOT NULL,
+            prompt_version  INTEGER NOT NULL,
+            session_id      TEXT    NOT NULL,
+            entity_score    REAL,
+            fidelity_score  REAL,
+            citation_score  REAL,
+            quality_score   REAL,
+            llm_judge_score REAL,
+            composite_score REAL    NOT NULL,
+            grader_detail   TEXT,
+            created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES session_outcomes(session_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS prompt_promotions (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name            TEXT    NOT NULL,
+            from_version          INTEGER NOT NULL,
+            to_version            INTEGER NOT NULL,
+            reason                TEXT    NOT NULL,
+            composite_before      REAL,
+            composite_after       REAL,
+            regression_passed     INTEGER NOT NULL DEFAULT 1,
+            regression_detail     TEXT,
+            promoted_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 
@@ -201,7 +337,7 @@ def write_session_outcome(
     verification_verdict: str = "UNKNOWN",
     verification_score: float = 0.0,
     revision_triggered: bool = False,
-    specialists_used: Optional[list[str]] = None,
+    specialists_used: list[str] | None = None,
 ) -> None:
     """Insert or replace a session outcome row."""
     conn.execute(
@@ -473,7 +609,7 @@ def refresh_learned_strategies(conn: sqlite3.Connection) -> int:
 
 def get_routing_strategy(
     conn: sqlite3.Connection, domain: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch the routing strategy for a given query domain."""
     row = conn.execute(
         """SELECT strategy_json, confidence, sample_count
@@ -491,7 +627,7 @@ def get_routing_strategy(
     }
 
 
-def get_source_rankings(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
+def get_source_rankings(conn: sqlite3.Connection) -> dict[str, Any] | None:
     """Fetch the global source reliability rankings."""
     row = conn.execute(
         """SELECT strategy_json, confidence, sample_count
@@ -519,9 +655,7 @@ def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
 DEFAULT_SIMILARITY_THRESHOLD = 0.5
 
 
-def _row_to_query_intel(
-    row: sqlite3.Row, similarity: float = 1.0
-) -> dict[str, Any]:
+def _row_to_query_intel(row: sqlite3.Row, similarity: float = 1.0) -> dict[str, Any]:
     """Convert a query_patterns row to a query intelligence dict."""
     return {
         "template": row["normalized_template"],
@@ -537,7 +671,7 @@ def get_query_intelligence(
     conn: sqlite3.Connection,
     normalized: str,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch historical stats for a normalised query template.
 
     Tries exact match first.  If none found, computes Jaccard similarity
@@ -583,7 +717,7 @@ def get_query_intelligence(
     return None
 
 
-def get_best_agent_pairs(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
+def get_best_agent_pairs(conn: sqlite3.Connection) -> dict[str, Any] | None:
     """Fetch the global best agent pair rankings."""
     row = conn.execute(
         """SELECT strategy_json, confidence, sample_count
@@ -601,7 +735,7 @@ def get_best_agent_pairs(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
 
 def get_strategy_by_type(
     conn: sqlite3.Connection, strategy_type: str, domain_or_key: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Generic lookup of any learned strategy by type and key."""
     row = conn.execute(
         """SELECT strategy_json, confidence, sample_count
@@ -624,6 +758,335 @@ def get_session_count(conn: sqlite3.Connection) -> int:
     """Return total number of session outcomes stored."""
     row = conn.execute("SELECT COUNT(*) AS cnt FROM session_outcomes").fetchone()
     return row["cnt"] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Prompt version helpers
+# ---------------------------------------------------------------------------
+
+
+def write_prompt_version(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    version: int,
+    instruction: str,
+    model: str = "openai/gemini-2.5-flash-001",
+    temperature: float = 0.3,
+    metadata: dict[str, Any] | None = None,
+    is_active: bool = False,
+    is_baseline: bool = False,
+) -> int:
+    """Insert a new prompt version. Returns the row id."""
+    cursor = conn.execute(
+        """INSERT INTO prompt_versions
+           (agent_name, version, instruction, model, temperature,
+            metadata_json, is_active, is_baseline)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            agent_name,
+            version,
+            instruction,
+            model,
+            temperature,
+            json.dumps(metadata) if metadata else None,
+            int(is_active),
+            int(is_baseline),
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_active_prompt(
+    conn: sqlite3.Connection, agent_name: str
+) -> dict[str, Any] | None:
+    """Fetch the currently active prompt version for an agent."""
+    row = conn.execute(
+        """SELECT id, agent_name, version, instruction, model, temperature,
+                  created_at, metadata_json, is_active, is_baseline
+           FROM prompt_versions
+           WHERE agent_name = ? AND is_active = 1
+           ORDER BY version DESC LIMIT 1""",
+        (agent_name,),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "agent_name": row["agent_name"],
+        "version": row["version"],
+        "instruction": row["instruction"],
+        "model": row["model"],
+        "temperature": row["temperature"],
+        "created_at": row["created_at"],
+        "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else None,
+        "is_baseline": bool(row["is_baseline"]),
+    }
+
+
+def get_prompt_version(
+    conn: sqlite3.Connection, agent_name: str, version: int
+) -> dict[str, Any] | None:
+    """Fetch a specific prompt version by agent name and version number."""
+    row = conn.execute(
+        """SELECT id, agent_name, version, instruction, model, temperature,
+                  created_at, metadata_json, is_active, is_baseline
+           FROM prompt_versions
+           WHERE agent_name = ? AND version = ?""",
+        (agent_name, version),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "agent_name": row["agent_name"],
+        "version": row["version"],
+        "instruction": row["instruction"],
+        "model": row["model"],
+        "temperature": row["temperature"],
+        "created_at": row["created_at"],
+        "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else None,
+        "is_active": bool(row["is_active"]),
+        "is_baseline": bool(row["is_baseline"]),
+    }
+
+
+def get_prompt_history(
+    conn: sqlite3.Connection, agent_name: str, limit: int = 10
+) -> list[dict[str, Any]]:
+    """Fetch recent prompt versions for an agent, newest first."""
+    rows = conn.execute(
+        """SELECT id, agent_name, version, instruction, model, temperature,
+                  created_at, metadata_json, is_active, is_baseline
+           FROM prompt_versions
+           WHERE agent_name = ?
+           ORDER BY version DESC LIMIT ?""",
+        (agent_name, limit),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "agent_name": r["agent_name"],
+            "version": r["version"],
+            "instruction": r["instruction"],
+            "model": r["model"],
+            "temperature": r["temperature"],
+            "created_at": r["created_at"],
+            "metadata": json.loads(r["metadata_json"]) if r["metadata_json"] else None,
+            "is_active": bool(r["is_active"]),
+            "is_baseline": bool(r["is_baseline"]),
+        }
+        for r in rows
+    ]
+
+
+def get_next_prompt_version(conn: sqlite3.Connection, agent_name: str) -> int:
+    """Return the next version number for an agent (max + 1, or 0 if none)."""
+    row = conn.execute(
+        "SELECT MAX(version) AS mv FROM prompt_versions WHERE agent_name = ?",
+        (agent_name,),
+    ).fetchone()
+    current_max = row["mv"] if row and row["mv"] is not None else -1
+    return current_max + 1
+
+
+def promote_prompt(conn: sqlite3.Connection, agent_name: str, to_version: int) -> None:
+    """Set *to_version* as the active prompt, clearing previous active flag."""
+    conn.execute(
+        "UPDATE prompt_versions SET is_active = 0 WHERE agent_name = ? AND is_active = 1",
+        (agent_name,),
+    )
+    conn.execute(
+        "UPDATE prompt_versions SET is_active = 1 WHERE agent_name = ? AND version = ?",
+        (agent_name, to_version),
+    )
+    conn.commit()
+
+
+def write_prompt_score(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    prompt_version: int,
+    session_id: str,
+    scores: dict[str, Any],
+) -> int:
+    """Insert a prompt score row. Returns the row id."""
+    composite = scores.get("composite", 0.0)
+    cursor = conn.execute(
+        """INSERT INTO prompt_scores
+           (agent_name, prompt_version, session_id,
+            entity_score, fidelity_score, citation_score,
+            quality_score, llm_judge_score, composite_score,
+            grader_detail)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            agent_name,
+            prompt_version,
+            session_id,
+            scores.get("entity"),
+            scores.get("fidelity"),
+            scores.get("citation"),
+            scores.get("quality"),
+            scores.get("llm_judge"),
+            composite,
+            json.dumps(scores.get("detail")) if scores.get("detail") else None,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def update_llm_judge_score(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    session_id: str,
+    llm_judge_score: float,
+    new_composite: float,
+) -> None:
+    """Backfill the LLM judge score and recalculated composite."""
+    conn.execute(
+        """UPDATE prompt_scores
+           SET llm_judge_score = ?, composite_score = ?
+           WHERE agent_name = ? AND session_id = ?""",
+        (llm_judge_score, new_composite, agent_name, session_id),
+    )
+    conn.commit()
+
+
+def get_rolling_scores(
+    conn: sqlite3.Connection, agent_name: str, n_sessions: int = 5
+) -> list[dict[str, Any]]:
+    """Fetch the most recent N prompt scores for an agent, newest first."""
+    rows = conn.execute(
+        """SELECT agent_name, prompt_version, session_id,
+                  entity_score, fidelity_score, citation_score,
+                  quality_score, llm_judge_score, composite_score,
+                  grader_detail, created_at
+           FROM prompt_scores
+           WHERE agent_name = ?
+           ORDER BY created_at DESC LIMIT ?""",
+        (agent_name, n_sessions),
+    ).fetchall()
+    return [
+        {
+            "agent_name": r["agent_name"],
+            "prompt_version": r["prompt_version"],
+            "session_id": r["session_id"],
+            "entity": r["entity_score"],
+            "fidelity": r["fidelity_score"],
+            "citation": r["citation_score"],
+            "quality": r["quality_score"],
+            "llm_judge": r["llm_judge_score"],
+            "composite": r["composite_score"],
+            "detail": json.loads(r["grader_detail"]) if r["grader_detail"] else None,
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+def get_aggregate_score(
+    conn: sqlite3.Connection, agent_name: str, prompt_version: int
+) -> dict[str, Any]:
+    """Compute aggregate score statistics for a specific prompt version."""
+    row = conn.execute(
+        """SELECT AVG(composite_score) AS avg_composite,
+                  AVG(entity_score) AS avg_entity,
+                  AVG(fidelity_score) AS avg_fidelity,
+                  AVG(citation_score) AS avg_citation,
+                  AVG(quality_score) AS avg_quality,
+                  AVG(llm_judge_score) AS avg_llm_judge,
+                  COUNT(*) AS sample_count
+           FROM prompt_scores
+           WHERE agent_name = ? AND prompt_version = ?""",
+        (agent_name, prompt_version),
+    ).fetchone()
+    if not row or row["sample_count"] == 0:
+        return {"sample_count": 0}
+    return {
+        "avg_composite": round(row["avg_composite"], 4)
+        if row["avg_composite"]
+        else 0.0,
+        "avg_entity": round(row["avg_entity"], 4)
+        if row["avg_entity"] is not None
+        else None,
+        "avg_fidelity": round(row["avg_fidelity"], 4)
+        if row["avg_fidelity"] is not None
+        else None,
+        "avg_citation": round(row["avg_citation"], 4)
+        if row["avg_citation"] is not None
+        else None,
+        "avg_quality": round(row["avg_quality"], 4)
+        if row["avg_quality"] is not None
+        else None,
+        "avg_llm_judge": round(row["avg_llm_judge"], 4)
+        if row["avg_llm_judge"] is not None
+        else None,
+        "sample_count": row["sample_count"],
+    }
+
+
+def write_prompt_promotion(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    from_version: int,
+    to_version: int,
+    reason: str,
+    composite_before: float = 0.0,
+    composite_after: float = 0.0,
+    regression_detail: dict[str, Any] | None = None,
+) -> int:
+    """Record a prompt promotion in the audit trail. Returns the row id."""
+    cursor = conn.execute(
+        """INSERT INTO prompt_promotions
+           (agent_name, from_version, to_version, reason,
+            composite_before, composite_after, regression_passed,
+            regression_detail)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            agent_name,
+            from_version,
+            to_version,
+            reason,
+            composite_before,
+            composite_after,
+            1,
+            json.dumps(regression_detail) if regression_detail else None,
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def prune_prompt_versions(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    max_versions: int = 50,
+) -> int:
+    """Remove oldest non-baseline, non-active prompt versions beyond max_versions.
+
+    Returns the number of versions deleted.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM prompt_versions WHERE agent_name = ?",
+        (agent_name,),
+    ).fetchone()
+    current = row["cnt"] if row else 0
+    if current <= max_versions:
+        return 0
+
+    excess = current - max_versions
+    cursor = conn.execute(
+        """DELETE FROM prompt_versions WHERE id IN (
+             SELECT id FROM prompt_versions
+             WHERE agent_name = ? AND is_baseline = 0 AND is_active = 0
+             ORDER BY version ASC LIMIT ?
+           )""",
+        (agent_name, excess),
+    )
+    deleted = cursor.rowcount
+    if deleted:
+        conn.commit()
+    return deleted
 
 
 # ---------------------------------------------------------------------------
@@ -665,16 +1128,13 @@ def prune_cold_store(
 
     # 1. Age-based pruning
     cursor = conn.execute(
-        "DELETE FROM session_outcomes "
-        "WHERE created_at < datetime('now', ?)",
+        "DELETE FROM session_outcomes WHERE created_at < datetime('now', ?)",
         (f"-{max_age_days} days",),
     )
     deleted["age_based"] = cursor.rowcount
 
     # 2. Count-based pruning (keep newest max_sessions)
-    row = conn.execute(
-        "SELECT COUNT(*) AS cnt FROM session_outcomes"
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) AS cnt FROM session_outcomes").fetchone()
     current_count = row["cnt"] if row else 0
 
     if current_count > max_sessions:
@@ -690,15 +1150,26 @@ def prune_cold_store(
 
     # 3. Prune old query_patterns
     conn.execute(
-        "DELETE FROM query_patterns "
-        "WHERE updated_at < datetime('now', ?)",
+        "DELETE FROM query_patterns WHERE updated_at < datetime('now', ?)",
         (f"-{max_age_days} days",),
     )
 
     # 4. Prune old agent_coactivation entries
     conn.execute(
-        "DELETE FROM agent_coactivation "
-        "WHERE updated_at < datetime('now', ?)",
+        "DELETE FROM agent_coactivation WHERE updated_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+
+    # 5. Prune old prompt_scores (CASCADE handles session_outcomes deletes,
+    #    but also prune scores older than max_age_days independently)
+    conn.execute(
+        "DELETE FROM prompt_scores WHERE created_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+
+    # 6. Prune old prompt_promotions audit trail
+    conn.execute(
+        "DELETE FROM prompt_promotions WHERE promoted_at < datetime('now', ?)",
         (f"-{max_age_days} days",),
     )
 

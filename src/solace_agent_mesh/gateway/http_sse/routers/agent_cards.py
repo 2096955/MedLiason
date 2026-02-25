@@ -2,23 +2,25 @@
 API Router for agent discovery and management.
 """
 
+import asyncio
 import logging
 from typing import Any
 
+import httpx
 from a2a.types import AgentCard
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ....common.agent_registry import AgentRegistry
 from ....common.middleware.registry import MiddlewareRegistry
-from ..dependencies import get_agent_registry, get_user_config
+from ..dependencies import get_agent_registry, get_sac_component, get_user_config
 
 log = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # URI for the SAM tools extension in agent capabilities
-TOOLS_EXTENSION_URI = "https://solace.com/a2a/extensions/sam/tools"
-DISPLAY_NAME_EXTENSION_URI = "https://solace.com/a2a/extensions/display-name"
+TOOLS_EXTENSION_URI = "https://medexpert.com/a2a/extensions/sam/tools"
+DISPLAY_NAME_EXTENSION_URI = "https://medexpert.com/a2a/extensions/display-name"
 
 
 def _get_agent_display_name(agent: AgentCard) -> str:
@@ -237,3 +239,111 @@ async def get_discovered_agent_cards(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error retrieving agent list.",
         ) from e
+
+
+@router.get("/agentCards/health")
+async def get_agent_health(
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+):
+    """
+    Returns health status for all registered agents based on heartbeat TTL.
+    Agents are considered online if seen within the last 90 seconds.
+    """
+    log_prefix = "[GET /api/v1/agentCards/health] "
+    log.info("%sRequest received.", log_prefix)
+    try:
+        agent_names = agent_registry.get_agent_names()
+        health = {}
+        for name in agent_names:
+            is_expired, seconds_ago = agent_registry.check_ttl_expired(name, 90)
+            health[name] = {
+                "status": "offline" if is_expired else "online",
+                "lastSeenSecondsAgo": seconds_ago,
+            }
+        return health
+    except Exception as e:
+        log.exception("%sError retrieving agent health: %s", log_prefix, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error retrieving agent health.",
+        ) from e
+
+
+@router.get("/dataSources/health")
+async def get_data_sources_health(
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+):
+    """
+    Returns health status of all data sources (MCP servers, search tools)
+    by checking connectivity to their endpoints.
+    """
+    log_prefix = "[GET /api/v1/dataSources/health] "
+    log.info("%sRequest received.", log_prefix)
+
+    # Collect MCP server URLs from all registered agent configs
+    # We extract connection_params from agent tool configs
+    from ....common.middleware.registry import MiddlewareRegistry
+
+    sources = []
+
+    # Known MCP data sources with their ports (from medexpert config)
+    mcp_sources = [
+        {"name": "PubMed", "url": "http://localhost:9001/sse", "type": "mcp", "description": "Medical literature search"},
+        {"name": "ClinicalTrials", "url": "http://localhost:9002/sse", "type": "mcp", "description": "Clinical trial registry"},
+        {"name": "OpenFDA", "url": "http://localhost:9003/sse", "type": "mcp", "description": "Drug & device data"},
+        {"name": "CDC WONDER", "url": "http://localhost:9004/sse", "type": "mcp", "description": "Epidemiology data"},
+        {"name": "FDA Regulatory", "url": "http://localhost:9005/sse", "type": "mcp", "description": "Regulatory filings"},
+        {"name": "Census/SDOH", "url": "http://localhost:9006/sse", "type": "mcp", "description": "Social determinants"},
+        {"name": "Genomic", "url": "http://localhost:9007/sse", "type": "mcp", "description": "Genomic databases"},
+        {"name": "Environmental", "url": "http://localhost:9008/sse", "type": "mcp", "description": "Environmental health"},
+        {"name": "SEER Cancer", "url": "http://localhost:9009/sse", "type": "mcp", "description": "Cancer statistics"},
+        {"name": "Provider Intel", "url": "http://localhost:9010/sse", "type": "mcp", "description": "Provider/NPI data"},
+    ]
+
+    # Also add web search as a source
+    search_sources = [
+        {"name": "Google Search", "url": None, "type": "search", "description": "Web search (API key required)"},
+        {"name": "DuckDuckGo", "url": None, "type": "search", "description": "Web search (no key needed)"},
+    ]
+
+    # Check MCP server health in parallel
+    async def check_mcp(source):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=3.0) as client:
+                resp = await client.get(source["url"])
+                return {**source, "status": "online" if resp.status_code < 500 else "offline"}
+        except Exception:
+            return {**source, "status": "offline"}
+
+    mcp_results = await asyncio.gather(
+        *[check_mcp(s) for s in mcp_sources],
+        return_exceptions=True,
+    )
+
+    results = []
+    for r in mcp_results:
+        if isinstance(r, Exception):
+            continue
+        results.append(r)
+
+    # Check search tool availability (based on config, not connectivity)
+    for s in search_sources:
+        results.append({**s, "status": "available"})
+
+    # Also include agent status
+    agent_names = agent_registry.get_agent_names()
+    agent_count = len(agent_names)
+    agents_online = sum(
+        1 for name in agent_names
+        if not agent_registry.check_ttl_expired(name, 90)[0]
+    )
+
+    return {
+        "sources": results,
+        "summary": {
+            "totalSources": len(mcp_sources),
+            "onlineSources": sum(1 for r in results if r.get("status") == "online"),
+            "agentsOnline": agents_online,
+            "agentsTotal": agent_count,
+        },
+    }

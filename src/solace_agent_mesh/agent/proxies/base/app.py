@@ -26,7 +26,7 @@ class BaseProxyApp(App, ABC):
     """
     Abstract base class for proxy apps.
 
-    Handles common configuration schema, generates Solace topic subscriptions for all
+    Handles common configuration schema, generates MedExpert topic subscriptions for all
     proxied agents, and programmatically defines the single proxy component instance.
     """
 

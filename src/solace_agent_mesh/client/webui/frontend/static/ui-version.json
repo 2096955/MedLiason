@@ -1,0 +1,6 @@
+{
+  "id": "@MedExpert/medexpert-ui",
+  "name": "MedExpert UI",
+  "description": "MedExpert UI components - React library for building agent communication interfaces",
+  "version": "1.48.0"
+}

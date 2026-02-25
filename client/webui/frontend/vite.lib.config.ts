@@ -8,7 +8,7 @@ export default defineConfig({
     build: {
         lib: {
             entry: path.resolve(__dirname, "src/lib/index.ts"),
-            name: "SolaceAgentMeshUI",
+            name: "MedExpertUI",
             fileName: format => `index.${format === "es" ? "js" : "cjs"}`,
             formats: ["es", "cjs"],
         },

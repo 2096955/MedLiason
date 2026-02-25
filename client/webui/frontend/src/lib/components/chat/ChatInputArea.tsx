@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useMemo, useCallback } from "react"
 import type { ChangeEvent, FormEvent, ClipboardEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
-import { Ban, Paperclip, Send, Quote, X } from "lucide-react";
+import { Ban, Paperclip, Send, Quote, X, Timer } from "lucide-react";
 
 import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/lib/components/ui";
 import { MessageBanner } from "@/lib/components/common";
@@ -1002,6 +1002,14 @@ export const ChatInputArea: React.FC<{ agents: AgentCardInfo[]; scrollToBottom?:
 
                 {/* Spacer to push buttons to the right */}
                 <div className="flex-1" />
+
+                {/* Background execution indicator */}
+                {configFeatureEnablement?.background_tasks && (
+                    <span className="text-muted-foreground flex items-center gap-1 text-xs" title="Background execution enabled — tasks continue running if you navigate away">
+                        <Timer className="h-3.5 w-3.5" />
+                        Background
+                    </span>
+                )}
 
                 {/* Microphone button - show if STT feature enabled and STT setting enabled */}
                 {sttEnabled && settings.speechToText && <AudioRecorder disabled={isResponding} onTranscriptionComplete={handleTranscription} onError={handleTranscriptionError} onRecordingStateChange={setIsRecording} />}

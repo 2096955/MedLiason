@@ -165,10 +165,10 @@ def _generate_sse_url(fastapi_request: FastAPIRequest, stream_id: str) -> str:
         return str(base_url)
 
 
-def _translate_target_to_solace_topics(
+def _translate_target_to_medexpert_topics(
     target: SubscriptionTarget, component_namespace: str
 ) -> List[str]:
-    """Translates an abstract SubscriptionTarget to a list of Solace topic strings."""
+    """Translates an abstract SubscriptionTarget to a list of MedExpert topic strings."""
     topics = []
     target_identifier = target.identifier.strip("/") if target.identifier else ""
     component_namespace_formatted = component_namespace.strip("/")
@@ -423,13 +423,13 @@ async def subscribe_to_visualization_stream(
         )
         user_config = {}
     processed_targets_for_response: List[ActualSubscribedTarget] = []
-    current_solace_topics_for_stream: Set[str] = set()
+    current_medexpert_topics_for_stream: Set[str] = set()
     current_abstract_targets_for_stream: List[ActualSubscribedTarget] = []
 
     initial_stream_config = {
         "user_id": user_id,
         "user_config": user_config,
-        "solace_topics": current_solace_topics_for_stream,
+        "medexpert_topics": current_medexpert_topics_for_stream,
         "abstract_targets": current_abstract_targets_for_stream,
         "sse_queue": sse_queue,
         "client_stream_id": request_data.client_stream_id,
@@ -593,28 +593,28 @@ async def subscribe_to_visualization_stream(
                     type="namespace_a2a_messages", identifier=effective_identifier
                 )
 
-            solace_topics_for_target = _translate_target_to_solace_topics(
+            medexpert_topics_for_target = _translate_target_to_medexpert_topics(
                 target_for_translation, component.namespace
             )
-            if not solace_topics_for_target:
+            if not medexpert_topics_for_target:
                 log.warning(
-                    "%s No Solace topics derived for target: %s",
+                    "%s No MedExpert topics derived for target: %s",
                     log_id_prefix,
                     target_request.model_dump(),
                 )
                 target_status = "error_translating_target"
             else:
                 all_topics_added_successfully = True
-                for topic_str in solace_topics_for_target:
+                for topic_str in medexpert_topics_for_target:
                     success = await component._add_visualization_subscription(
                         topic_str, stream_id
                     )
                     if success:
-                        current_solace_topics_for_stream.add(topic_str)
+                        current_medexpert_topics_for_stream.add(topic_str)
                     else:
                         all_topics_added_successfully = False
                         log.error(
-                            "%s Failed to add subscription to Solace topic: %s for stream %s (target: %s)",
+                            "%s Failed to add subscription to MedExpert topic: %s for stream %s (target: %s)",
                             log_id_prefix,
                             topic_str,
                             stream_id,
@@ -932,8 +932,8 @@ async def update_visualization_stream_config(
             ActualSubscribedTarget(**t.model_dump())
             for t in stream_config.get("abstract_targets", [])
         ]
-        current_solace_topics: Set[str] = stream_config.get(
-            "solace_topics", set()
+        current_medexpert_topics: Set[str] = stream_config.get(
+            "medexpert_topics", set()
         ).copy()
 
         if update_request.subscription_targets_to_remove:
@@ -960,33 +960,33 @@ async def update_visualization_stream_config(
                     )
                     continue
 
-                solace_topics_for_removal = _translate_target_to_solace_topics(
+                medexpert_topics_for_removal = _translate_target_to_medexpert_topics(
                     target_for_translation_remove, component.namespace
                 )
-                removed_any_solace_topic_for_this_abstract_target = False
-                for topic_str in solace_topics_for_removal:
-                    if topic_str in current_solace_topics:
+                removed_any_medexpert_topic_for_this_abstract_target = False
+                for topic_str in medexpert_topics_for_removal:
+                    if topic_str in current_medexpert_topics:
                         if await component._remove_visualization_subscription_nolock(
                             topic_str, stream_id
                         ):
                             log.info(
-                                "%s Unsubscribed (no-lock) from Solace topic: %s for stream %s (due to removal of %s)",
+                                "%s Unsubscribed (no-lock) from MedExpert topic: %s for stream %s (due to removal of %s)",
                                 log_id_prefix,
                                 topic_str,
                                 stream_id,
                                 effective_identifier_remove,
                             )
-                            current_solace_topics.remove(topic_str)
-                            removed_any_solace_topic_for_this_abstract_target = True
+                            current_medexpert_topics.remove(topic_str)
+                            removed_any_medexpert_topic_for_this_abstract_target = True
                         else:
                             log.error(
-                                "%s Failed to unsubscribe from Solace topic: %s for stream %s",
+                                "%s Failed to unsubscribe from MedExpert topic: %s for stream %s",
                                 log_id_prefix,
                                 topic_str,
                                 stream_id,
                             )
 
-                if removed_any_solace_topic_for_this_abstract_target:
+                if removed_any_medexpert_topic_for_this_abstract_target:
                     if target_to_remove_req.type == "current_namespace_a2a_messages":
                         current_abstract_targets = [
                             t
@@ -1076,24 +1076,24 @@ async def update_visualization_stream_config(
                 has_permission = validation_result.get("valid", False)
 
                 if has_permission:
-                    solace_topics_for_target = _translate_target_to_solace_topics(
+                    medexpert_topics_for_target = _translate_target_to_medexpert_topics(
                         target_for_translation_add, component.namespace
                     )
-                    if not solace_topics_for_target:
+                    if not medexpert_topics_for_target:
                         target_status = "error_translating_target"
                     else:
                         all_topics_added_successfully = True
-                        temp_solace_topics_added_for_this_target = set()
-                        for topic_str in solace_topics_for_target:
+                        temp_medexpert_topics_added_for_this_target = set()
+                        for topic_str in medexpert_topics_for_target:
                             if await component._add_visualization_subscription(
                                 topic_str, stream_id
                             ):
-                                current_solace_topics.add(topic_str)
-                                temp_solace_topics_added_for_this_target.add(topic_str)
+                                current_medexpert_topics.add(topic_str)
+                                temp_medexpert_topics_added_for_this_target.add(topic_str)
                             else:
                                 all_topics_added_successfully = False
                                 log.error(
-                                    "%s Failed to add subscription to Solace topic: %s for stream %s (target: %s)",
+                                    "%s Failed to add subscription to MedExpert topic: %s for stream %s (target: %s)",
                                     log_id_prefix,
                                     topic_str,
                                     stream_id,
@@ -1114,13 +1114,13 @@ async def update_visualization_stream_config(
                             )
                         else:
                             target_status = "error_adding_subscription"
-                            for topic_str in temp_solace_topics_added_for_this_target:
+                            for topic_str in temp_medexpert_topics_added_for_this_target:
                                 await component._remove_visualization_subscription_nolock(
                                     topic_str, stream_id
                                 )
-                                current_solace_topics.discard(topic_str)
+                                current_medexpert_topics.discard(topic_str)
                             log.warning(
-                                "%s Rolled back Solace subscriptions (no-lock) for failed abstract target %s",
+                                "%s Rolled back MedExpert subscriptions (no-lock) for failed abstract target %s",
                                 log_id_prefix,
                                 effective_identifier_add,
                             )
@@ -1143,15 +1143,15 @@ async def update_visualization_stream_config(
             "abstract_targets"
         ] = current_abstract_targets
         component._active_visualization_streams[stream_id][
-            "solace_topics"
-        ] = current_solace_topics
+            "medexpert_topics"
+        ] = current_medexpert_topics
 
         log.info(
-            "%s Stream %s configuration updated. Current abstract targets: %d, Solace topics: %d",
+            "%s Stream %s configuration updated. Current abstract targets: %d, MedExpert topics: %d",
             log_id_prefix,
             stream_id,
             len(current_abstract_targets),
-            len(current_solace_topics),
+            len(current_medexpert_topics),
         )
     log.debug(
         "%s Released viz lock after updating stream config for %s",
@@ -1197,7 +1197,7 @@ async def unsubscribe_from_visualization_stream(
                 detail="User not authorized to unsubscribe from this stream.",
             )
 
-        topics_to_remove = list(stream_config.get("solace_topics", []))
+        topics_to_remove = list(stream_config.get("medexpert_topics", []))
         for topic_str in topics_to_remove:
             await component._remove_visualization_subscription_nolock(
                 topic_str, stream_id

@@ -1,5 +1,5 @@
 """
-Base Component class for SAM implementations in the Solace AI Connector.
+Base Component class for SAM implementations in the MedExpert AI Connector.
 """
 
 import logging
@@ -279,7 +279,7 @@ class SamComponentBase(ComponentBase, abc.ABC):
         or implement _handle_message_async() for async handling.
 
         Args:
-            message: The Solace message (SolaceMessage instance)
+            message: The MedExpert message (SolaceMessage instance)
             topic: The topic the message was received on
         """
         loop = self.get_async_loop()
@@ -363,7 +363,7 @@ class SamComponentBase(ComponentBase, abc.ABC):
         This runs on the component's dedicated async event loop.
 
         Args:
-            message: The Solace message (SolaceMessage instance)
+            message: The MedExpert message (SolaceMessage instance)
             topic: The topic the message was received on
         """
         pass
@@ -638,7 +638,7 @@ class SamComponentBase(ComponentBase, abc.ABC):
     def get_broker_username(self) -> Optional[str]:
         """
         Returns the broker username (client-username) that this component uses
-        to authenticate with the Solace broker.
+        to authenticate with the MedExpert broker.
 
         This is critical for trust card publishing and verification, as the
         trust card topic must match the actual authentication identity.

@@ -2,7 +2,7 @@
 
 This module defines the auth interface that enterprise implementations
 must follow. The community repo provides only the interface - the actual
-OAuth implementation lives in solace-agent-mesh-enterprise.
+OAuth implementation lives in medexpert-enterprise.
 """
 
 from abc import ABC, abstractmethod

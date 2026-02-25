@@ -53,7 +53,7 @@ async def example_text_file_creator_tool(
 ) -> Dict[str, Any]:
     """
     An example tool that creates a text file and saves it as an artifact
-    using the Solace Agent Mesh artifact service.
+    using the MedExpert artifact service.
     """
     plugin_name = "__PLUGIN_SPACED_NAME__"
     log_identifier = f"[{plugin_name}:example_text_file_creator_tool]"

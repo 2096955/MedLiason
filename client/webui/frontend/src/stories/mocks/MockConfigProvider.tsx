@@ -8,7 +8,7 @@ const defaultMockConfigContext: ConfigContextValue = {
     platformServerUrl: "http://localhost:8001",
     configAuthLoginUrl: "http://localhost:8000/auth/login",
     configUseAuthorization: false,
-    configWelcomeMessage: "Welcome to the mock Solace Agent Mesh!",
+    configWelcomeMessage: "Welcome to the mock MedExpert!",
     configRedirectUrl: "http://localhost:3000",
     configCollectFeedback: false,
     configBotName: "Mock Bot",

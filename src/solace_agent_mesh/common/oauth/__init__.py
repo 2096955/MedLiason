@@ -1,4 +1,4 @@
-"""Common OAuth 2.0 components for Solace Agent Mesh.
+"""Common OAuth 2.0 components for MedExpert.
 
 This module provides pure OAuth 2.0 protocol implementations that can be
 used across different components (LLM providers, A2A proxies, etc.) without

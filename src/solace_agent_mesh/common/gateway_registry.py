@@ -118,7 +118,7 @@ class GatewayRegistry(BaseRegistry):
             return None
 
         for ext in card.capabilities.extensions:
-            if ext.uri == "https://solace.com/a2a/extensions/sam/gateway-role":
+            if ext.uri == "https://medexpert.com/a2a/extensions/sam/gateway-role":
                 return ext.params.get("gateway_type")
 
         return None
@@ -138,7 +138,7 @@ class GatewayRegistry(BaseRegistry):
             return None
 
         for ext in card.capabilities.extensions:
-            if ext.uri == "https://solace.com/a2a/extensions/sam/gateway-role":
+            if ext.uri == "https://medexpert.com/a2a/extensions/sam/gateway-role":
                 return ext.params.get("namespace")
 
         return None
@@ -158,7 +158,7 @@ class GatewayRegistry(BaseRegistry):
             return None
 
         for ext in card.capabilities.extensions:
-            if ext.uri == "https://solace.com/a2a/extensions/sam/deployment":
+            if ext.uri == "https://medexpert.com/a2a/extensions/sam/deployment":
                 return ext.params.get("deployment_id")
 
         return None

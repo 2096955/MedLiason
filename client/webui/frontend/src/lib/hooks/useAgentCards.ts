@@ -3,10 +3,10 @@ import { api } from "@/lib/api";
 
 import type { AgentCard, AgentExtension, AgentCardInfo, AgentSkill } from "@/lib/types";
 
-const DISPLAY_NAME_EXTENSION_URI = "https://solace.com/a2a/extensions/display-name";
-const PEER_AGENT_TOPOLOGY_EXTENSION_URI = "https://solace.com/a2a/extensions/peer-agent-topology";
-const TOOL_EXTENSION_URI = "https://solace.com/a2a/extensions/sam/tools";
-const AGENT_TYPE_EXTENSION_URI = "https://solace.com/a2a/extensions/agent-type";
+const DISPLAY_NAME_EXTENSION_URI = "https://medexpert.com/a2a/extensions/display-name";
+const PEER_AGENT_TOPOLOGY_EXTENSION_URI = "https://medexpert.com/a2a/extensions/peer-agent-topology";
+const TOOL_EXTENSION_URI = "https://medexpert.com/a2a/extensions/sam/tools";
+const AGENT_TYPE_EXTENSION_URI = "https://medexpert.com/a2a/extensions/agent-type";
 
 /**
  * Transforms a raw A2A AgentCard into a UI-friendly AgentCardInfo object,
@@ -69,8 +69,19 @@ export const useAgentCards = (): useAgentCardsReturn => {
         setIsLoading(true);
         setError(null);
         try {
-            const data: AgentCard[] = await api.webui.get("/api/v1/agentCards");
-            const transformedAgents = data.map(transformAgentCard);
+            const [data, healthData] = await Promise.all([
+                api.webui.get("/api/v1/agentCards") as Promise<AgentCard[]>,
+                api.webui.get("/api/v1/agentCards/health").catch(() => ({})) as Promise<Record<string, { status: string; lastSeenSecondsAgo: number }>>,
+            ]);
+            const transformedAgents = data.map(card => {
+                const info = transformAgentCard(card);
+                const health = healthData[card.name];
+                if (health) {
+                    info.healthStatus = health.status as "online" | "offline";
+                    info.lastSeenSecondsAgo = health.lastSeenSecondsAgo;
+                }
+                return info;
+            });
             setAgents(transformedAgents);
         } catch (err: unknown) {
             console.error("Error fetching agents:", err);

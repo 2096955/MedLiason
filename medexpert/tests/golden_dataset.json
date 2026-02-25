@@ -33,5 +33,82 @@
     "expected_agents": ["GenomicsSpecialist", "LiteratureSpecialist"],
     "min_citation_count": 1,
     "category": "genomics"
+  },
+  {
+    "question": "What do systematic reviews say about the efficacy of statins for primary prevention of cardiovascular disease?",
+    "expected_keywords": ["statin", "systematic review", "cardiovascular", "prevention"],
+    "expected_agents": ["LiteratureSpecialist"],
+    "min_citation_count": 2,
+    "category": "literature"
+  },
+  {
+    "question": "What Phase III clinical trials exist for semaglutide in NASH or MASH?",
+    "expected_keywords": ["semaglutide", "phase III", "NASH"],
+    "expected_agents": ["ClinicalTrialsSpecialist"],
+    "min_citation_count": 1,
+    "category": "clinical_trials"
+  },
+  {
+    "question": "What are the known drug-drug interactions between warfarin and common antibiotics?",
+    "expected_keywords": ["warfarin", "interaction", "antibiotic"],
+    "expected_agents": ["DrugSpecialist"],
+    "min_citation_count": 1,
+    "category": "drug"
+  },
+  {
+    "question": "What is the evidence for metformin use in polycystic ovary syndrome?",
+    "expected_keywords": ["metformin", "PCOS", "evidence"],
+    "expected_agents": ["DrugSpecialist", "LiteratureSpecialist"],
+    "min_citation_count": 1,
+    "category": "drug_literature"
+  },
+  {
+    "question": "How do FDA and EMA approval timelines compare for oncology drugs in the last 5 years?",
+    "expected_keywords": ["FDA", "EMA", "oncology", "approval"],
+    "expected_agents": ["RegulatorySpecialist"],
+    "min_citation_count": 1,
+    "category": "regulatory"
+  },
+  {
+    "question": "What is the global prevalence of chronic kidney disease and its major risk factors?",
+    "expected_keywords": ["chronic kidney disease", "prevalence", "risk factor"],
+    "expected_agents": ["EpidemiologySpecialist"],
+    "min_citation_count": 1,
+    "category": "epidemiology"
+  },
+  {
+    "question": "What are the mortality trends for colorectal cancer in the United States over the past decade?",
+    "expected_keywords": ["colorectal cancer", "mortality", "trend"],
+    "expected_agents": ["EpidemiologySpecialist", "LiteratureSpecialist"],
+    "min_citation_count": 1,
+    "category": "epidemiology_literature"
+  },
+  {
+    "question": "What is the clinical significance of the CYP2D6 poor metabolizer phenotype for codeine?",
+    "expected_keywords": ["CYP2D6", "poor metabolizer", "codeine"],
+    "expected_agents": ["GenomicsSpecialist"],
+    "min_citation_count": 1,
+    "category": "genomics"
+  },
+  {
+    "question": "What pharmacogenomic markers influence dosing of tacrolimus in transplant patients?",
+    "expected_keywords": ["tacrolimus", "pharmacogenomic", "transplant"],
+    "expected_agents": ["GenomicsSpecialist", "DrugSpecialist"],
+    "min_citation_count": 1,
+    "category": "genomics_drug"
+  },
+  {
+    "question": "What is the relationship between PM2.5 air pollution exposure and respiratory disease incidence?",
+    "expected_keywords": ["PM2.5", "air pollution", "respiratory"],
+    "expected_agents": ["EnvironmentalSpecialist"],
+    "min_citation_count": 1,
+    "category": "environmental"
+  },
+  {
+    "question": "Which healthcare providers in the oncology space have received the highest Open Payments from pharmaceutical companies?",
+    "expected_keywords": ["open payments", "oncology", "provider"],
+    "expected_agents": ["ProviderIntelSpecialist"],
+    "min_citation_count": 0,
+    "category": "provider_intel"
   }
 ]

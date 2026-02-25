@@ -1,7 +1,7 @@
 import React from "react";
 import type { ReactNode } from "react";
 
-import { GitMerge, Info, Book, Link, Paperclip, Box, Wrench, Key, Bot, Code, Workflow } from "lucide-react";
+import { GitMerge, Info, Book, Link, Paperclip, Box, Wrench, Key, Bot, Code, Workflow, Users, Tag } from "lucide-react";
 
 import type { AgentCardInfo, AgentSkill } from "@/lib/types";
 import { isWorkflowAgent, getWorkflowNodeCount } from "@/lib/utils/agentUtils";
@@ -80,8 +80,21 @@ export const AgentDisplayCard: React.FC<AgentDisplayCardProps> = ({ agent, isExp
             <div className="space-y-1">
                 {tools.map(tool => (
                     <div key={tool.name} className="rounded p-1.5 text-xs">
-                        <p className="text-foreground font-semibold">{tool.name}</p>
+                        <div className="flex items-center gap-1">
+                            <p className="text-foreground font-semibold">{tool.name}</p>
+                            {tool.tags?.map(tag => (
+                                <span key={tag} className="bg-primary/10 text-primary inline-flex items-center gap-0.5 rounded px-1.5 py-0 text-[10px] font-medium">
+                                    <Tag size={8} />
+                                    {tag}
+                                </span>
+                            ))}
+                        </div>
                         <p className="mb-1">{tool.description}</p>
+                        {tool.examples && tool.examples.length > 0 && (
+                            <div className="text-muted-foreground mt-0.5 text-[10px]">
+                                <span className="font-medium">Examples:</span> {tool.examples.join(", ")}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -102,6 +115,12 @@ export const AgentDisplayCard: React.FC<AgentDisplayCardProps> = ({ agent, isExp
                                 </h2>
                             </div>
                         </div>
+                        {agent.healthStatus && (
+                            <span
+                                className={`ml-2 h-3 w-3 flex-shrink-0 rounded-full ${agent.healthStatus === "online" ? "bg-green-500" : "bg-red-400"}`}
+                                title={agent.healthStatus === "online" ? "Online" : `Offline (last seen ${agent.lastSeenSecondsAgo ?? "?"}s ago)`}
+                            />
+                        )}
                     </div>
                     <div className="scrollbar-themed flex-grow space-y-3 overflow-y-auto p-4">
                         <div className="mb-2 line-clamp-4 text-base">{agent.description || "No description provided."}</div>
@@ -150,6 +169,9 @@ export const AgentDisplayCard: React.FC<AgentDisplayCardProps> = ({ agent, isExp
                         <DetailItem label="Output Modes" value={renderList(agent.defaultOutputModes)} icon={<Box size={14} />} fullWidthValue />
                         <DetailItem label="Skills" value={renderSkills(agent.skills)} icon={<Wrench size={14} />} fullWidthValue />
                         <DetailItem label="Tools Info" value={renderTools(agent.tools)} icon={<Code size={14} />} fullWidthValue />
+                        {agent.peerAgents && agent.peerAgents.length > 0 && (
+                            <DetailItem label="Peer Agents" value={renderList(agent.peerAgents)} icon={<Users size={14} />} fullWidthValue />
+                        )}
                         {isWorkflow && nodeCount > 0 && (
                             <div className="mt-3 border-t pt-3">
                                 <h4 className="mb-2 text-xs font-semibold">Workflow Information</h4>

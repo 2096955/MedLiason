@@ -1,5 +1,5 @@
 """
-Custom Solace AI Connector Component to Host Google ADK Agents via A2A Protocol.
+Custom MedExpert AI Connector Component to Host Google ADK Agents via A2A Protocol.
 """
 
 import asyncio
@@ -97,7 +97,7 @@ if TYPE_CHECKING:
 info = {
     "class_name": "SamAgentComponent",
     "description": (
-        "Hosts a Google ADK agent and bridges communication via the A2A protocol over Solace. "
+        "Hosts a Google ADK agent and bridges communication via the A2A protocol over MedExpert. "
         "NOTE: Configuration is defined in the app-level 'app_config' block "
         "and validated by 'SamAgentApp.app_schema' when using the associated App class."
     ),
@@ -109,7 +109,7 @@ info = {
     },
     "output_schema": {
         "type": "object",
-        "description": "Not typically used; component publishes results to Solace.",
+        "description": "Not typically used; component publishes results to MedExpert.",
         "properties": {},
     },
 }
@@ -118,8 +118,8 @@ InstructionProvider = Callable[[ReadonlyContext], str]
 
 class SamAgentComponent(SamComponentBase):
     """
-    A Solace AI Connector component that hosts a Google ADK agent,
-    communicating via the A2A protocol over Solace.
+    A MedExpert AI Connector component that hosts a Google ADK agent,
+    communicating via the A2A protocol over MedExpert.
     """
 
     CORRELATION_DATA_PREFIX = CORRELATION_DATA_PREFIX
@@ -310,7 +310,7 @@ class SamAgentComponent(SamComponentBase):
                 init_enterprise_component_features(self)
             except ImportError:
                 # Community edition
-                # Contact Solace support for enterprise features
+                # Contact MedExpert support for enterprise features
                 pass
 
             from .app import (
@@ -491,7 +491,7 @@ class SamAgentComponent(SamComponentBase):
         Routes the message to the async event handler.
 
         Args:
-            message: The Solace message
+            message: The MedExpert message
             topic: The topic the message was received on
         """
         # Create event and process asynchronously
@@ -2261,7 +2261,7 @@ class SamAgentComponent(SamComponentBase):
         """
         logical_task_id = a2a_context.get("logical_task_id")
 
-        # Retrieve the original Solace message from TaskExecutionContext
+        # Retrieve the original MedExpert message from TaskExecutionContext
         original_message: Optional[SolaceMessage] = None
         with self.active_tasks_lock:
             task_context = self.active_tasks.get(logical_task_id)
@@ -2409,7 +2409,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found in context for task %s. Cannot ACK.",
+                    "%s Original MedExpert message not found in context for task %s. Cannot ACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2438,7 +2438,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found in context for task %s during finalization error. Cannot NACK.",
+                    "%s Original MedExpert message not found in context for task %s during finalization error. Cannot NACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2475,7 +2475,7 @@ class SamAgentComponent(SamComponentBase):
         """
         logical_task_id = a2a_context.get("logical_task_id")
 
-        # Retrieve the original Solace message from TaskExecutionContext
+        # Retrieve the original MedExpert message from TaskExecutionContext
         original_message: Optional[SolaceMessage] = None
         with self.active_tasks_lock:
             task_context = self.active_tasks.get(logical_task_id)
@@ -2537,7 +2537,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found in context for cancelled task %s. Cannot ACK.",
+                    "%s Original MedExpert message not found in context for cancelled task %s. Cannot ACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2694,7 +2694,7 @@ class SamAgentComponent(SamComponentBase):
         """
         logical_task_id = a2a_context.get("logical_task_id")
 
-        # Retrieve the original Solace message from TaskExecutionContext
+        # Retrieve the original MedExpert message from TaskExecutionContext
         original_message: Optional[SolaceMessage] = None
         with self.active_tasks_lock:
             task_context = self.active_tasks.get(logical_task_id)
@@ -2756,7 +2756,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found in context for task %s (LLM limit reached). Cannot ACK.",
+                    "%s Original MedExpert message not found in context for task %s (LLM limit reached). Cannot ACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2778,7 +2778,7 @@ class SamAgentComponent(SamComponentBase):
         """
         logical_task_id = a2a_context.get("logical_task_id")
 
-        # Retrieve the original Solace message from TaskExecutionContext
+        # Retrieve the original MedExpert message from TaskExecutionContext
         original_message: Optional[SolaceMessage] = None
         with self.active_tasks_lock:
             task_context = self.active_tasks.get(logical_task_id)
@@ -2861,7 +2861,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found in context for failed task %s. Cannot NACK.",
+                    "%s Original MedExpert message not found in context for failed task %s. Cannot NACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2890,7 +2890,7 @@ class SamAgentComponent(SamComponentBase):
                     )
             else:
                 log.warning(
-                    "%s Original Solace message not found for task %s during error finalization fallback. Cannot NACK.",
+                    "%s Original MedExpert message not found for task %s during error finalization fallback. Cannot NACK.",
                     self.log_identifier,
                     logical_task_id,
                 )
@@ -2940,7 +2940,7 @@ class SamAgentComponent(SamComponentBase):
                         log_id,
                         e,
                     )
-                    # Retrieve the original Solace message from TaskExecutionContext for fallback NACK
+                    # Retrieve the original MedExpert message from TaskExecutionContext for fallback NACK
                     original_message: Optional[SolaceMessage] = None
                     with self.active_tasks_lock:
                         task_context = self.active_tasks.get(logical_task_id)
@@ -3299,6 +3299,7 @@ class SamAgentComponent(SamComponentBase):
                                 "name": mcp_tool.name,
                                 "description": mcp_tool.description
                                 or "No description available.",
+                                "tags": ["mcp"],
                                 "required_scopes": toolset_scopes,
                             }
                         )
@@ -3327,12 +3328,17 @@ class SamAgentComponent(SamComponentBase):
                                 "name": openapi_tool.name,
                                 "description": openapi_tool.description
                                 or "No description available.",
+                                "tags": ["openapi"],
                                 "required_scopes": toolset_scopes,
                             }
                         )
                 else:
                     tool_name = getattr(tool, "name", getattr(tool, "__name__", None))
                     if tool_name is not None:
+                        # Determine tool type tag
+                        tool_type_tag = "builtin"
+                        if hasattr(tool, "tool_type"):
+                            tool_type_tag = getattr(tool, "tool_type", "builtin")
                         tool_manifest.append(
                             {
                                 "id": tool_name,
@@ -3341,6 +3347,7 @@ class SamAgentComponent(SamComponentBase):
                                     tool, "description", getattr(tool, "__doc__", None)
                                 )
                                 or "No description available.",
+                                "tags": [tool_type_tag],
                                 "required_scopes": self.tool_scopes_map.get(tool_name, []),
                             }
                         )

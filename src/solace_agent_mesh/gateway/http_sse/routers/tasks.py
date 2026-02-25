@@ -895,7 +895,7 @@ async def get_task_events(
             formatted_event = {
                 "event_type": "a2a_message",
                 "timestamp": timestamp_iso,
-                "solace_topic": event.topic,
+                "medexpert_topic": event.topic,
                 "direction": sse_direction,
                 "source_entity": source_entity,
                 "target_entity": target_entity,
@@ -996,7 +996,7 @@ async def get_task_events(
                 formatted_event = {
                     "event_type": "a2a_message",
                     "timestamp": timestamp_iso,
-                    "solace_topic": event.topic,
+                    "medexpert_topic": event.topic,
                     "direction": sse_direction,
                     "source_entity": source_entity,
                     "target_entity": target_entity,
@@ -1704,3 +1704,44 @@ async def cancel_agent_task(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_resp.model_dump(exclude_none=True),
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Task Performance Metrics
+# ──────────────────────────────────────────────────────────────────────
+
+@router.get("/tasks/{task_id}/performance")
+async def get_task_performance(
+    task_id: str,
+    user_id: str = Depends(get_user_id),
+    db: DBSession = Depends(get_db),
+):
+    """
+    Returns performance metrics for a completed task, including
+    token usage and timing information.
+    """
+    log_prefix = f"[GET /tasks/{task_id}/performance] "
+    from ..repository.models.task_model import TaskModel
+
+    task = db.query(TaskModel).filter(TaskModel.task_id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Calculate duration
+    duration_ms = None
+    if task.start_time and task.end_time:
+        duration_ms = task.end_time - task.start_time
+
+    return {
+        "taskId": task_id,
+        "status": task.status,
+        "durationMs": duration_ms,
+        "startTime": task.start_time,
+        "endTime": task.end_time,
+        "tokenUsage": {
+            "totalInputTokens": task.total_input_tokens,
+            "totalOutputTokens": task.total_output_tokens,
+            "totalCachedInputTokens": task.total_cached_input_tokens,
+            "details": task.token_usage_details,
+        },
+    }

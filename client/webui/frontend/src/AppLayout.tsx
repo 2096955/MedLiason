@@ -57,7 +57,7 @@ function AppLayoutContent() {
         return (
             <EmptyState
                 variant="noImage"
-                title="Welcome to Solace Agent Mesh!"
+                title="Welcome to MedExpert!"
                 className="h-screen w-screen"
                 buttons={[
                     {

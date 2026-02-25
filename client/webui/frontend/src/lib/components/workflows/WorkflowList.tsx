@@ -10,7 +10,7 @@ import { WorkflowDetailPanel } from "./WorkflowDetailPanel";
 import { SearchInput } from "..";
 
 const WORKFLOW_STORAGE_KEY = "sam-workflow-onboarding-dismissed";
-const WORKFLOW_URL = "https://solacelabs.github.io/solace-agent-mesh/docs/documentation/components/workflows";
+const WORKFLOW_URL = "https://medexpert.com/docs/documentation/components/workflows";
 const WORKFLOW_HEADER = "Workflows give enterprises production-ready, best-practice agent patterns that are predictable and reliable.";
 const WORKFLOW_DESCRIPTION =
     "Turn complex multi-agent tasks into streamlined workflows. Define the sequence in YAML, deploy to Agent Mesh, and watch your workflow handle the coordination automatically. Great for building repeatable processes that need multiple agents working together in a specific order.";

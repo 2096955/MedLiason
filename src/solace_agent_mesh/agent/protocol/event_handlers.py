@@ -880,7 +880,7 @@ async def handle_a2a_request(component, message: SolaceMessage):
                 task_id=logical_task_id, a2a_context=a2a_context
             )
 
-            # Store the original Solace message in TaskExecutionContext instead of a2a_context
+            # Store the original MedExpert message in TaskExecutionContext instead of a2a_context
             # This avoids serialization issues when a2a_context is stored in ADK session state
             task_context.set_original_solace_message(message)
 
@@ -2029,15 +2029,15 @@ def publish_agent_card(component):
         peer_agents = component.peer_agents
 
         agent_request_topic = get_agent_request_topic(namespace, agent_name)
-        dynamic_url = f"solace:{agent_request_topic}"
+        dynamic_url = f"medexpert:{agent_request_topic}"
 
         # Define unique URIs for our custom extensions.
-        DEPLOYMENT_EXTENSION_URI = "https://solace.com/a2a/extensions/sam/deployment"
+        DEPLOYMENT_EXTENSION_URI = "https://medexpert.com/a2a/extensions/sam/deployment"
         PEER_TOPOLOGY_EXTENSION_URI = (
-            "https://solace.com/a2a/extensions/peer-agent-topology"
+            "https://medexpert.com/a2a/extensions/peer-agent-topology"
         )
-        DISPLAY_NAME_EXTENSION_URI = "https://solace.com/a2a/extensions/display-name"
-        TOOLS_EXTENSION_URI = "https://solace.com/a2a/extensions/sam/tools"
+        DISPLAY_NAME_EXTENSION_URI = "https://medexpert.com/a2a/extensions/display-name"
+        TOOLS_EXTENSION_URI = "https://medexpert.com/a2a/extensions/sam/tools"
 
         extensions_list = []
 

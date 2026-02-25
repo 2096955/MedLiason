@@ -1,5 +1,5 @@
-import { useMemo, type JSX } from "react";
-import { Download } from "lucide-react";
+import { useMemo, useState, useEffect, type JSX } from "react";
+import { Download, Clock, Zap } from "lucide-react";
 
 import { Badge, Button } from "@/lib/components/ui";
 import { useChatContext, useConfigContext } from "@/lib/hooks";
@@ -10,6 +10,17 @@ import type { MessageFE, TextPart, VisualizedTask } from "@/lib/types";
 import { LoadingMessageRow } from "../chat";
 import { downloadBlob } from "@/lib/utils";
 import { api } from "@/lib/api";
+
+interface TaskPerformance {
+    taskId: string;
+    status: string;
+    durationMs: number | null;
+    tokenUsage: {
+        totalInputTokens: number | null;
+        totalOutputTokens: number | null;
+        totalCachedInputTokens: number | null;
+    };
+}
 
 const getStatusBadge = (status: string, type: "info" | "error" | "success") => {
     return (
@@ -62,12 +73,23 @@ export const FlowChartDetails: React.FC<{ task: VisualizedTask }> = ({ task }) =
     const { messages, addNotification, displayError } = useChatContext();
     const { configFeatureEnablement } = useConfigContext();
     const taskLoggingEnabled = configFeatureEnablement?.taskLogging ?? false;
+    const [performance, setPerformance] = useState<TaskPerformance | null>(null);
 
     const taskStatus = useMemo(() => {
         const loadingMessage = messages.find(message => message.isStatusBubble);
 
         return task ? getTaskStatus(task, loadingMessage) : null;
     }, [messages, task]);
+
+    // Fetch performance data when task completes
+    useEffect(() => {
+        if (task?.taskId && task.status === "completed") {
+            api.webui
+                .get(`/api/v1/tasks/${task.taskId}/performance`)
+                .then((data: TaskPerformance) => setPerformance(data))
+                .catch(() => setPerformance(null));
+        }
+    }, [task?.taskId, task?.status]);
 
     const handleDownloadStim = async () => {
         try {
@@ -83,25 +105,54 @@ export const FlowChartDetails: React.FC<{ task: VisualizedTask }> = ({ task }) =
         }
     };
 
+    const formatDuration = (ms: number) => {
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        return `${(ms / 60000).toFixed(1)}m`;
+    };
+
     return task ? (
-        <div className="grid grid-cols-[auto_1fr_auto] grid-rows-[32px_32px] items-center gap-x-8 border-b p-4">
-            <div className="text-muted-foreground">User</div>
-            <div className="truncate" title={task.initialRequestText}>
-                {task.initialRequestText}
-            </div>
-            {/* Empty cell for alignment */}
-            <div />
+        <div className="border-b p-4">
+            <div className="grid grid-cols-[auto_1fr_auto] grid-rows-[32px_32px] items-center gap-x-8">
+                <div className="text-muted-foreground">User</div>
+                <div className="truncate" title={task.initialRequestText}>
+                    {task.initialRequestText}
+                </div>
+                {/* Empty cell for alignment */}
+                <div />
 
-            <div className="text-muted-foreground">Status</div>
-            <div className="truncate">{taskStatus}</div>
+                <div className="text-muted-foreground">Status</div>
+                <div className="truncate">{taskStatus}</div>
 
-            <div>
-                {taskLoggingEnabled && (
-                    <Button variant="ghost" size="icon" onClick={handleDownloadStim} tooltip="Download Task Log (.stim)" disabled={!task.taskId}>
-                        <Download />
-                    </Button>
-                )}
+                <div>
+                    {taskLoggingEnabled && (
+                        <Button variant="ghost" size="icon" onClick={handleDownloadStim} tooltip="Download Task Log (.stim)" disabled={!task.taskId}>
+                            <Download />
+                        </Button>
+                    )}
+                </div>
             </div>
+
+            {/* Performance metrics */}
+            {performance && (performance.durationMs || performance.tokenUsage.totalInputTokens) && (
+                <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-3 border-t pt-3 text-xs">
+                    {performance.durationMs != null && (
+                        <span className="flex items-center gap-1" title="Task duration">
+                            <Clock className="h-3 w-3" />
+                            {formatDuration(performance.durationMs)}
+                        </span>
+                    )}
+                    {performance.tokenUsage.totalInputTokens != null && (
+                        <span className="flex items-center gap-1" title="Token usage (input / output)">
+                            <Zap className="h-3 w-3" />
+                            {performance.tokenUsage.totalInputTokens.toLocaleString()} in / {(performance.tokenUsage.totalOutputTokens ?? 0).toLocaleString()} out
+                        </span>
+                    )}
+                    {performance.tokenUsage.totalCachedInputTokens != null && performance.tokenUsage.totalCachedInputTokens > 0 && (
+                        <span title="Cached input tokens">({performance.tokenUsage.totalCachedInputTokens.toLocaleString()} cached)</span>
+                    )}
+                </div>
+            )}
         </div>
     ) : null;
 };

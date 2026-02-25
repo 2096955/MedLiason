@@ -30,7 +30,7 @@ class SamAppBase(App):
     When using dev_mode (DevBroker), broker health checks always return True since
     the DevBroker doesn't have real connection issues to monitor.
 
-    When using a real Solace broker, health checks return True only when
+    When using a real MedExpert broker, health checks return True only when
     the broker connection status is CONNECTED.
 
     When using SQL-based session services, health checks also verify database
@@ -104,7 +104,7 @@ class SamAppBase(App):
         When using dev_mode, this always returns True since the DevBroker
         doesn't have real connection state to check.
 
-        When using a real Solace broker, this checks the Monitoring singleton's
+        When using a real MedExpert broker, this checks the Monitoring singleton's
         connection status and returns True only if CONNECTED.
 
         Returns:

@@ -92,7 +92,7 @@ export function getDisplayText(person: Person, disambiguate: boolean): string {
 
 /**
  * Formats a person as the backend expects: "displayName <user_id:id>"
- * Example: "Edward Funnekotter <user_id:edward.funnekotter@solace.com>"
+ * Example: "Jane Doe <user_id:jane.doe@medexpert.com>"
  */
 export function formatMentionForBackend(person: Person): string {
     return `${person.displayName} <user_id:${person.id}>`;

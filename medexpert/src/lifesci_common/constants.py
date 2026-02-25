@@ -105,64 +105,145 @@ DOMAIN_AGENT_ROUTING = {
     "literature": {
         "agent": "LiteratureSpecialist",
         "keywords": [
-            "pubmed", "study", "research", "journal", "paper", "meta-analysis",
-            "systematic review", "clinical trial results", "evidence", "literature",
-            "peer-reviewed", "publication", "article", "abstract",
+            "pubmed",
+            "study",
+            "research",
+            "journal",
+            "paper",
+            "meta-analysis",
+            "systematic review",
+            "clinical trial results",
+            "evidence",
+            "literature",
+            "peer-reviewed",
+            "publication",
+            "article",
+            "abstract",
         ],
     },
     "clinical_trials": {
         "agent": "ClinicalTrialsSpecialist",
         "keywords": [
-            "clinical trial", "trial", "enrollment", "recruiting", "phase",
-            "randomized", "placebo", "arm", "endpoint", "clinicaltrials.gov",
-            "nct", "intervention", "investigational",
+            "clinical trial",
+            "trial",
+            "enrollment",
+            "recruiting",
+            "phase",
+            "randomized",
+            "placebo",
+            "arm",
+            "endpoint",
+            "clinicaltrials.gov",
+            "nct",
+            "intervention",
+            "investigational",
         ],
     },
     "drugs": {
         "agent": "DrugSpecialist",
         "keywords": [
-            "drug", "medication", "pharmaceutical", "adverse event", "side effect",
-            "fda approval", "label", "recall", "interaction", "contraindication",
-            "dosage", "pharmacology", "pharmacokinetics",
+            "drug",
+            "medication",
+            "pharmaceutical",
+            "adverse event",
+            "side effect",
+            "fda approval",
+            "label",
+            "recall",
+            "interaction",
+            "contraindication",
+            "dosage",
+            "pharmacology",
+            "pharmacokinetics",
         ],
     },
     "regulatory": {
         "agent": "RegulatorySpecialist",
         "keywords": [
-            "510k", "pma", "fda", "regulatory", "clearance", "approval",
-            "device", "classification", "guidance", "compliance", "submission",
+            "510k",
+            "pma",
+            "fda",
+            "regulatory",
+            "clearance",
+            "approval",
+            "device",
+            "classification",
+            "guidance",
+            "compliance",
+            "submission",
         ],
     },
     "epidemiology": {
         "agent": "EpidemiologySpecialist",
         "keywords": [
-            "prevalence", "incidence", "mortality", "morbidity", "outbreak",
-            "epidemic", "pandemic", "surveillance", "cdc", "statistics",
-            "demographic", "population", "vaccination", "immunization",
+            "prevalence",
+            "incidence",
+            "mortality",
+            "morbidity",
+            "outbreak",
+            "epidemic",
+            "pandemic",
+            "surveillance",
+            "cdc",
+            "statistics",
+            "demographic",
+            "population",
+            "vaccination",
+            "immunization",
         ],
     },
     "genomics": {
         "agent": "GenomicsSpecialist",
         "keywords": [
-            "gene", "genetic", "genomic", "variant", "mutation", "snp",
-            "clinvar", "pathogenic", "dna", "rna", "chromosome", "allele",
-            "genotype", "phenotype", "hereditary", "sequencing",
+            "gene",
+            "genetic",
+            "genomic",
+            "variant",
+            "mutation",
+            "snp",
+            "clinvar",
+            "pathogenic",
+            "dna",
+            "rna",
+            "chromosome",
+            "allele",
+            "genotype",
+            "phenotype",
+            "hereditary",
+            "sequencing",
         ],
     },
     "environmental": {
         "agent": "EnvironmentalSpecialist",
         "keywords": [
-            "environmental", "pollution", "air quality", "water quality",
-            "toxin", "exposure", "contaminant", "epa", "environmental justice",
-            "hazardous", "carcinogen",
+            "environmental",
+            "pollution",
+            "air quality",
+            "water quality",
+            "toxin",
+            "exposure",
+            "contaminant",
+            "epa",
+            "environmental justice",
+            "hazardous",
+            "carcinogen",
         ],
     },
     "provider_intel": {
         "agent": "ProviderIntelSpecialist",
         "keywords": [
-            "provider", "physician", "doctor", "hospital", "payment",
-            "open payments", "quality", "rating", "cms", "medicare",
-            "specialist", "practice",
+            "provider",
+            "physician",
+            "doctor",
+            "hospital",
+            "payment",
+            "open payments",
+            "quality",
+            "rating",
+            "cms",
+            "medicare",
+            "specialist",
+            "practice",
         ],
     },
 }
@@ -212,10 +293,79 @@ REPORT_MODES = [
     "advisory_board_report",
 ]
 
+# ---------------------------------------------------------------------------
+# Prompt Evolution
+# ---------------------------------------------------------------------------
+
+EVOLVABLE_AGENTS = [
+    "LiteratureSpecialist",
+    "ClinicalTrialsSpecialist",
+    "DrugSpecialist",
+    "RegulatorySpecialist",
+    "EpidemiologySpecialist",
+    "GenomicsSpecialist",
+    "EnvironmentalSpecialist",
+    "ProviderIntelSpecialist",
+]
+
+# Frozen agents — prompts must NEVER be modified by the evolution engine.
+FROZEN_AGENTS = [
+    "OrchestratorAgent",
+    "VerifierAgent",
+    "ReviserAgent",
+]
+
+# Grader pass thresholds (per-grader)
+GRADER_THRESHOLDS = {
+    "entity": 0.8,
+    "fidelity": 0.3,
+    "citation": 0.7,
+    "quality": 0.6,
+    "llm_judge": 0.75,
+}
+
+# Composite weights for each grader
+GRADER_WEIGHTS = {
+    "entity": 0.20,
+    "fidelity": 0.20,
+    "citation": 0.25,
+    "quality": 0.15,
+    "llm_judge": 0.20,
+}
+
+# Composite score threshold below which a specialist is considered underperforming
+EVOLUTION_COMPOSITE_THRESHOLD = 0.55
+
+# Number of recent sessions to consider for rolling average
+EVOLUTION_ROLLING_WINDOW = 5
+
+# Maximum prompt versions to keep per agent (oldest non-baseline pruned)
+MAX_PROMPT_VERSIONS = 50
+
+# Number of consecutive poor sessions that trigger auto-rollback
+ROLLBACK_SESSION_COUNT = 3
+
+# Medical entity regex patterns for entity preservation grader
+MEDICAL_ENTITY_PATTERNS = {
+    "pmid": r"\b\d{7,8}\b",
+    "nct_id": r"\bNCT\d{8,11}\b",
+    "doi": r"\b10\.\d{4,}/\S+",
+    "gene_symbol": r"\b[A-Z][A-Z0-9]{1,5}\b",
+    "dosage": r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|g|ml|mL|IU|units?)\b",
+}
+
+# LLM-as-judge configuration
+LLM_JUDGE_MODEL = "openai/gemini-2.5-flash-001"
+LLM_JUDGE_TEMPERATURE = 0.1
+LLM_JUDGE_TIMEOUT_SECONDS = 15
+LLM_JUDGE_BATCH_SIZE = 10
+LLM_JUDGE_QUEUE_TRIGGER = 20
+
 
 # ---------------------------------------------------------------------------
 # Runtime Validation
 # ---------------------------------------------------------------------------
+
 
 def _validate_routing():
     """Validate DOMAIN_AGENT_ROUTING structure at import time."""
@@ -223,6 +373,9 @@ def _validate_routing():
         if "agent" not in info:
             raise ValueError(f"DOMAIN_AGENT_ROUTING['{domain}'] missing 'agent' key")
         if "keywords" not in info or not info["keywords"]:
-            raise ValueError(f"DOMAIN_AGENT_ROUTING['{domain}'] missing or empty 'keywords'")
+            raise ValueError(
+                f"DOMAIN_AGENT_ROUTING['{domain}'] missing or empty 'keywords'"
+            )
+
 
 _validate_routing()

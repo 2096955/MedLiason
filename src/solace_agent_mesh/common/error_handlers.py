@@ -1,4 +1,4 @@
-"""Centralized error handlers for Solace Agent Mesh."""
+"""Centralized error handlers for MedExpert."""
 
 from typing import Tuple
 from litellm.exceptions import BadRequestError

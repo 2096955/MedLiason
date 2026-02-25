@@ -1,5 +1,5 @@
 /**
- * Simple Cypress session management for Solace Agent Mesh Community
+ * Simple Cypress session management for MedExpert
  *
  * This provides a minimal session solution for the community version
  * without authentication requirements.

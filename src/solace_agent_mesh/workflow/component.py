@@ -22,7 +22,7 @@ from ..common.constants import (
     EXTENSION_URI_SCHEMAS,
 )
 
-EXTENSION_URI_WORKFLOW_VISUALIZATION = "https://solace.com/a2a/extensions/sam/workflow-visualization"
+EXTENSION_URI_WORKFLOW_VISUALIZATION = "https://medexpert.com/a2a/extensions/sam/workflow-visualization"
 from ..common.data_parts import (
     WorkflowExecutionStartData,
     WorkflowExecutionResultData,
@@ -358,7 +358,7 @@ class WorkflowExecutorComponent(SamComponentBase):
             skills=self.workflow_definition.skills or [],
             capabilities=capabilities,
             version=self.workflow_definition.version,
-            url=f"solace:{a2a.get_agent_request_topic(self.namespace, self.workflow_name)}",
+            url=f"medexpert:{a2a.get_agent_request_topic(self.namespace, self.workflow_name)}",
         )
 
     async def handle_cache_expiry_event(self, cache_data: Dict[str, Any]):

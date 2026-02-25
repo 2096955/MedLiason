@@ -1,4 +1,4 @@
-# Solace Agent Mesh Custom Plugin
+# MedExpert Custom Plugin
 
 class __COMPONENT_PASCAL_CASE_NAME__:
     def template_function(self):

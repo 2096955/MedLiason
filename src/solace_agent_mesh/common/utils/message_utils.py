@@ -2,7 +2,7 @@
 
 This module provides utilities for calculating and validating message sizes
 to ensure they don't exceed configured limits. The size calculation matches
-the exact serialization format used by the Solace AI Connector (JSON + UTF-8).
+the exact serialization format used by the MedExpert AI Connector (JSON + UTF-8).
 """
 
 import logging
@@ -19,7 +19,7 @@ def calculate_message_size(payload: Dict[str, Any]) -> int:
     """Calculate the exact size of a message payload in bytes.
 
     Uses JSON serialization followed by UTF-8 encoding to match the exact
-    format used by the Solace AI Connector.
+    format used by the MedExpert AI Connector.
 
     Args:
         payload: The message payload dictionary to calculate size for.
@@ -32,7 +32,7 @@ def calculate_message_size(payload: Dict[str, Any]) -> int:
         for size estimation.
     """
     try:
-        # Use JSON serialization + UTF-8 encoding to match Solace AI Connector
+        # Use JSON serialization + UTF-8 encoding to match MedExpert AI Connector
         json_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         return len(json_str.encode("utf-8"))
     except (TypeError, ValueError) as e:

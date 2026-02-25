@@ -61,7 +61,7 @@ class CoreA2AService:
             a2a_message: The A2AMessage object containing parts.
             session_id: The A2A session ID.
             client_id: The identifier of the originating client/gateway.
-            reply_to_topic: The Solace topic where the final response should be sent.
+            reply_to_topic: The MedExpert topic where the final response should be sent.
             user_id: An identifier for the user (optional).
             a2a_user_config: Optional dictionary containing user-specific configuration or attributes.
             metadata_override: Optional dictionary to merge into task metadata.
@@ -143,8 +143,8 @@ class CoreA2AService:
             a2a_message: The A2AMessage object containing parts.
             session_id: The A2A session ID.
             client_id: The identifier of the originating client/gateway.
-            reply_to_topic: The Solace topic where the final response should be sent.
-            status_to_topic: The Solace topic where status updates should be sent.
+            reply_to_topic: The MedExpert topic where the final response should be sent.
+            status_to_topic: The MedExpert topic where status updates should be sent.
             user_id: An identifier for the user (optional).
             a2a_user_config: Optional dictionary containing user-specific configuration or attributes.
             metadata_override: Optional dictionary to merge into task metadata.

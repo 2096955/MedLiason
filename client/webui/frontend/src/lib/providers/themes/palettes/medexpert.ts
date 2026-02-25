@@ -1,6 +1,6 @@
 import type { ThemePalette } from "./themePalette";
 
-export const solace: ThemePalette = {
+export const medexpert: ThemePalette = {
     brand: {
         wMain: "#00C895",
         w30: "#B3EFDF",

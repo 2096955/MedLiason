@@ -1,5 +1,5 @@
 """
-Solace Agent Mesh App class for the __GATEWAY_NAME_PASCAL_CASE__ Gateway.
+MedExpert App class for the __GATEWAY_NAME_PASCAL_CASE__ Gateway.
 """
 
 import logging

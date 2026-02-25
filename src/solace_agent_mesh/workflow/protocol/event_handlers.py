@@ -169,7 +169,7 @@ async def handle_task_request(
         )
         workflow_context.workflow_state = workflow_state
 
-        # Store the original Solace message separately to avoid serialization issues
+        # Store the original MedExpert message separately to avoid serialization issues
         workflow_context.set_original_solace_message(message)
 
         # Track active workflow

@@ -1,5 +1,5 @@
 """
-Shared utilities for Solace Agent Mesh.
+Shared utilities for MedExpert.
 
 This module contains utilities used by both gateways and services:
 - API utilities (pagination, responses, auth)

@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 info = {
     "class_name": "BaseProxyComponent",
     "description": (
-        "Abstract base class for proxy components. Handles Solace interaction, "
+        "Abstract base class for proxy components. Handles MedExpert interaction, "
         "discovery, and task lifecycle management."
     ),
     "config_parameters": [],
@@ -70,7 +70,7 @@ class BaseProxyComponent(ComponentBase, ABC):
     Abstract base class for proxy components.
 
     Initializes shared services and manages the core lifecycle for proxying
-    requests between the Solace event mesh and a downstream agent protocol.
+    requests between the MedExpert event mesh and a downstream agent protocol.
     """
 
     def __init__(self, **kwargs: Any):
@@ -185,7 +185,7 @@ class BaseProxyComponent(ComponentBase, ABC):
             )
 
     async def _handle_a2a_request(self, message: SolaceMessage):
-        """Handles an incoming A2A request message from Solace."""
+        """Handles an incoming A2A request message from MedExpert."""
         jsonrpc_request_id = None
         logical_task_id = None
         try:
@@ -363,7 +363,7 @@ class BaseProxyComponent(ComponentBase, ABC):
         display_name = agent_card.name
 
         # Check for existing display-name extension from fetched card
-        display_name_uri = "https://solace.com/a2a/extensions/display-name"
+        display_name_uri = "https://medexpert.com/a2a/extensions/display-name"
         if card_copy.capabilities and card_copy.capabilities.extensions:
             for ext in card_copy.capabilities.extensions:
                 if ext.uri == display_name_uri and ext.params and ext.params.get("display_name"):
@@ -577,7 +577,7 @@ class BaseProxyComponent(ComponentBase, ABC):
                 if agent_card:
                     card_to_publish = agent_card.model_copy(deep=True)
                     card_to_publish.url = (
-                        f"solace:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
+                        f"medexpert:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
                     )
                     discovery_topic = a2a.get_agent_discovery_topic(self.namespace)
                     self._publish_a2a_message(
@@ -606,7 +606,7 @@ class BaseProxyComponent(ComponentBase, ABC):
                 # Create a separate copy for publishing
                 card_to_publish = card_for_registry.model_copy(deep=True)
                 card_to_publish.url = (
-                    f"solace:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
+                    f"medexpert:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
                 )
                 discovery_topic = a2a.get_agent_discovery_topic(self.namespace)
                 self._publish_a2a_message(
@@ -628,7 +628,7 @@ class BaseProxyComponent(ComponentBase, ABC):
     async def _publish_status_update(
         self, event: TaskStatusUpdateEvent, a2a_context: Dict
     ):
-        """Publishes a TaskStatusUpdateEvent to the appropriate Solace topic."""
+        """Publishes a TaskStatusUpdateEvent to the appropriate MedExpert topic."""
         target_topic = a2a_context.get("status_topic")
         if not target_topic:
             log.warning(
@@ -670,7 +670,7 @@ class BaseProxyComponent(ComponentBase, ABC):
     async def _publish_artifact_update(
         self, event: TaskArtifactUpdateEvent, a2a_context: Dict
     ):
-        """Publishes a TaskArtifactUpdateEvent to the appropriate Solace topic."""
+        """Publishes a TaskArtifactUpdateEvent to the appropriate MedExpert topic."""
         target_topic = a2a_context.get("status_topic")
         if not target_topic:
             log.warning(
@@ -854,7 +854,7 @@ class BaseProxyComponent(ComponentBase, ABC):
             # Create a copy for publishing to avoid modifying the card in the registry
             card_to_publish = original_card.model_copy(deep=True)
             card_to_publish.url = (
-                f"solace:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
+                f"medexpert:{a2a.get_agent_request_topic(self.namespace, agent_alias)}"
             )
             discovery_topic = a2a.get_agent_discovery_topic(self.namespace)
             self._publish_a2a_message(

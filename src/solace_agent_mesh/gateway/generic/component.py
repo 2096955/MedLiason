@@ -232,7 +232,7 @@ class GenericGatewayComponent(BaseGatewayComponent, GatewayContext):
         if not ENTERPRISE_AUTH_AVAILABLE:
             log.warning(
                 "%s Authentication enabled but enterprise module not available. "
-                "Install solace-agent-mesh-enterprise to enable OAuth2 authentication.",
+                "Install medexpert-enterprise to enable OAuth2 authentication.",
                 self.log_identifier
             )
             return

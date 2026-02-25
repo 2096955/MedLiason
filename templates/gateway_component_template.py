@@ -1,5 +1,5 @@
 """
-Solace Agent Mesh Component class for the __GATEWAY_NAME_PASCAL_CASE__ Gateway.
+MedExpert Component class for the __GATEWAY_NAME_PASCAL_CASE__ Gateway.
 """
 
 import logging
@@ -35,7 +35,7 @@ info = {
 
 class __GATEWAY_NAME_PASCAL_CASE__GatewayComponent(BaseGatewayComponent):
     """
-    Solace Agent Mesh Component implementing the A2A __GATEWAY_NAME_PASCAL_CASE__ Gateway.
+    MedExpert Component implementing the A2A __GATEWAY_NAME_PASCAL_CASE__ Gateway.
     """
 
     def __init__(self, **kwargs: Any):

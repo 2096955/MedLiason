@@ -1,5 +1,5 @@
 """
-Platform Service Component for Solace Agent Mesh.
+Platform Service Component for MedExpert.
 Hosts the FastAPI REST API server for platform configuration management.
 """
 

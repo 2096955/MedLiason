@@ -18,7 +18,7 @@ def initialize():
         from solace_agent_mesh_enterprise.init_enterprise import initialize_enterprise_features
     except ImportError:
         # Community edition
-        # Contact Solace support for enterprise features
+        # Contact MedExpert support for enterprise features
         return
     
     enterprise_config = os.getenv("SAM_AUTHORIZATION_CONFIG")

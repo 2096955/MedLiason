@@ -46,7 +46,7 @@ This class implements the `AgentExecutor` interface and contains the core logic 
 
 ### 3.3. `conftest.py` Integration
 
-A new session-scoped pytest fixture, `test_a2a_agent_server`, will be created to manage the lifecycle of the `TestA2AAgentServer`. This fixture will be injected into the `shared_solace_connector` fixture, which will configure an `A2AProxyApp` instance to point to the test agent's URL.
+A new session-scoped pytest fixture, `test_a2a_agent_server`, will be created to manage the lifecycle of the `TestA2AAgentServer`. This fixture will be injected into the `shared_medexpert_connector` fixture, which will configure an `A2AProxyApp` instance to point to the test agent's URL.
 
 ## 4. Declarative Control Flow and Schema
 

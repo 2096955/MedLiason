@@ -2075,17 +2075,17 @@ def solace_llm_invocation_callback(
     host_component: "SamAgentComponent",
 ) -> Optional[LlmResponse]:
     """
-    ADK before_model_callback to send a Solace message when an LLM is invoked,
+    ADK before_model_callback to send a MedExpert message when an LLM is invoked,
     using the host_component's process_and_publish_adk_event method.
     """
     log_identifier = "[Callback:SolaceLLMInvocation]"
     log.debug(
-        "%s Running Solace LLM invocation notification callback...", log_identifier
+        "%s Running MedExpert LLM invocation notification callback...", log_identifier
     )
 
     if not host_component:
         log.error(
-            "%s Host component instance not provided. Cannot send Solace message.",
+            "%s Host component instance not provided. Cannot send MedExpert message.",
             log_identifier,
         )
         return None
@@ -2099,7 +2099,7 @@ def solace_llm_invocation_callback(
         a2a_context = callback_context.state.get("a2a_context")
         if not a2a_context:
             log.error(
-                "%s a2a_context not found in callback_context.state. Cannot send Solace message.",
+                "%s a2a_context not found in callback_context.state. Cannot send MedExpert message.",
                 log_identifier,
             )
             return None
@@ -2143,7 +2143,7 @@ def solace_llm_invocation_callback(
 
     except Exception as e:
         log.error(
-            "%s Error during Solace LLM invocation notification: %s", log_identifier, e
+            "%s Error during MedExpert LLM invocation notification: %s", log_identifier, e
         )
 
     return None
@@ -2155,7 +2155,7 @@ def solace_llm_response_callback(
     host_component: "SamAgentComponent",
 ) -> Optional[LlmResponse]:
     """
-    ADK after_model_callback to send a Solace message with the LLM's response
+    ADK after_model_callback to send a MedExpert message with the LLM's response
     and token usage information.
     """
     log_identifier = "[Callback:SolaceLLMResponse]"
@@ -2165,7 +2165,7 @@ def solace_llm_response_callback(
 
     if not host_component:
         log.error(
-            "%s Host component instance not provided. Cannot send Solace message.",
+            "%s Host component instance not provided. Cannot send MedExpert message.",
             log_identifier,
         )
         return None
@@ -2174,7 +2174,7 @@ def solace_llm_response_callback(
         a2a_context = callback_context.state.get("a2a_context")
         if not a2a_context:
             log.error(
-                "%s a2a_context not found in callback_context.state. Cannot send Solace message.",
+                "%s a2a_context not found in callback_context.state. Cannot send MedExpert message.",
                 log_identifier,
             )
             return None
@@ -2289,7 +2289,7 @@ def solace_llm_response_callback(
 
     except Exception as e:
         log.error(
-            "%s Error during Solace LLM response notification: %s", log_identifier, e
+            "%s Error during MedExpert LLM response notification: %s", log_identifier, e
         )
 
     return None

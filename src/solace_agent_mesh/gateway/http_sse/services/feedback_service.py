@@ -47,7 +47,7 @@ class FeedbackService:
         """
         Processes and stores the feedback. If a repository is configured,
         it saves to the database. Otherwise, it logs the feedback.
-        Also publishes feedback to a Solace topic if configured.
+        Also publishes feedback to a MedExpert topic if configured.
         Additionally updates the corresponding task's metadata with the feedback.
         """
         if self.session_factory:

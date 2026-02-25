@@ -1,4 +1,4 @@
-"""Custom exceptions for Solace Agent Mesh."""
+"""Custom exceptions for MedExpert."""
 
 
 class MessageSizeExceededError(Exception):

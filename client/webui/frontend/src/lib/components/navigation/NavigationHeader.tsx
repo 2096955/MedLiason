@@ -43,6 +43,14 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({ onClick }) =
     const config = useConfigContext();
     const [imageError, setImageError] = useState(false);
     const [logoUrl, setLogoUrl] = useState<string>("");
+    const botName = config.configBotName;
+
+    // Update document title when botName is available
+    useEffect(() => {
+        if (botName) {
+            document.title = botName;
+        }
+    }, [botName]);
 
     // Load cached logo URL immediately on mount for instant display
     useEffect(() => {
@@ -73,10 +81,10 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({ onClick }) =
     const shouldShowCustomLogo = logoUrl && !imageError;
 
     return (
-        <div className="flex h-[80px] min-h-[80px] cursor-pointer items-center justify-center border-b" onClick={onClick}>
+        <div className="flex h-[80px] min-h-[80px] cursor-pointer items-center justify-center border-b" onClick={onClick} title={botName || undefined}>
             {shouldShowCustomLogo ? (
                 <div className="flex h-16 w-16 items-center justify-center overflow-hidden">
-                    <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" onError={() => setImageError(true)} />
+                    <img src={logoUrl} alt={botName || "Logo"} className="h-full w-full object-contain" onError={() => setImageError(true)} />
                 </div>
             ) : (
                 HEADER_ICON

@@ -1,4 +1,4 @@
-# Solace Agent Mesh: __GATEWAY_NAME_SNAKE_CASE__ Gateway Configuration
+# MedExpert: __GATEWAY_NAME_SNAKE_CASE__ Gateway Configuration
 
 log:
   stdout_log_level: INFO

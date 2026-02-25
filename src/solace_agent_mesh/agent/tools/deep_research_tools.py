@@ -1,5 +1,5 @@
 """
-Deep Research Tools for Solace Agent Mesh
+Deep Research Tools for MedExpert
 
 Provides comprehensive, iterative research capabilities using web search
 
@@ -665,7 +665,7 @@ async def _search_web(
     """Search web using Google Custom Search API.
     
     Note: For other search providers (Tavily, Exa, Brave), use the corresponding
-    plugins from the solace-agent-mesh-plugins repository.
+    plugins from the medexpert-plugins repository.
     """
     log_identifier = "[DeepResearch:WebSearch]"
     
@@ -2149,7 +2149,7 @@ Configuration:
                     type=adk_types.Type.STRING,
                     enum=["web", "kb"]
                 ),
-                description="Sources to search. Default from tool_config or ['web']. Web search requires Google Custom Search API key (GOOGLE_API_KEY and GOOGLE_CSE_ID). For other search providers (Tavily, Exa, Brave), use the corresponding plugins from solace-agent-mesh-plugins.",
+                description="Sources to search. Default from tool_config or ['web']. Web search requires Google Custom Search API key (GOOGLE_API_KEY and GOOGLE_CSE_ID). For other search providers (Tavily, Exa, Brave), use the corresponding plugins from medexpert-plugins.",
                 nullable=True
             ),
             "kb_ids": adk_types.Schema(

@@ -98,14 +98,14 @@ def create_identity_service(
 
     else:
         try:
-            entry_points = metadata.entry_points(group="solace_agent_mesh.plugins")
+            entry_points = metadata.entry_points(group="medexpert.plugins")
             provider_info_entry = next(
                 (ep for ep in entry_points if ep.name == provider_type), None
             )
 
             if not provider_info_entry:
                 raise ValueError(
-                    f"No plugin provider found for type '{provider_type}' under the 'solace_agent_mesh.plugins' entry point."
+                    f"No plugin provider found for type '{provider_type}' under the 'medexpert.plugins' entry point."
                 )
 
             provider_info = provider_info_entry.load()

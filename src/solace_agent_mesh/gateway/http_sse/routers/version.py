@@ -34,7 +34,7 @@ async def get_version():
     try:
         products = []
 
-        # Add base solace-agent-mesh product
+        # Add base medexpert product
         base_product = _get_base_product_info(log_prefix)
         if base_product:
             products.append(base_product)
@@ -49,7 +49,7 @@ async def get_version():
         if enterprise_product:
             products.append(enterprise_product)
 
-        # Add solace-chat product if installed
+        # Add medexpert-chat product if installed
         chat_product = _get_solace_chat_product_info(log_prefix)
         if chat_product:
             products.append(chat_product)
@@ -71,7 +71,7 @@ async def get_version():
 
 def _get_base_product_info(log_prefix: str) -> ProductInfo:
     """
-    Get version information for the base solace-agent-mesh product.
+    Get version information for the base medexpert product.
 
     Args:
         log_prefix: Logging prefix for consistent log formatting
@@ -79,7 +79,7 @@ def _get_base_product_info(log_prefix: str) -> ProductInfo:
     Returns:
         ProductInfo with product information including key dependencies
     """
-    base_version = _get_package_version("solace-agent-mesh", log_prefix)
+    base_version = _get_package_version("medexpert", log_prefix)
 
     # Collect dependencies and filter out those not installed
     dependencies = {
@@ -90,8 +90,8 @@ def _get_base_product_info(log_prefix: str) -> ProductInfo:
     dependencies = {k: v for k, v in dependencies.items() if v != NOT_INSTALLED}
 
     return ProductInfo(
-        id="solace-agent-mesh",
-        name="Solace Agent Mesh",
+        id="medexpert",
+        name="MedExpert",
         description="Open-source framework for event-driven, multi-agent AI systems",
         version=base_version,
         dependencies=dependencies if dependencies else None,
@@ -151,7 +151,7 @@ def _get_enterprise_ui_version_path(log_prefix: str) -> Path | None:
     Returns:
         Path to enterprise UI version file, or None if enterprise is not installed
     """
-    enterprise_version = _get_package_version("solace-agent-mesh-enterprise", log_prefix)
+    enterprise_version = _get_package_version("medexpert-enterprise", log_prefix)
     if enterprise_version == NOT_INSTALLED:
         return None
 
@@ -246,9 +246,9 @@ def _get_default_ui_product_info() -> ProductInfo:
         ProductInfo with default values
     """
     return ProductInfo(
-        id="@SolaceLabs/solace-agent-mesh-ui",
-        name="Solace Agent Mesh UI",
-        description="React UI components for Solace Agent Mesh",
+        id="@MedExpert/medexpert-ui",
+        name="MedExpert UI",
+        description="React UI components for MedExpert",
         version=UNKNOWN_VERSION,
     )
 
@@ -264,14 +264,14 @@ def _get_enterprise_product_info(log_prefix: str) -> ProductInfo | None:
         ProductInfo with enterprise product information, or None if not installed
     """
     # Check if enterprise package is installed
-    enterprise_version = _get_package_version("solace-agent-mesh-enterprise", log_prefix)
+    enterprise_version = _get_package_version("medexpert-enterprise", log_prefix)
     if enterprise_version == NOT_INSTALLED:
         log.debug("%sEnterprise package not installed", log_prefix)
         return None
 
     product_info = ProductInfo(
-        id="solace-agent-mesh-enterprise",
-        name="Solace Agent Mesh Enterprise",
+        id="medexpert-enterprise",
+        name="MedExpert Enterprise",
         description="Enterprise extensions with authorization and enterprise features",
         version=enterprise_version,
     )
@@ -282,21 +282,21 @@ def _get_enterprise_product_info(log_prefix: str) -> ProductInfo | None:
 
 def _get_solace_chat_product_info(log_prefix: str) -> ProductInfo | None:
     """
-    Get version information for the solace-chat product if installed.
+    Get version information for the medexpert-chat product if installed.
 
     Args:
         log_prefix: Logging prefix for consistent log formatting
 
     Returns:
-        ProductInfo with solace-chat product information, or None if not installed
+        ProductInfo with medexpert-chat product information, or None if not installed
     """
-    # Check if solace-chat package is installed
-    chat_version = _get_package_version("solace-chat", log_prefix)
+    # Check if medexpert-chat package is installed
+    chat_version = _get_package_version("medexpert-chat", log_prefix)
     if chat_version == NOT_INSTALLED:
-        log.debug("%ssolace-chat package not installed", log_prefix)
+        log.debug("%smedexpert-chat package not installed", log_prefix)
         return None
 
-    # solace-chat is installed, gather its information
+    # medexpert-chat is installed, gather its information
     # Collect dependencies and filter out those not installed
     dependencies = {
         "sam-bamboohr": _get_package_version("sam-bamboohr", log_prefix),
@@ -314,14 +314,14 @@ def _get_solace_chat_product_info(log_prefix: str) -> ProductInfo | None:
     dependencies = {k: v for k, v in dependencies.items() if v != NOT_INSTALLED}
 
     product_info = ProductInfo(
-        id="solace-chat",
-        name="Solace Chat",
-        description="Solace Chat Agent for agent-to-agent communication",
+        id="medexpert-chat",
+        name="MedExpert Chat",
+        description="MedExpert Chat Agent for agent-to-agent communication",
         version=chat_version,
         dependencies=dependencies if dependencies else None,
     )
 
-    log.debug("%ssolace-chat package detected: %s", log_prefix, chat_version)
+    log.debug("%smedexpert-chat package detected: %s", log_prefix, chat_version)
     return product_info
 
 

@@ -1,5 +1,5 @@
 """
-Custom Solace AI Connector App class for the Generic Gateway.
+Custom MedExpert AI Connector App class for the Generic Gateway.
 This app dynamically loads a specified gateway adapter.
 """
 

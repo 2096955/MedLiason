@@ -15,7 +15,7 @@ def is_gateway_card(agent_card: AgentCard) -> bool:
     Check if an AgentCard represents a gateway.
 
     Gateways are identified by the presence of the gateway-role extension:
-    https://solace.com/a2a/extensions/sam/gateway-role
+    https://medexpert.com/a2a/extensions/sam/gateway-role
 
     Args:
         agent_card: The AgentCard to check
@@ -40,7 +40,7 @@ def is_gateway_card(agent_card: AgentCard) -> bool:
 
     for ext in extensions:
         ext_uri = ext.uri if hasattr(ext, 'uri') else ext.get('uri')
-        if ext_uri == "https://solace.com/a2a/extensions/sam/gateway-role":
+        if ext_uri == "https://medexpert.com/a2a/extensions/sam/gateway-role":
             return True
 
     return False
@@ -77,13 +77,13 @@ def extract_gateway_info(agent_card: AgentCard) -> Optional[Dict[str, Any]]:
         ext_uri = ext.uri if hasattr(ext, 'uri') else ext.get('uri')
         ext_params = ext.params if hasattr(ext, 'params') else ext.get('params', {})
 
-        if ext_uri == "https://solace.com/a2a/extensions/sam/gateway-role":
+        if ext_uri == "https://medexpert.com/a2a/extensions/sam/gateway-role":
             info.update({
                 "gateway_id": ext_params.get("gateway_id"),
                 "gateway_type": ext_params.get("gateway_type"),
                 "namespace": ext_params.get("namespace"),
             })
-        elif ext_uri == "https://solace.com/a2a/extensions/sam/deployment":
+        elif ext_uri == "https://medexpert.com/a2a/extensions/sam/deployment":
             info["deployment_id"] = ext_params.get("deployment_id")
 
     return info

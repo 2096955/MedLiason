@@ -857,7 +857,7 @@ async def _load_openapi_tool(component: "SamAgentComponent", tool_config: Dict) 
 
     except ImportError:
         log.warning(
-            "%s OpenAPI tools require the solace-agent-mesh-enterprise package. "
+            "%s OpenAPI tools require the medexpert-enterprise package. "
             "Skipping tool configuration: %s",
             component.log_identifier,
             tool_config.get("name", "unknown"),
@@ -1248,7 +1248,7 @@ def initialize_adk_agent(
 
         agent.before_model_callback = final_before_model_wrapper
         log.debug(
-            "%s Final before_model_callback chain (Solace logging now occurs last) assigned to agent.",
+            "%s Final before_model_callback chain (MedExpert logging now occurs last) assigned to agent.",
             component.log_identifier,
         )
 
@@ -1421,7 +1421,7 @@ def initialize_adk_agent(
             component.log_identifier,
         )
 
-        # 4. Solace LLM Response Logging
+        # 4. MedExpert LLM Response Logging
         solace_llm_response_cb = functools.partial(
             adk_callbacks.solace_llm_response_callback, host_component=component
         )

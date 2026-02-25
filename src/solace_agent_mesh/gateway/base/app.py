@@ -1,5 +1,5 @@
 """
-Base App class for Gateway implementations in the Solace AI Connector.
+Base App class for Gateway implementations in the MedExpert AI Connector.
 """
 
 import logging
@@ -201,7 +201,7 @@ class BaseGatewayApp(SamAppBase):
     """
     Base class for Gateway applications.
 
-    Handles common configuration, Solace broker setup, and instantiation
+    Handles common configuration, MedExpert broker setup, and instantiation
     of the gateway-specific component. It also automatically merges its
     base schema with specific schema parameters defined by subclasses.
     """
@@ -363,7 +363,7 @@ class BaseGatewayApp(SamAppBase):
             )
 
         log.info(
-            "Generated Solace subscriptions for gateway '%s': %s",
+            "Generated MedExpert subscriptions for gateway '%s': %s",
             self.gateway_id,
             subscriptions,
         )

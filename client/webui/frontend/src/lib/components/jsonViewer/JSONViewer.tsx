@@ -12,7 +12,7 @@ import { useThemeContext } from "@/lib/hooks/useThemeContext";
  */
 const createJsonEditorTheme = (isDark: boolean): JerTheme => {
     return {
-        displayName: isDark ? "Solace Dark JER" : "Solace Light JER",
+        displayName: isDark ? "MedExpert Dark JER" : "MedExpert Light JER",
         styles: {
             container: {
                 backgroundColor: "transparent",

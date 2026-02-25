@@ -482,7 +482,7 @@ class SamAgentAppConfig(SamConfigBase):
 class SamAgentApp(SamAppBase):
     """
     Custom App class for SAM Agent Host that automatically generates
-    the required Solace subscriptions based on namespace and agent name,
+    the required MedExpert subscriptions based on namespace and agent name,
     and programmatically defines the single SamAgentComponent instance.
     It also defines the expected configuration structure via `app_schema`.
     """

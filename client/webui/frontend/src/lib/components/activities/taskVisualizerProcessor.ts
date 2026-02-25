@@ -148,7 +148,7 @@ export const processTaskForVisualization = (
             source_entity: "User",
             target_entity: targetAgent,
             event_type: "a2a_message",
-            solace_topic: `synthetic/request/${parentTaskObject.taskId}`,
+            medexpert_topic: `synthetic/request/${parentTaskObject.taskId}`,
             payload_summary: {
                 method: "message/send",
             },

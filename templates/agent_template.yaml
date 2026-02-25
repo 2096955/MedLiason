@@ -1,4 +1,4 @@
-# Solace Agent Mesh Agent Configuration
+# MedExpert Agent Configuration
 
 log:
   stdout_log_level: INFO

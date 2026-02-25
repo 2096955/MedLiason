@@ -719,13 +719,13 @@ class A2AProxyComponent(BaseProxyComponent):
             except ImportError:
                 log.error(
                     "%s Agent '%s' requires OAuth2 authorization code flow, "
-                    "but solace-agent-mesh-enterprise is not installed.",
+                    "but medexpert-enterprise is not installed.",
                     log_identifier,
                     agent_name,
                 )
                 raise ValueError(
                     f"Agent '{agent_name}' requires OAuth2 authorization code flow, "
-                    "but solace-agent-mesh-enterprise is not installed."
+                    "but medexpert-enterprise is not installed."
                 )
 
         # Step 3: Normal request flow for all other auth types
@@ -908,7 +908,7 @@ class A2AProxyComponent(BaseProxyComponent):
                     agent_name,
                     e.error,
                 )
-                # TODO: Publish error response to Solace
+                # TODO: Publish error response to MedExpert
                 # Do not retry - this is a protocol-level error
                 raise
 
@@ -1508,11 +1508,11 @@ class A2AProxyComponent(BaseProxyComponent):
 
                 except ImportError:
                     log.error(
-                        "%s OAuth2 authorization code requires solace-agent-mesh-enterprise package",
+                        "%s OAuth2 authorization code requires medexpert-enterprise package",
                         self.log_identifier,
                     )
                     raise ValueError(
-                        "OAuth2 authorization code requires solace-agent-mesh-enterprise package"
+                        "OAuth2 authorization code requires medexpert-enterprise package"
                     )
 
             else:

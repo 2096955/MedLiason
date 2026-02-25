@@ -12,7 +12,7 @@ class DatadogJsonFormatter(logging.Formatter):
     
     . deprecated::
         This formatter is deprecated. Please use pythonjsonlogger.json.JsonFormatter instead.
-        For details, consult https://solacelabs.github.io/solace-agent-mesh/docs/documentation/deploying/logging#structured-logging
+        For details, consult https://medexpert.com/docs/documentation/deploying/logging#structured-logging
 
         Example:
             formatters:
@@ -26,7 +26,7 @@ class DatadogJsonFormatter(logging.Formatter):
         if not hasattr(self.__class__, '_deprecation_warned'):
             warnings.warn(
                 "DatadogJsonFormatter is deprecated and will be removed in a future version. "
-                "Please use pythonjsonlogger.json.JsonFormatter instead. For details, consult https://solacelabs.github.io/solace-agent-mesh/docs/documentation/deploying/logging#structured-logging",
+                "Please use pythonjsonlogger.json.JsonFormatter instead. For details, consult https://medexpert.com/docs/documentation/deploying/logging#structured-logging",
                 DeprecationWarning,
                 stacklevel=2
             )
@@ -39,7 +39,7 @@ class DatadogJsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "logger.name": record.name,
             "logger.thread_name": record.threadName,
-            "service": os.getenv("SERVICE_NAME", "solace_agent_mesh"),
+            "service": os.getenv("SERVICE_NAME", "medexpert"),
             "code.filepath": record.pathname,
             "code.lineno": record.lineno,
             "code.module": record.module,

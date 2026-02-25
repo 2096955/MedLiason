@@ -49,7 +49,7 @@ class ProxiedAgentConfig(SamConfigBase):
 
     name: str = Field(
         ...,
-        description="The name the agent will have on the Solace mesh.",
+        description="The name the agent will have on the MedExpert mesh.",
     )
     request_timeout_seconds: Optional[int] = Field(
         default=None,

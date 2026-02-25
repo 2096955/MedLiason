@@ -51,7 +51,7 @@ class TaskExecutionContext:
         # Generic security storage (enterprise use only)
         self._security_context: Dict[str, Any] = {}
 
-        # Original Solace message for ACK/NACK operations
+        # Original MedExpert message for ACK/NACK operations
         # Stored here instead of a2a_context to avoid serialization issues
         self._original_solace_message: Optional["SolaceMessage"] = None
 
@@ -341,24 +341,24 @@ class TaskExecutionContext:
 
     def set_original_solace_message(self, message: Optional["SolaceMessage"]) -> None:
         """
-        Store the original Solace message for this task.
+        Store the original MedExpert message for this task.
 
         This message is used for ACK/NACK operations when the task completes.
         Stored separately from a2a_context to avoid serialization issues when
         the context is persisted to the ADK session state.
 
         Args:
-            message: The Solace message that initiated this task, or None
+            message: The MedExpert message that initiated this task, or None
         """
         with self.lock:
             self._original_solace_message = message
 
     def get_original_solace_message(self) -> Optional["SolaceMessage"]:
         """
-        Retrieve the original Solace message for this task.
+        Retrieve the original MedExpert message for this task.
 
         Returns:
-            The Solace message that initiated this task, or None if not available
+            The MedExpert message that initiated this task, or None if not available
         """
         with self.lock:
             return self._original_solace_message

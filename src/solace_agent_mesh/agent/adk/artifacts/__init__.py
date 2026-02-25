@@ -1,1 +1,1 @@
-"""Artifact service implementations for Solace Agent Mesh."""
+"""Artifact service implementations for MedExpert."""

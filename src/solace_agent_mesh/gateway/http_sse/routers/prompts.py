@@ -1422,3 +1422,178 @@ async def import_prompt(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import prompt: {str(e)}"
         )
+
+
+# ============================================================================
+# Prompt Sharing Endpoints
+# ============================================================================
+
+from datetime import datetime, timezone
+from pydantic import BaseModel, Field
+
+
+class PromptShareItem(BaseModel):
+    user_email: str = Field(alias="userEmail")
+    access_level: str = Field(alias="accessLevel", default="RESOURCE_VIEWER")
+    model_config = {"populate_by_name": True}
+
+
+class PromptBatchShareRequest(BaseModel):
+    shares: List[PromptShareItem]
+
+
+class PromptBatchDeleteRequest(BaseModel):
+    user_emails: List[str] = Field(alias="userEmails")
+    model_config = {"populate_by_name": True}
+
+
+def _epoch_to_iso(epoch_ms: int) -> str:
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).isoformat()
+
+
+@router.get("/prompts/groups/{group_id}/shares")
+async def get_prompt_shares(
+    group_id: str,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """Get all users who have access to a prompt group."""
+    group = db.query(PromptGroupModel).filter(
+        PromptGroupModel.id == group_id
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Prompt group not found")
+
+    role = get_user_role(db, group_id, user_id)
+    if role is None:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    share_models = db.query(PromptGroupUserModel).filter(
+        PromptGroupUserModel.prompt_group_id == group_id,
+    ).all()
+
+    shares = []
+    for sm in share_models:
+        shares.append({
+            "id": sm.id,
+            "projectId": sm.prompt_group_id,
+            "userEmail": sm.user_id,
+            "accessLevel": "RESOURCE_VIEWER",
+            "sharedByEmail": sm.added_by_user_id,
+            "createdAt": _epoch_to_iso(sm.added_at),
+            "updatedAt": _epoch_to_iso(sm.added_at),
+        })
+
+    return {
+        "projectId": group_id,
+        "ownerEmail": group.user_id,
+        "shares": shares,
+    }
+
+
+@router.post("/prompts/groups/{group_id}/shares")
+async def create_prompt_shares(
+    group_id: str,
+    request: PromptBatchShareRequest,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """Share a prompt group with one or more users."""
+    group = db.query(PromptGroupModel).filter(
+        PromptGroupModel.id == group_id
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Prompt group not found")
+
+    # Only owner can share
+    if group.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the owner can share this prompt")
+
+    created = []
+    updated = []
+    now = now_epoch_ms()
+
+    for item in request.shares:
+        target = item.user_email
+        if target == user_id:
+            continue
+
+        existing = db.query(PromptGroupUserModel).filter(
+            PromptGroupUserModel.prompt_group_id == group_id,
+            PromptGroupUserModel.user_id == target,
+        ).first()
+
+        if existing:
+            updated.append({
+                "id": existing.id,
+                "projectId": existing.prompt_group_id,
+                "userEmail": existing.user_id,
+                "accessLevel": "RESOURCE_VIEWER",
+                "sharedByEmail": existing.added_by_user_id,
+                "createdAt": _epoch_to_iso(existing.added_at),
+                "updatedAt": _epoch_to_iso(existing.added_at),
+            })
+        else:
+            new_share = PromptGroupUserModel(
+                id=str(uuid.uuid4()),
+                prompt_group_id=group_id,
+                user_id=target,
+                role="viewer",
+                added_at=now,
+                added_by_user_id=user_id,
+            )
+            db.add(new_share)
+            created.append({
+                "id": new_share.id,
+                "projectId": new_share.prompt_group_id,
+                "userEmail": new_share.user_id,
+                "accessLevel": "RESOURCE_VIEWER",
+                "sharedByEmail": new_share.added_by_user_id,
+                "createdAt": _epoch_to_iso(now),
+                "updatedAt": _epoch_to_iso(now),
+            })
+
+    db.flush()
+    return {
+        "projectId": group_id,
+        "created": created,
+        "updated": updated,
+        "totalProcessed": len(created) + len(updated),
+    }
+
+
+@router.delete("/prompts/groups/{group_id}/shares")
+async def delete_prompt_shares(
+    group_id: str,
+    request: PromptBatchDeleteRequest,
+    user_id: str = Depends(get_user_id),
+    db: Session = Depends(get_db),
+):
+    """Remove sharing access for one or more users from a prompt group."""
+    group = db.query(PromptGroupModel).filter(
+        PromptGroupModel.id == group_id
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Prompt group not found")
+
+    if group.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Only the owner can remove shares")
+
+    deleted_count = 0
+    deleted_emails = []
+
+    for email in request.user_emails:
+        result = db.query(PromptGroupUserModel).filter(
+            PromptGroupUserModel.prompt_group_id == group_id,
+            PromptGroupUserModel.user_id == email,
+        ).delete()
+        if result > 0:
+            deleted_count += result
+            deleted_emails.append(email)
+
+    db.flush()
+    return {
+        "projectId": group_id,
+        "deletedCount": deleted_count,
+        "deletedEmails": deleted_emails,
+    }

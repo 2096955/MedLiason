@@ -1,5 +1,5 @@
 """
-Base Component class for Gateway implementations in the Solace AI Connector.
+Base Component class for Gateway implementations in the MedExpert AI Connector.
 """
 
 import logging
@@ -537,7 +537,7 @@ class BaseGatewayComponent(SamComponentBase):
         strict ordering and backpressure handling.
 
         Args:
-            message: The Solace message
+            message: The MedExpert message
             topic: The topic the message was received on
         """
         log.debug(
@@ -2359,14 +2359,14 @@ class BaseGatewayComponent(SamComponentBase):
         from a2a.types import AgentCapabilities, AgentExtension
 
         gateway_type = self._detect_gateway_type()
-        gateway_url = f"solace:{self.namespace}/a2a/v1/gateway/request/{self.gateway_id}"
+        gateway_url = f"medexpert:{self.namespace}/a2a/v1/gateway/request/{self.gateway_id}"
         description = self._gateway_card_config.get(
             "description",
             f"{gateway_type.upper()} Gateway"
         )
 
         gateway_role_extension = AgentExtension(
-            uri="https://solace.com/a2a/extensions/sam/gateway-role",
+            uri="https://medexpert.com/a2a/extensions/sam/gateway-role",
             required=False,
             params={
                 "gateway_id": self.gateway_id,
@@ -2381,7 +2381,7 @@ class BaseGatewayComponent(SamComponentBase):
         deployment_id = deployment_config.get("id") if isinstance(deployment_config, dict) else None
         if deployment_id:
             deployment_extension = AgentExtension(
-                uri="https://solace.com/a2a/extensions/sam/deployment",
+                uri="https://medexpert.com/a2a/extensions/sam/deployment",
                 required=False,
                 params={
                     "deployment_id": deployment_id,

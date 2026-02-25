@@ -20,7 +20,7 @@ function generateVersionMetadata() {
                 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
                 const versionMetadata = {
                     id: packageJson.name,
-                    name: "Solace Agent Mesh UI",
+                    name: "MedExpert UI",
                     description: packageJson.description || "",
                     version: packageJson.version,
                 };

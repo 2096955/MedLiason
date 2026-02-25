@@ -1,5 +1,5 @@
 """
-Platform Service for Solace Agent Mesh.
+Platform Service for MedExpert.
 
 ARCHITECTURE: Service vs Gateway
 --------------------------------

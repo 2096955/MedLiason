@@ -1,5 +1,5 @@
 """
-ADK Tool implementation for delegating tasks to peer A2A agents over Solace.
+ADK Tool implementation for delegating tasks to peer A2A agents over MedExpert.
 """
 
 import logging
@@ -38,7 +38,7 @@ CORRELATION_DATA_PREFIX = "a2a_subtask_"
 class PeerAgentTool(BaseTool):
     """
     An ADK Tool that represents a discovered peer agent and handles task delegation
-    via the A2A protocol over Solace.
+    via the A2A protocol over MedExpert.
 
     This tool is long-running and operates in a "fire-and-forget" manner. It sends a
     task to a peer agent, including a `task_description` and an optional list of
@@ -95,7 +95,7 @@ class PeerAgentTool(BaseTool):
         display_name = None
         if agent_card.capabilities and agent_card.capabilities.extensions:
             for ext in agent_card.capabilities.extensions:
-                if ext.uri == "https://solace.com/a2a/extensions/display-name":
+                if ext.uri == "https://medexpert.com/a2a/extensions/display-name":
                     if ext.params and ext.params.get("display_name"):
                         display_name = ext.params["display_name"]
                         break

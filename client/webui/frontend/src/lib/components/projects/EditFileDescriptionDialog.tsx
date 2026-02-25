@@ -48,7 +48,7 @@ export const EditFileDescriptionDialog: React.FC<EditFileDescriptionDialogProps>
             open={isOpen}
             onOpenChange={open => !open && onClose()}
             title="Edit Project File Description"
-            description="Update the description to help Solace Agent Mesh understand its purpose."
+            description="Update the description to help MedExpert understand its purpose."
             content={dialogContent}
             actionLabels={{
                 cancel: "Discard Changes",

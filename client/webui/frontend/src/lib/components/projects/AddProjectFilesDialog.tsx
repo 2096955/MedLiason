@@ -81,7 +81,7 @@ export const AddProjectFilesDialog: React.FC<AddProjectFilesDialogProps> = ({ is
             open={isOpen}
             onOpenChange={open => !open && handleClose()}
             title="Upload Project Files"
-            description="Add descriptions to help Solace Agent Mesh understand each file's purpose."
+            description="Add descriptions to help MedExpert understand each file's purpose."
             content={dialogContent}
             actionLabels={{
                 cancel: "Cancel",

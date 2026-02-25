@@ -441,6 +441,17 @@ def _setup_routers() -> None:
     app.include_router(feedback.router, prefix=api_prefix, tags=["Feedback"])
     app.include_router(prompts.router, prefix=f"{api_prefix}/prompts", tags=["Prompts"])
     app.include_router(speech.router, prefix=f"{api_prefix}/speech", tags=["Speech"])
+
+    # MedExpert prompt evolution router (optional — only available when
+    # lifesci_tools is installed, i.e. running MedExpert, not vanilla SAM)
+    try:
+        from lifesci_tools.prompt_evolution_router import router as evolution_router
+
+        app.include_router(evolution_router, tags=["Prompt Evolution"])
+        log.info("Prompt evolution router mounted at /api/v1/evolution")
+    except ImportError:
+        pass  # Not a MedExpert deployment — skip
+
     log.info("Legacy routers mounted for endpoints not yet migrated")
 
     # Register shared exception handlers

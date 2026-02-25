@@ -78,7 +78,7 @@ class WorkflowExecutionContext:
         self.lock = threading.Lock()
         self.cancellation_event = threading.Event()
 
-        # Original Solace message for ACK/NACK operations
+        # Original MedExpert message for ACK/NACK operations
         # Stored here instead of a2a_context to avoid serialization issues
         self._original_solace_message: Optional[Any] = None
 
@@ -112,9 +112,9 @@ class WorkflowExecutionContext:
         return self.cancellation_event.is_set()
 
     def set_original_solace_message(self, message: Any):
-        """Store the original Solace message for ACK operations."""
+        """Store the original MedExpert message for ACK operations."""
         self._original_solace_message = message
 
     def get_original_solace_message(self) -> Optional[Any]:
-        """Retrieve the original Solace message."""
+        """Retrieve the original MedExpert message."""
         return self._original_solace_message

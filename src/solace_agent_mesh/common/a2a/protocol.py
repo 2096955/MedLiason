@@ -220,7 +220,7 @@ def get_trust_card_topic(namespace: str, component_type: str, component_id: str)
     Returns the topic for publishing a Trust Card.
 
     IMPORTANT: The component_id parameter MUST be the exact broker client-username
-    that the component uses to authenticate with the Solace broker. This is critical
+    that the component uses to authenticate with the MedExpert broker. This is critical
     for trust verification - trust cards are validated against the actual broker
     authentication identity.
 
@@ -294,19 +294,19 @@ def extract_trust_card_info_from_topic(topic: str) -> tuple[str, str]:
 
 
 def subscription_to_regex(subscription: str) -> str:
-    """Converts a Solace topic subscription string to a regex pattern."""
-    # Escape regex special characters except for Solace wildcards
+    """Converts a MedExpert topic subscription string to a regex pattern."""
+    # Escape regex special characters except for MedExpert wildcards
     pattern = re.escape(subscription)
-    # Replace Solace single-level wildcard '*' with regex equivalent '[^/]+'
+    # Replace MedExpert single-level wildcard '*' with regex equivalent '[^/]+'
     pattern = pattern.replace(r"\*", r"[^/]+")
-    # Replace Solace multi-level wildcard '>' at the end with regex equivalent '.*'
+    # Replace MedExpert multi-level wildcard '>' at the end with regex equivalent '.*'
     if pattern.endswith(r"/>"):
         pattern = pattern[:-1] + r".*"  # Remove escaped '>' and add '.*'
     return pattern
 
 
 def topic_matches_subscription(topic: str, subscription: str) -> bool:
-    """Checks if a topic matches a Solace subscription pattern."""
+    """Checks if a topic matches a MedExpert subscription pattern."""
     regex_pattern = subscription_to_regex(subscription)
     return re.fullmatch(regex_pattern, topic) is not None
 

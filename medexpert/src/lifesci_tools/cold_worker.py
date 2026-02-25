@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Any
 
-from lifesci_tools import cold_store
+from lifesci_tools import cold_store, llm_grader_worker, prompt_graders
 
 log = logging.getLogger(__name__)
 
@@ -171,6 +171,18 @@ def _worker_loop(db_path: str) -> None:
                 try:
                     conn = cold_store.get_connection(effective_path)
                     cold_store.refresh_learned_strategies(conn)
+
+                    # Prompt evolution check
+                    try:
+                        from lifesci_tools.prompt_evolver import PromptEvolver
+
+                        evolver = PromptEvolver(effective_path)
+                        actions = evolver.check_and_evolve(conn)
+                        if actions:
+                            log.info("Prompt evolution actions: %s", actions)
+                    except Exception:
+                        log.exception("Prompt evolution check failed")
+
                     cold_store.prune_cold_store(
                         conn,
                         max_age_days=PRUNE_MAX_AGE_DAYS,
@@ -178,7 +190,10 @@ def _worker_loop(db_path: str) -> None:
                     )
                     conn.close()
                     sessions_since_refresh = 0
-                    log.info("Refreshed learned strategies after %d sessions", REFRESH_INTERVAL)
+                    log.info(
+                        "Refreshed learned strategies after %d sessions",
+                        REFRESH_INTERVAL,
+                    )
                 except Exception:
                     log.exception("Failed to refresh learned strategies")
 
@@ -254,6 +269,45 @@ def _persist_one(db_path: str, item: dict[str, Any]) -> None:
                     agent_b=b,
                     passed=passed,
                     combined_coverage=coverage_pct,
+                )
+
+        # 6. Prompt scores for specialist evolution
+        for agent in specialists_used:
+            active_prompt = cold_store.get_active_prompt(conn, agent)
+            if not active_prompt:
+                continue
+
+            scores = prompt_graders.score_specialist(
+                agent_name=agent,
+                session_signals=item,
+            )
+            cold_store.write_prompt_score(
+                conn,
+                agent_name=agent,
+                prompt_version=active_prompt["version"],
+                session_id=session_id,
+                scores=scores,
+            )
+
+            # Enqueue async LLM judge grading
+            response_text = (item.get("specialist_responses") or {}).get(agent, "")
+            if response_text:
+                llm_grader_worker.enqueue_grading_job(
+                    {
+                        "db_path": db_path,
+                        "agent_name": agent,
+                        "prompt_version": active_prompt["version"],
+                        "session_id": session_id,
+                        "response": response_text,
+                        "evidence": " ".join(
+                            s.get("text", "")
+                            or s.get("abstract", "")
+                            or s.get("source_name", "")
+                            for s in item.get("sources", [])
+                            if isinstance(s, dict)
+                        )[:4000],
+                        "question": query_text,
+                    }
                 )
 
         conn.commit()

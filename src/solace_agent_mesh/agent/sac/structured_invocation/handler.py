@@ -480,7 +480,7 @@ class StructuredInvocationHandler:
             task_id=logical_task_id, a2a_context=a2a_context
         )
 
-        # Store the original Solace message if provided
+        # Store the original MedExpert message if provided
         # Note: original_solace_message is passed as a parameter, not stored in a2a_context,
         # to avoid serialization issues when a2a_context is stored in ADK session state
         if original_solace_message:

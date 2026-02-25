@@ -154,6 +154,44 @@ async def get_feedback(
         )
 
 
+@router.get("/feedback/summary", tags=["Feedback"])
+async def get_feedback_summary(
+    db: DBSession = Depends(get_db),
+    user_id: UserId = Depends(get_user_id),
+    user_config: dict = Depends(get_user_config),
+):
+    """
+    Returns aggregate feedback statistics for the current user
+    (or all users if the caller has feedback:read:all scope).
+    """
+    from ..repository.models.feedback_model import FeedbackModel
+    from sqlalchemy import case
+    from sqlalchemy import func as sqlfunc
+
+    can_query_all = user_config.get("scopes", {}).get("feedback:read:all", False)
+
+    query = db.query(
+        sqlfunc.count(FeedbackModel.id).label("total"),
+        sqlfunc.sum(case((FeedbackModel.rating == "up", 1), else_=0)).label("upvotes"),
+        sqlfunc.sum(case((FeedbackModel.rating == "down", 1), else_=0)).label("downvotes"),
+    )
+
+    if not can_query_all:
+        query = query.filter(FeedbackModel.user_id == user_id)
+
+    row = query.first()
+    total = row.total or 0
+    upvotes = int(row.upvotes or 0)
+    downvotes = int(row.downvotes or 0)
+
+    return {
+        "total": total,
+        "upvotes": upvotes,
+        "downvotes": downvotes,
+        "sentimentScore": round(upvotes / total, 2) if total > 0 else None,
+    }
+
+
 @router.post("/feedback", status_code=202, tags=["Feedback"])
 async def submit_feedback(
     payload: FeedbackPayload,

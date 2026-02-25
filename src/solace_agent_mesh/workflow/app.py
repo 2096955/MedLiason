@@ -654,7 +654,7 @@ class WorkflowApp(App):
     def _generate_subscriptions(
         self, namespace: str, workflow_name: str
     ) -> List[Dict[str, str]]:
-        """Generate Solace topic subscriptions for workflow."""
+        """Generate MedExpert topic subscriptions for workflow."""
         subscriptions = []
 
         # Discovery topic for agent cards

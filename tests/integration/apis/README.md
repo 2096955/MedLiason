@@ -1,6 +1,6 @@
 # FastAPI HTTP API Testing Framework
 
-This framework provides comprehensive black box testing of the Solace Agent Mesh HTTP API endpoints using real FastAPI TestClient with multi-database support.
+This framework provides comprehensive black box testing of the MedExpert HTTP API endpoints using real FastAPI TestClient with multi-database support.
 
 ## Architecture Overview
 
@@ -368,7 +368,7 @@ def assert_valid_session_response(response_data: dict):
 
 ## Integration with Existing Infrastructure
 
-The framework integrates seamlessly with existing Solace Agent Mesh infrastructure:
+The framework integrates seamlessly with existing MedExpert infrastructure:
 - Uses `WebUIBackendFactory` from `sam-test-infrastructure`
 - Leverages existing FastAPI application and routes
 - Integrates with existing authentication system (with override)
@@ -413,4 +413,4 @@ python -m pytest tests/integration/apis/ -v -s --log-cli-level=DEBUG
 python -m pytest tests/integration/apis/test_simple_framework.py::test_database_initialization_and_connections -v -s
 ```
 
-This framework provides a robust foundation for testing the Solace Agent Mesh HTTP API with comprehensive database support and production-grade testing practices.
+This framework provides a robust foundation for testing the MedExpert HTTP API with comprehensive database support and production-grade testing practices.

@@ -1,6 +1,6 @@
-# Cypress Testing for Solace Agent Mesh Community
+# Cypress Testing for MedExpert
 
-This directory contains Cypress end-to-end tests for the Solace Agent Mesh Community frontend application.
+This directory contains Cypress end-to-end tests for the MedExpert frontend application.
 
 ## Directory Structure
 

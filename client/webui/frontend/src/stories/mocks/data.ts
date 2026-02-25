@@ -5,7 +5,7 @@ export const mockAgentCards: AgentCard[] = [
     {
         name: "OrchestratorAgent",
         description: "The Orchestrator component. It manages tasks, and coordinating multi-agent workflows.",
-        url: "solace:beta/a2a/v1/agent/request/OrchestratorAgent",
+        url: "medexpert:beta/a2a/v1/agent/request/OrchestratorAgent",
         version: "1.0.0-alpha",
         capabilities: {
             streaming: true,
@@ -31,7 +31,7 @@ export const mockAgentCards: AgentCard[] = [
                             },
                         ],
                     },
-                    uri: "https://solace.com/a2a/extensions/sam/tools",
+                    uri: "https://medexpert.com/a2a/extensions/sam/tools",
                 },
             ],
         },
@@ -43,7 +43,7 @@ export const mockAgentCards: AgentCard[] = [
     {
         name: "MockWorkflow",
         description: "A mock workflow agent used for testing workflow filtering.",
-        url: "solace:beta/a2a/v1/agent/request/MockWorkflow",
+        url: "medexpert:beta/a2a/v1/agent/request/MockWorkflow",
         version: "1.0.0-alpha",
         capabilities: {
             streaming: true,
@@ -54,7 +54,7 @@ export const mockAgentCards: AgentCard[] = [
                     params: {
                         type: "workflow",
                     },
-                    uri: "https://solace.com/a2a/extensions/agent-type",
+                    uri: "https://medexpert.com/a2a/extensions/agent-type",
                 },
             ],
         },
@@ -71,7 +71,7 @@ export const getMockAgentCards = (count: number): AgentCard[] => {
         agentCards.push({
             name: `YamlAgent ${i}`,
             description: `This is mock yaml agent ${i}.`,
-            url: `solace:beta/a2a/v1/agent/request/YamlAgent${i}`,
+            url: `medexpert:beta/a2a/v1/agent/request/YamlAgent${i}`,
             version: "1.0.0-alpha",
             capabilities: {
                 streaming: true,

@@ -5,9 +5,11 @@ Returns ``{"seeded": False}`` gracefully when the cold store is empty,
 unavailable, or the db_path is not configured.
 """
 
+import hashlib
 import logging
 from typing import Any
 
+from lifesci_common.constants import EVOLVABLE_AGENTS
 from lifesci_tools import cold_store
 
 log = logging.getLogger(__name__)
@@ -41,13 +43,17 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
         normalized = cold_store.normalize_query(query) if query else ""
 
         # Query intelligence (exact normalised match)
-        query_intel = cold_store.get_query_intelligence(conn, normalized) if normalized else None
+        query_intel = (
+            cold_store.get_query_intelligence(conn, normalized) if normalized else None
+        )
 
         # Determine domain from query intelligence or fall back to empty
         domain = (query_intel or {}).get("domain", "")
 
         # Routing hints for this domain
-        routing_hints = cold_store.get_routing_strategy(conn, domain) if domain else None
+        routing_hints = (
+            cold_store.get_routing_strategy(conn, domain) if domain else None
+        )
 
         # Global source rankings
         source_rankings = cold_store.get_source_rankings(conn)
@@ -55,7 +61,21 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
         # Global best agent pairs
         agent_pairs = cold_store.get_best_agent_pairs(conn)
 
-        has_data = any([routing_hints, source_rankings, query_intel, agent_pairs])
+        # Active prompt versions for observability
+        active_prompts = {}
+        for agent_name in EVOLVABLE_AGENTS:
+            prompt = cold_store.get_active_prompt(conn, agent_name)
+            if prompt:
+                active_prompts[agent_name] = {
+                    "version": prompt["version"],
+                    "instruction_hash": hashlib.md5(
+                        prompt["instruction"].encode()
+                    ).hexdigest()[:8],
+                }
+
+        has_data = any(
+            [routing_hints, source_rankings, query_intel, agent_pairs, active_prompts]
+        )
 
         return {
             "seeded": has_data,
@@ -63,6 +83,7 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
             "source_rankings": source_rankings,
             "query_intelligence": query_intel,
             "agent_pairs": agent_pairs,
+            "active_prompts": active_prompts or None,
         }
     except Exception as exc:
         log.exception("Error building seed payload")

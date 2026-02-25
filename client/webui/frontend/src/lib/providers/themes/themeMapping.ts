@@ -10,7 +10,7 @@ export interface ThemeMappings {
 }
 
 /**
- * Maps Solace UX palette paths to CSS custom properties
+ * Maps MedExpert UX palette paths to CSS custom properties
  */
 export const customThemeMapping: ThemeMappings = {
     light: {
@@ -99,19 +99,19 @@ export const customThemeMapping: ThemeMappings = {
  * These will use the same color for both light and dark themes
  */
 export const fallbackColors: ThemeMapping = {
-    // Error text colors (not in Solace palette)
+    // Error text colors (not in MedExpert palette)
     "error-text-wMain": "error.wMain",
     "error-text-w50": "error.w70",
 
-    // Warning text colors (not in Solace palette)
+    // Warning text colors (not in MedExpert palette)
     "warning-text-wMain": "warning.wMain",
     "warning-text-w50": "warning.w70",
 
-    // Success text colors (not in Solace palette)
+    // Success text colors (not in MedExpert palette)
     "success-text-wMain": "success.wMain",
     "success-text-w50": "success.w70",
 
-    // Info text colors (not in Solace palette)
+    // Info text colors (not in MedExpert palette)
     "info-text-wMain": "info.wMain",
     "info-text-w50": "info.w70",
 };

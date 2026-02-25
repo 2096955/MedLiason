@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import (
     APIRouter,
@@ -16,8 +18,10 @@ from fastapi import (
     UploadFile,
     Query,
     Response,
+    Request,
 )
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from solace_ai_connector.common.log import log
 
@@ -1136,3 +1140,283 @@ async def import_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to import project"
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Project Sharing Endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+class ShareItem(BaseModel):
+    user_email: str = Field(alias="userEmail")
+    access_level: str = Field(alias="accessLevel", default="RESOURCE_VIEWER")
+
+    model_config = {"populate_by_name": True}
+
+
+class BatchShareRequest(BaseModel):
+    shares: List[ShareItem]
+
+
+class BatchDeleteRequest(BaseModel):
+    user_emails: List[str] = Field(alias="userEmails")
+
+    model_config = {"populate_by_name": True}
+
+
+class ShareResponseItem(BaseModel):
+    id: str
+    project_id: str = Field(alias="projectId")
+    user_email: str = Field(alias="userEmail")
+    access_level: str = Field(alias="accessLevel")
+    shared_by_email: str = Field(alias="sharedByEmail")
+    created_at: str = Field(alias="createdAt")
+    updated_at: str = Field(alias="updatedAt")
+
+    model_config = {"populate_by_name": True}
+
+
+def _epoch_ms_to_iso(epoch_ms: int) -> str:
+    """Convert epoch milliseconds to ISO 8601 string."""
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).isoformat()
+
+
+def _now_epoch_ms() -> int:
+    """Get current time as epoch milliseconds."""
+    return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
+
+def _model_to_share_response(
+    model, user_email: str, shared_by_email: str
+) -> dict:
+    """Convert a ProjectUserModel to a ShareResponseItem dict."""
+    return {
+        "id": model.id,
+        "projectId": model.project_id,
+        "userEmail": user_email,
+        "accessLevel": "RESOURCE_VIEWER",
+        "sharedByEmail": shared_by_email,
+        "createdAt": _epoch_ms_to_iso(model.added_at),
+        "updatedAt": _epoch_ms_to_iso(model.added_at),
+    }
+
+
+@router.get("/projects/{project_id}/shares")
+async def get_project_shares(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: None = Depends(check_projects_enabled),
+):
+    """Get all users who have access to a project."""
+    from ..repository.models.project_model import ProjectModel
+    from ..repository.models.project_user_model import ProjectUserModel
+
+    user_id = user.get("id")
+    user_email = user.get("email", user_id)
+
+    # Verify project exists and user has access
+    project = db.query(ProjectModel).filter(
+        ProjectModel.id == project_id,
+        ProjectModel.is_deleted.is_(False),
+    ).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Check that requesting user is the owner or has access
+    is_owner = project.user_id == user_id
+    project_user = db.query(ProjectUserModel).filter(
+        ProjectUserModel.project_id == project_id,
+        ProjectUserModel.user_id == user_id,
+    ).first()
+
+    if not is_owner and not project_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied"
+        )
+
+    # Get all shares for this project
+    share_models = db.query(ProjectUserModel).filter(
+        ProjectUserModel.project_id == project_id,
+    ).all()
+
+    shares = []
+    for sm in share_models:
+        # Use user_id as email fallback (in deployments without identity service)
+        shares.append({
+            "id": sm.id,
+            "projectId": sm.project_id,
+            "userEmail": sm.user_id,  # stored as user_id, used as email identifier
+            "accessLevel": "RESOURCE_VIEWER",
+            "sharedByEmail": sm.added_by_user_id,
+            "createdAt": _epoch_ms_to_iso(sm.added_at),
+            "updatedAt": _epoch_ms_to_iso(sm.added_at),
+        })
+
+    return {
+        "projectId": project_id,
+        "ownerEmail": user_email if is_owner else project.user_id,
+        "shares": shares,
+    }
+
+
+@router.post("/projects/{project_id}/shares")
+async def create_project_shares(
+    project_id: str,
+    request: BatchShareRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: None = Depends(check_projects_enabled),
+):
+    """Share a project with one or more users."""
+    from ..repository.models.project_model import ProjectModel
+    from ..repository.models.project_user_model import ProjectUserModel
+
+    user_id = user.get("id")
+    user_email = user.get("email", user_id)
+
+    # Verify project exists
+    project = db.query(ProjectModel).filter(
+        ProjectModel.id == project_id,
+        ProjectModel.is_deleted.is_(False),
+    ).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Only the owner can share
+    if project.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the project owner can share this project"
+        )
+
+    created = []
+    updated = []
+    now = _now_epoch_ms()
+
+    for share_item in request.shares:
+        target_email = share_item.user_email
+
+        # Don't allow sharing with self
+        if target_email == user_email or target_email == user_id:
+            continue
+
+        # Check if already shared
+        existing = db.query(ProjectUserModel).filter(
+            ProjectUserModel.project_id == project_id,
+            ProjectUserModel.user_id == target_email,
+        ).first()
+
+        if existing:
+            # Already shared — treat as "updated"
+            share_resp = {
+                "id": existing.id,
+                "projectId": existing.project_id,
+                "userEmail": existing.user_id,
+                "accessLevel": "RESOURCE_VIEWER",
+                "sharedByEmail": existing.added_by_user_id,
+                "createdAt": _epoch_ms_to_iso(existing.added_at),
+                "updatedAt": _epoch_ms_to_iso(existing.added_at),
+            }
+            updated.append(share_resp)
+        else:
+            # Create new share
+            new_share = ProjectUserModel(
+                id=str(uuid.uuid4()),
+                project_id=project_id,
+                user_id=target_email,  # store email as the user identifier
+                role="viewer",
+                added_at=now,
+                added_by_user_id=user_email,
+            )
+            db.add(new_share)
+            share_resp = {
+                "id": new_share.id,
+                "projectId": new_share.project_id,
+                "userEmail": new_share.user_id,
+                "accessLevel": "RESOURCE_VIEWER",
+                "sharedByEmail": new_share.added_by_user_id,
+                "createdAt": _epoch_ms_to_iso(now),
+                "updatedAt": _epoch_ms_to_iso(now),
+            }
+            created.append(share_resp)
+
+    db.flush()
+    log.info(
+        "User %s shared project %s: created=%d, updated=%d",
+        user_id, project_id, len(created), len(updated),
+    )
+
+    return {
+        "projectId": project_id,
+        "created": created,
+        "updated": updated,
+        "totalProcessed": len(created) + len(updated),
+    }
+
+
+@router.delete("/projects/{project_id}/shares")
+async def delete_project_shares(
+    project_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: None = Depends(check_projects_enabled),
+):
+    """Remove sharing access for one or more users."""
+    from ..repository.models.project_model import ProjectModel
+    from ..repository.models.project_user_model import ProjectUserModel
+
+    # Parse request body manually (DELETE with body)
+    body = await request.json()
+    user_emails = body.get("userEmails", [])
+
+    user_id = user.get("id")
+
+    # Verify project exists
+    project = db.query(ProjectModel).filter(
+        ProjectModel.id == project_id,
+        ProjectModel.is_deleted.is_(False),
+    ).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    # Only the owner can remove shares
+    if project.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the project owner can remove shares"
+        )
+
+    deleted_count = 0
+    deleted_emails = []
+
+    for email in user_emails:
+        result = db.query(ProjectUserModel).filter(
+            ProjectUserModel.project_id == project_id,
+            ProjectUserModel.user_id == email,
+        ).delete()
+        if result > 0:
+            deleted_count += result
+            deleted_emails.append(email)
+
+    db.flush()
+    log.info(
+        "User %s removed %d shares from project %s",
+        user_id, deleted_count, project_id,
+    )
+
+    return {
+        "projectId": project_id,
+        "deletedCount": deleted_count,
+        "deletedEmails": deleted_emails,
+    }

@@ -1,9 +1,9 @@
 """
-Web Search Tools for Solace Agent Mesh
+Web Search Tools for MedExpert
 Provides web search capabilities using Google Custom Search API.
 
 For other search providers (e.g., Exa, Brave, Tavily), please use the corresponding
-plugins from the solace-agent-mesh-plugins repository.
+plugins from the medexpert-plugins repository.
 """
 
 import logging
@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 from google.adk.tools import ToolContext
 
-from ...tools.web_search import GoogleSearchTool, SearchResult
+from ...tools.web_search import GoogleSearchTool, DuckDuckGoSearchTool, SearchResult
 from .tool_definition import BuiltinTool
 from .registry import tool_registry
 from ...common.rag_dto import create_rag_source, create_rag_search_result
@@ -275,5 +275,152 @@ web_search_google_tool_def = BuiltinTool(
 
 tool_registry.register(web_search_google_tool_def)
 
-log.info("Web search tools registered: web_search_google")
-log.info("Note: For Exa, Brave, and Tavily search, use plugins from solace-agent-mesh-plugins")
+
+async def web_search_duckduckgo(
+    query: str,
+    max_results: int = 5,
+    tool_context: ToolContext = None,
+    tool_config: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> str:
+    """
+    Search the web using DuckDuckGo. No API key required.
+
+    Args:
+        query: The search query string
+        max_results: Maximum number of results to return (1-10)
+        tool_context: ADK tool context
+        tool_config: Tool configuration (unused for DDG)
+
+    Returns:
+        JSON string containing search results with sources for citation
+    """
+    log_identifier = "[web_search_duckduckgo]"
+
+    try:
+        tool = DuckDuckGoSearchTool()
+
+        result: SearchResult = await tool.search(
+            query=query,
+            max_results=max_results,
+            **kwargs
+        )
+
+        if not result.success:
+            log.error("%s Search failed: %s", log_identifier, result.error)
+            return f"Error: {result.error}"
+
+        search_turn = _get_next_search_turn(tool_context)
+        citation_prefix = f"s{search_turn}r"
+
+        log.info(
+            "%s Search successful: %d results (turn=%d, citation_prefix=%s)",
+            log_identifier,
+            len(result.organic),
+            search_turn,
+            citation_prefix
+        )
+
+        rag_sources = []
+        valid_citation_ids = []
+
+        for i, source in enumerate(result.organic):
+            citation_id = f"{citation_prefix}{i}"
+            valid_citation_ids.append(citation_id)
+
+            rag_source = create_rag_source(
+                citation_id=citation_id,
+                file_id=f"web_search_{search_turn}_{i}",
+                filename=source.attribution or source.title,
+                title=source.title,
+                source_url=source.link,
+                url=source.link,
+                content_preview=source.snippet,
+                relevance_score=1.0,
+                source_type="web",
+                retrieved_at=datetime.now(timezone.utc).isoformat(),
+                metadata={
+                    "title": source.title,
+                    "link": source.link,
+                    "type": "web_search",
+                    "favicon": f"https://www.google.com/s2/favicons?domain={source.link}&sz=32" if source.link else ""
+                }
+            )
+            rag_sources.append(rag_source)
+
+        rag_metadata = create_rag_search_result(
+            query=query,
+            search_type="web_search",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            sources=rag_sources
+        )
+
+        formatted_results = []
+        formatted_results.append(f"=== SEARCH RESULTS (Turn {search_turn}) ===")
+        formatted_results.append(f"Query: {query}")
+        formatted_results.append(f"Valid citation IDs: {', '.join(valid_citation_ids)}")
+        formatted_results.append("")
+
+        for i, source in enumerate(result.organic):
+            citation_id = f"{citation_prefix}{i}"
+            formatted_results.append(f"--- RESULT {i+1} ---")
+            formatted_results.append(f"CITATION ID: [[cite:{citation_id}]]")
+            formatted_results.append(f"TITLE: {source.title}")
+            formatted_results.append(f"URL: {source.link}")
+            formatted_results.append(f"CONTENT: {source.snippet}")
+            formatted_results.append(f"USE [[cite:{citation_id}]] to cite facts from THIS result only")
+            formatted_results.append("")
+
+        formatted_results.append("=== END SEARCH RESULTS ===")
+        formatted_results.append("")
+        formatted_results.append("IMPORTANT: Each citation ID is UNIQUE to its result.")
+        formatted_results.append("Only use a citation ID for facts that appear in THAT specific result's CONTENT.")
+
+        return {
+            "result": result.model_dump_json(),
+            "formatted_results": "\n".join(formatted_results),
+            "rag_metadata": rag_metadata,
+            "valid_citation_ids": valid_citation_ids,
+            "num_results": len(result.organic),
+            "search_turn": search_turn
+        }
+
+    except Exception as e:
+        log.exception("%s Unexpected error in DuckDuckGo search: %s", log_identifier, e)
+        return f"Error executing DuckDuckGo search: {str(e)}"
+
+
+web_search_duckduckgo_tool_def = BuiltinTool(
+    name="web_search_duckduckgo",
+    implementation=web_search_duckduckgo,
+    description=(
+        "Search the web using DuckDuckGo. No API key required. "
+        "Use this when you need up-to-date information from the web. "
+        "Always cite text sources using the citation format provided in your instructions."
+    ),
+    category=CATEGORY_NAME,
+    category_description=CATEGORY_DESCRIPTION,
+    required_scopes=["tool:web_search:execute"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of results (1-10)",
+                "minimum": 1,
+                "maximum": 10,
+                "default": 5
+            },
+        },
+        "required": ["query"]
+    },
+)
+
+tool_registry.register(web_search_duckduckgo_tool_def)
+
+log.info("Web search tools registered: web_search_google, web_search_duckduckgo")
+log.info("Note: For Exa, Brave, and Tavily search, use plugins from medexpert-plugins")

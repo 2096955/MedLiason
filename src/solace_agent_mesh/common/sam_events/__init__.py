@@ -1,5 +1,5 @@
 """
-SAM Events - System-level event messaging for Solace Agent Mesh.
+SAM Events - System-level event messaging for MedExpert.
 
 Provides clean separation between A2A task communication and system events.
 """

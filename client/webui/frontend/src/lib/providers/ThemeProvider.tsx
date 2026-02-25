@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ThemeContext, type ThemeContextValue } from "@/lib/contexts";
-import { solace, type ThemePalette } from "./themes/palettes";
+import { medexpert, type ThemePalette } from "./themes/palettes";
 import { generateThemeVariables } from "./themes/themeMapping";
 
 const LOCAL_STORAGE_KEY = "sam-theme";
@@ -199,7 +199,7 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-    const themePalette: ThemePalette = useMemo(() => solace, []);
+    const themePalette: ThemePalette = useMemo(() => medexpert, []);
 
     const [currentTheme, setCurrentTheme] = useState<"light" | "dark">(() => {
         return getInitialTheme();
