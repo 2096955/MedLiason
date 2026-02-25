@@ -173,30 +173,60 @@ If re-verification still fails after revision, MedExpert withholds the report en
 
 ### Prerequisites
 
-- Python 3.10.16+
+- Python 3.10.16+ (3.12 recommended)
+- Node.js >= 25.5.0 < 26
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 - Redis (for memory plane)
 - API key for Gemini, OpenAI, or Anthropic
 
 ### Setup
 
 ```bash
+# 1. SAM framework (root)
+make dev-setup                # Creates .venv with Python 3.12, syncs all deps
+
+# 2. MedExpert application
 cd medexpert
-cp .env.example .env          # Fill in API keys
+cp .env.example .env          # Fill in API keys (see Environment Variables below)
 pip install -e ".[dev]"
 ```
 
 ### Run the full stack
 
+**Production-style** (separate processes, requires a real Solace broker):
+
 ```bash
+cd medexpert
 ./scripts/start_all.sh        # Redis check -> MCP servers -> Agents -> Gateway
 ```
 
+**Dev mode** (single process, uses built-in DevBroker):
+
+```bash
+cd medexpert
+source .env
+redis-server --daemonize yes                  # Start Redis
+python -m mcp_servers.pubmed.server &         # Start MCP servers (from src/)
+# ... (or use scripts/start_mcp_servers.sh)
+sam run configs/                              # All agents + gateway in one process
+```
+
+> **Important**: In dev mode (`SOLACE_DEV_MODE=true`), the DevBroker is in-process only.
+> All agents and the gateway **must** run within a single `sam run` process to communicate.
+> Starting them as separate `sam run` processes will result in agents that cannot discover each other.
+
 This starts:
 1. Config validation (fails fast on missing keys)
-2. Redis health check
-3. 15 MCP servers on ports 9001-9015
-4. 12 agents + orchestrator
-5. Web UI gateway on http://localhost:8000
+2. 15 MCP servers on ports 9001-9015
+3. 11 agents (8 specialists + orchestrator + verifier + reviser)
+4. Web UI gateway on http://localhost:8000
+5. Frontend dev server on http://localhost:3000 (run separately)
+
+### Send a query via CLI
+
+```bash
+sam task send "What is aspirin used for?" --agent OrchestratorAgent
+```
 
 ### Run components individually
 
@@ -213,12 +243,18 @@ This starts:
 
 ```bash
 make dev-setup              # Create venv, sync deps, install Playwright
+source .venv/bin/activate   # Activate venv
 make test                   # Run tests (excluding stress)
 make test-unit              # Unit tests only
 make test-cov               # Tests with 70% coverage threshold
 uv run ruff check .         # Lint
 uv run ruff format .        # Format
 ```
+
+> **Note**: `make dev-setup` runs `uv sync --all-extras` which triggers a hatch build hook
+> that builds all three frontend packages. To skip this during dev setup, set
+> `SAM_SKIP_UI_BUILD=true` and ensure placeholder directories exist:
+> `mkdir -p config_portal/frontend/static client/webui/frontend/static docs/build`
 
 ### MedExpert Application (medexpert/)
 
@@ -241,7 +277,26 @@ cd client/webui/frontend
 npm install
 npm run dev                 # Vite dev server on http://localhost:3000
 npm run lint                # ESLint
-npm run build-package       # Production build
+npm run build-lib           # Library build (Vite)
+npm run build-package       # Library + TypeScript declarations
+npm run test:unit           # Vitest unit tests
+npm run storybook           # Storybook component explorer on port 6006
+```
+
+### Config Portal (config_portal/frontend/)
+
+```bash
+cd config_portal/frontend
+npm install
+npm run dev                 # Remix dev server
+```
+
+### Documentation (docs/)
+
+```bash
+cd docs
+npm install
+npm start                   # Docusaurus on http://localhost:3000
 ```
 
 ---
@@ -298,12 +353,18 @@ Copy `medexpert/.env.example` and fill in:
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `GEMINI_API_KEY` | Yes (or another LLM key) | LLM provider API key |
-| `REDIS_URL` | Yes | Memory plane backend |
-| `SESSION_SECRET_KEY` | Yes (production) | Session cookie signing |
+| `OPENAI_API_KEY` | Yes (same as `GEMINI_API_KEY`) | Required by LiteLLM's `openai/` model prefix |
+| `OPENAI_API_BASE` | Yes | Set to `https://generativelanguage.googleapis.com/v1beta/openai/` for Gemini |
+| `REDIS_URL` | Yes | Memory plane backend (default: `redis://localhost:6379/0`) |
+| `SESSION_SECRET_KEY` | Yes (production) | Session cookie signing (set `MEDEXPERT_ENV=development` to bypass in dev) |
 | `NCBI_API_KEY` | Recommended | PubMed rate limit (3 -> 10 req/s) |
 | `CENSUS_API_KEY` | Optional | Census ACS SDOH data |
 | `EPA_AQS_EMAIL` / `EPA_AQS_KEY` | Optional | EPA air quality data |
 | `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Optional | Knowledge graph |
+
+> **Gemini API note**: The agent configs use `openai/gemini-2.5-flash-001` as the model name,
+> which routes through LiteLLM's OpenAI-compatible provider. Set `OPENAI_API_KEY` to your
+> Gemini API key and `OPENAI_API_BASE` to Google's OpenAI-compatible endpoint as shown above.
 
 ---
 
