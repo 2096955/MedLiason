@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-import { PanelRightIcon, FileText, Network, RefreshCw, Link2, Database, Brain, Gauge } from "lucide-react";
+import { PanelRightIcon, FileText, Network, RefreshCw, Link2, Database, Brain, Gauge, Stethoscope } from "lucide-react";
 
 import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@/lib/components/ui";
 import { useTaskContext, useChatContext } from "@/lib/hooks";
@@ -14,6 +14,7 @@ import { RAGInfoPanel } from "./rag/RAGInfoPanel";
 import { DataSourcesPanel } from "./DataSourcesPanel";
 import { SessionMemoryPanel } from "./SessionMemoryPanel";
 import { PerformancePanel } from "./PerformancePanel";
+import { TriagePanel } from "./triage/TriagePanel";
 
 interface ChatSidePanelProps {
     onCollapsedToggle: (isSidePanelCollapsed: boolean) => void;
@@ -23,7 +24,7 @@ interface ChatSidePanelProps {
 }
 
 export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle, isSidePanelCollapsed, setIsSidePanelCollapsed, isSidePanelTransitioning }) => {
-    const { activeSidePanelTab, setActiveSidePanelTab, setPreviewArtifact, taskIdInSidePanel, ragData, ragEnabled, highlightedSourceId, setHighlightedSourceId, sessionId } = useChatContext();
+    const { activeSidePanelTab, setActiveSidePanelTab, setPreviewArtifact, taskIdInSidePanel, ragData, ragEnabled, highlightedSourceId, setHighlightedSourceId, sessionId, triageProgress } = useChatContext();
     const { isReconnecting, isTaskMonitorConnecting, isTaskMonitorConnected, monitoredTasks, connectTaskMonitorStream, loadTaskFromBackend } = useTaskContext();
     const [visualizedTask, setVisualizedTask] = useState<VisualizedTask | null>(null);
     const [isLoadingTask, setIsLoadingTask] = useState<boolean>(false);
@@ -152,7 +153,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
         onCollapsedToggle(newCollapsed);
     };
 
-    const handleTabClick = (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance") => {
+    const handleTabClick = (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage") => {
         if (tab === "files") {
             setPreviewArtifact(null);
         }
@@ -160,7 +161,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
         setActiveSidePanelTab(tab);
     };
 
-    const handleIconClick = (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance") => {
+    const handleIconClick = (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage") => {
         if (isSidePanelCollapsed) {
             setIsSidePanelCollapsed(false);
             onCollapsedToggle?.(false);
@@ -204,6 +205,12 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                 <Button variant="ghost" size="sm" onClick={() => handleIconClick("performance")} className="h-10 w-10 p-0" tooltip="Agent Performance">
                     <Gauge className="size-5" />
                 </Button>
+
+                {triageProgress && (
+                    <Button variant="ghost" size="sm" onClick={() => handleIconClick("triage")} className="mt-2 h-10 w-10 p-0" tooltip="Triage">
+                        <Stethoscope className="size-5" />
+                    </Button>
+                )}
             </div>
         );
     }
@@ -212,7 +219,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
     return (
         <div className="bg-background flex h-full flex-col border-l">
             <div className="m-1 min-h-0 flex-1">
-                <Tabs value={activeSidePanelTab} onValueChange={value => handleTabClick(value as "files" | "activity" | "rag" | "datasources" | "memory" | "performance")} className="flex h-full flex-col">
+                <Tabs value={activeSidePanelTab} onValueChange={value => handleTabClick(value as "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage")} className="flex h-full flex-col">
                     <div className="@container flex gap-2 p-2">
                         <Button data-testid="collapsePanel" variant="ghost" onClick={toggleCollapsed} className="shrink-0 p-1" tooltip="Collapse Panel">
                             <PanelRightIcon className="size-5" />
@@ -264,11 +271,21 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                             <TabsTrigger
                                 value="performance"
                                 title="Agent Performance"
-                                className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none rounded-r-md border border-l-0 px-2 data-[state=active]:z-10"
+                                className={`border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none border-x-0 border-y px-2 data-[state=active]:z-10 ${!triageProgress ? "rounded-r-md border border-l-0" : ""}`}
                             >
                                 <Gauge className="h-4 w-4 shrink-0" />
                                 <span className="ml-1.5 hidden truncate @[240px]:inline">Perf</span>
                             </TabsTrigger>
+                            {triageProgress && (
+                                <TabsTrigger
+                                    value="triage"
+                                    title="Medical Triage"
+                                    className="border-border bg-muted data-[state=active]:bg-background relative min-w-0 flex-1 cursor-pointer rounded-none rounded-r-md border border-l-0 px-2 data-[state=active]:z-10"
+                                >
+                                    <Stethoscope className="h-4 w-4 shrink-0" />
+                                    <span className="ml-1.5 hidden truncate @[240px]:inline">Triage</span>
+                                </TabsTrigger>
+                            )}
                         </TabsList>
                     </div>
                     <div className="min-h-0 flex-1">
@@ -342,6 +359,14 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({ onCollapsedToggle,
                                 <PerformancePanel isActive={activeSidePanelTab === "performance"} />
                             </div>
                         </TabsContent>
+
+                        {triageProgress && (
+                            <TabsContent value="triage" className="m-0 h-full">
+                                <div className="h-full">
+                                    <TriagePanel isActive={activeSidePanelTab === "triage"} />
+                                </div>
+                            </TabsContent>
+                        )}
                     </div>
                 </Tabs>
             </div>

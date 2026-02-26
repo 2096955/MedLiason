@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 const v4 = () => uuidv4({});
 
 import { api, RateLimitError } from "@/lib/api";
-import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData } from "@/lib/contexts";
+import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData, type TriageProgressData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
 import { useProjectContext, registerProjectDeletedCallback } from "@/lib/providers";
 import { getErrorMessage, fileToBase64, migrateTask, CURRENT_SCHEMA_VERSION, getApiBearerToken, internalToDisplayText } from "@/lib/utils";
@@ -62,6 +62,43 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const ragDataRef = useRef<RAGSearchResult[]>([]);
     const [ragEnabled] = useState<boolean>(true);
     const ragAutoOpenedTasksRef = useRef<Set<string>>(new Set());
+
+    // Triage State
+    const [triageProgress, setTriageProgress] = useState<TriageProgressData | null>(() => {
+        try {
+            const stored = sessionStorage.getItem("triageProgress");
+            return stored ? JSON.parse(stored) : null;
+        } catch {
+            return null;
+        }
+    });
+    const triageAutoOpenedRef = useRef<boolean>(false);
+
+    // Triage pipeline timeout (120s) — show warning if pipeline stalls
+    const triageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        // Clear any existing timeout
+        if (triageTimeoutRef.current) {
+            clearTimeout(triageTimeoutRef.current);
+            triageTimeoutRef.current = null;
+        }
+
+        if (triageProgress && triageProgress.stage < 5 && !triageProgress.error) {
+            triageTimeoutRef.current = setTimeout(() => {
+                setTriageProgress(prev => prev ? {
+                    ...prev,
+                    error: "Triage is taking longer than expected. The pipeline may have stalled.",
+                } : prev);
+            }, 120_000);
+        }
+
+        return () => {
+            if (triageTimeoutRef.current) {
+                clearTimeout(triageTimeoutRef.current);
+            }
+        };
+    }, [triageProgress]);
 
     // Wrapper to keep ref in sync with state
     const setRagData = useCallback((data: RAGSearchResult[] | ((prev: RAGSearchResult[]) => RAGSearchResult[])) => {
@@ -142,7 +179,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     // Side Panel Control State
     const [isSidePanelCollapsed, setIsSidePanelCollapsed] = useState<boolean>(true);
-    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag" | "datasources" | "memory" | "performance">("files");
+    const [activeSidePanelTab, setActiveSidePanelTab] = useState<"files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage">("files");
 
     // Feedback State
     const [submittedFeedback, setSubmittedFeedback] = useState<Record<string, { type: "up" | "down"; text: string }>>({});
@@ -819,7 +856,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
     const [isLoadingSession, setIsLoadingSession] = useState<boolean>(false);
 
-    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance") => {
+    const openSidePanelTab = useCallback((tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage") => {
         setIsSidePanelCollapsed(false);
         setActiveSidePanelTab(tab);
 
@@ -1348,6 +1385,18 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                     // Don't return early - let the data part flow through to ChatMessage for rendering
                                     break;
                                 }
+                                case "triage_progress": {
+                                    // Medical Triage pipeline progress tracking
+                                    // Replace wholesale — SSE events deliver cumulative state
+                                    setTriageProgress(data as TriageProgressData);
+                                    sessionStorage.setItem("triageProgress", JSON.stringify(data));
+                                    // Auto-open triage tab on first event per session
+                                    if (!triageAutoOpenedRef.current) {
+                                        triageAutoOpenedRef.current = true;
+                                        openSidePanelTabRef.current("triage");
+                                    }
+                                    break;
+                                }
                                 case "tool_result": {
                                     // Handle tool results that may contain RAG metadata
                                     const resultData = (data as any).result_data;
@@ -1840,6 +1889,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             sseEventSequenceRef.current = 0;
             // Clear RAG data on new session
             setRagData([]);
+            // Clear triage progress on new session
+            setTriageProgress(null);
+            triageAutoOpenedRef.current = false;
+            sessionStorage.removeItem("triageProgress");
             // Clear deep research query history
             deepResearchQueryHistoryRef.current.clear();
             // Artifacts will be automatically refreshed by useArtifacts hook when sessionId changes
@@ -1980,6 +2033,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 sseEventSequenceRef.current = 0;
                 // Clear RAG data when switching sessions - will be repopulated by loadSessionTasks
                 setRagData([]);
+                // Clear triage progress when switching sessions
+                setTriageProgress(null);
+                triageAutoOpenedRef.current = false;
+                sessionStorage.removeItem("triageProgress");
                 // Clear deep research query history when switching sessions
                 deepResearchQueryHistoryRef.current.clear();
 
@@ -3028,6 +3085,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         pendingPrompt,
         startNewChatWithPrompt,
         clearPendingPrompt,
+
+        /** Triage */
+        triageProgress,
+        setTriageProgress,
 
         /** Background Task Monitoring */
         backgroundTasks,

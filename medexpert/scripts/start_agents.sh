@@ -36,6 +36,17 @@ echo "  Starting orchestrator..."
 sam run "$CONFIGS_DIR/agents/orchestrator.yaml" &
 PIDS+=($!)
 
+# Triage agents
+echo "  Starting triage intake..."
+sam run "$CONFIGS_DIR/agents/triage_intake.yaml" &
+PIDS+=($!)
+sleep 2
+
+echo "  Starting triage orchestrator..."
+sam run "$CONFIGS_DIR/agents/triage_orchestrator.yaml" &
+PIDS+=($!)
+sleep 2
+
 # Feedback bridge (learning loop integration)
 echo "  Starting feedback bridge..."
 sam run "$CONFIGS_DIR/feedback_bridge.yaml" &

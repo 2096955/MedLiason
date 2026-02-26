@@ -9,6 +9,53 @@ export interface PendingPromptData {
     groupName: string;
 }
 
+/** Triage progress data delivered via SSE events */
+export interface TriageProgressData {
+    type: "triage_progress";
+    stage: number;
+    stage_name: string;
+    total_stages: number;
+    detail: string;
+    specialist_verdicts?: Array<{
+        specialist: string;
+        diagnosis: string;
+        confidence: number;
+        thinking: string;
+        tier: "tier1" | "tier2";
+    }>;
+    consensus?: {
+        consensus_diagnosis: string;
+        mean_confidence: number;
+        supporting_specialists: Array<{ specialist: string; confidence: number }>;
+        dissenting_specialists: Array<{
+            specialist: string;
+            alternative_diagnosis: string;
+            confidence: number;
+        }>;
+    };
+    evaluation?: {
+        eval_confidence: number;
+        explanation: string;
+        flag_for_review: boolean;
+        flag_reason?: string;
+        confirmed_emergency?: boolean;
+    };
+    nba?: {
+        diagnosis: string;
+        route: string;
+        urgency: string;
+        color: string;
+        specialist_type?: string;
+        reasoning: string;
+        self_care_instructions?: string;
+        escalation_criteria?: string;
+        follow_up_timeframe?: string;
+        disclaimer: string;
+    };
+    emergency_override: boolean;
+    error?: string;
+}
+
 export interface ChatState {
     configCollectFeedback: boolean;
     sessionId: string;
@@ -37,9 +84,11 @@ export interface ChatState {
     ragData: RAGSearchResult[];
     ragEnabled: boolean;
     highlightedSourceId: string | null;
+    // Triage State
+    triageProgress: TriageProgressData | null;
     // Side Panel Control State
     isSidePanelCollapsed: boolean;
-    activeSidePanelTab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance";
+    activeSidePanelTab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage";
     // Delete Modal State
     isDeleteModalOpen: boolean;
     artifactToDelete: ArtifactInfo | null;
@@ -77,10 +126,12 @@ export interface ChatActions {
     addNotification: (message: string, type?: "success" | "info" | "warning") => void;
     setSelectedAgentName: React.Dispatch<React.SetStateAction<string>>;
     uploadArtifactFile: (file: File, overrideSessionId?: string, description?: string, silent?: boolean) => Promise<{ uri: string; sessionId: string } | { error: string } | null>;
+    /** Triage Actions */
+    setTriageProgress: (progress: TriageProgressData | null) => void;
     /** Side Panel Control Actions */
     setIsSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources" | "memory" | "performance">>;
-    openSidePanelTab: (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance") => void;
+    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage">>;
+    openSidePanelTab: (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage") => void;
 
     openDeleteModal: (artifact: ArtifactInfo) => void;
     closeDeleteModal: () => void;

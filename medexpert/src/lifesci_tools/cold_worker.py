@@ -243,6 +243,38 @@ def _persist_feedback(db_path: str, item: dict[str, Any]) -> None:
         conn.close()
 
 
+def _persist_triage_outcome(db_path: str, item: dict[str, Any]) -> None:
+    """Write a triage outcome row to the cold store."""
+    session_id = item.get("session_id", "")
+    if not session_id:
+        log.warning("Triage outcome payload missing session_id, skipping")
+        return
+    conn = cold_store.get_connection(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO triage_outcomes
+               (session_id, chief_complaint, consensus_diagnosis,
+                mean_confidence, nba_route, nba_urgency,
+                flag_for_review, emergency_override, specialists_invoked_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                item.get("chief_complaint", ""),
+                item.get("consensus_diagnosis", ""),
+                float(item.get("mean_confidence", 0)),
+                item.get("nba_route", ""),
+                item.get("nba_urgency", ""),
+                int(item.get("flag_for_review", 0)),
+                int(item.get("emergency_override", 0)),
+                item.get("specialists_invoked_json", "[]"),
+            ),
+        )
+        conn.commit()
+        log.info("Persisted triage outcome for session %s", session_id)
+    finally:
+        conn.close()
+
+
 def _persist_one(db_path: str, item: dict[str, Any]) -> None:
     """Write all raw tables for one session in a single transaction.
 
@@ -252,6 +284,10 @@ def _persist_one(db_path: str, item: dict[str, Any]) -> None:
     """
     if item.get("type") == "feedback":
         _persist_feedback(db_path, item)
+        return
+
+    if item.get("type") == "triage_outcome":
+        _persist_triage_outcome(db_path, item)
         return
 
     conn = cold_store.get_connection(db_path)
