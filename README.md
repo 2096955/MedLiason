@@ -113,7 +113,7 @@ Key reasoning mechanisms:
 - **Query decomposition** — Breaks multi-faceted questions into domain-specific sub-questions (e.g., "What are the drug interactions and genomic factors for metformin?" becomes separate queries for DrugSpecialist and GenomicsSpecialist)
 - **Reflective gap analysis** — After collecting evidence, explicitly identifies contradictions, missing perspectives, and logical gaps before synthesis
 - **Advisory board deliberation** — Generates 6 distinct analytical perspectives (Clinical Pragmatist, Research Methodologist, Patient Advocate, Health Economist, Bioethicist, Global Health Specialist) to prevent single-perspective bias, then synthesizes consensus and dissent
-- **Learned routing** — Seeds each session with historical intelligence from the cold store (which specialists and sources worked well for similar queries in the past)
+- **Learned routing** — Seeds each session with historical intelligence from the cold store (which specialists and sources worked well for similar queries in the past, calibrated per-domain specialist weights, source reliability scores)
 
 **Specialists: Evidence-First Retrieval**
 
@@ -143,6 +143,7 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 - Orchestrator writes coverage metrics → verifier reads to calibrate strictness
 - Verifier writes verdict → orchestrator reads to decide revision
 - All signals auto-flush to SQLite cold store for cross-session learning
+- User feedback (thumbs up/down) flows via broker to cold store, feeding specialist calibration and prompt evolution
 
 ### Agents
 
@@ -168,6 +169,8 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 | MCP servers | FastMCP 2.x (SSE transport) | External API integration |
 | Memory plane | Redis | Shared state across agents per session |
 | Cold store | SQLite | Learning from past research sessions |
+| Learning loops | Specialist calibrator + feedback bridge | Per-domain weight adjustment, user feedback integration |
+| Prompt evolution | Human approval gate + auto-rollback | Safe prompt improvement with regression testing |
 | LLM abstraction | LiteLLM | Provider-agnostic model access |
 
 ---
@@ -227,6 +230,23 @@ Verifier Agent (gemini-2.5-pro, temp 0.1)
 
 If re-verification still fails after revision, MedExpert withholds the report entirely and explains which claims could not be verified. This is a deliberate safety measure — no unverifiable medical information is delivered.
 
+### Cross-Session Learning
+
+MedExpert improves over time through three learning loops:
+
+| Loop | Trigger | What It Does |
+|------|---------|-------------|
+| **Specialist Calibration** | Every 10 session flushes | Computes per-specialist, per-domain weights from user feedback (60%) + verification outcomes (40%). Weights seed future routing decisions. |
+| **Prompt Evolution** | Rolling composite score < 0.55 | Generates improved specialist prompts via LLM metaprompt, runs regression against golden dataset. Candidates require human approval before activation. |
+| **Feedback Bridge** | Each user thumbs up/down | SAM broker flow captures gateway feedback, enriches with session context from cold store, persists for calibration and evolution signals. |
+
+Manage prompt candidates via CLI:
+```bash
+python scripts/manage_prompts.py list                          # View pending candidates
+python scripts/manage_prompts.py show DrugSpecialist 3         # Inspect candidate details
+python scripts/manage_prompts.py approve DrugSpecialist 3      # Promote to active
+```
+
 ---
 
 ## Quick Start
@@ -255,8 +275,9 @@ This starts:
 1. Config validation (fails fast on missing keys)
 2. Redis health check
 3. 15 MCP servers on ports 9001-9015
-4. 12 agents + orchestrator
-5. Web UI gateway on http://localhost:8000
+4. 11 agents (orchestrator + 8 specialists + verifier + reviser)
+5. Feedback bridge (broker subscriber for learning loops)
+6. Web UI gateway on http://localhost:8000
 
 ### Run components individually
 
@@ -355,15 +376,16 @@ solace-agent-mesh/              # SAM framework (agent hosting, gateway, A2A)
 
 medexpert/                      # Life sciences research application
   configs/
-    agents/                     # YAML configs for all 12 agents
+    agents/                     # YAML configs for all 11 agents
     gateways/webui.yaml         # Web UI gateway config
+    feedback_bridge.yaml        # Feedback→cold store broker subscriber
     shared_config.yaml          # Model anchors, broker, services
   src/
-    lifesci_tools/              # 11 custom DynamicTool implementations
+    lifesci_tools/              # 21 custom tool/module implementations
     lifesci_common/             # Constants, config validator, utilities
     mcp_servers/                # 15 FastMCP SSE servers
   tests/                        # Unit, contract, integration, eval runner
-  scripts/                      # Startup scripts
+  scripts/                      # Startup + management scripts
   infra/                        # Terraform, K8s, Docker
 
 client/webui/frontend/          # React + Vite chat UI
