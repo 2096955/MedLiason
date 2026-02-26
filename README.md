@@ -2,6 +2,7 @@
 <h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
+  <a href="#screenshots">Screenshots</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#research-protocol">Research Protocol</a> &middot;
@@ -15,6 +16,65 @@ MedExpert is a multi-agent AI system that answers complex medical and scientific
 Every answer goes through a Generator-Verifier-Reviser (GVR) loop: the orchestrator synthesizes a report, a verifier agent (using a stronger model at low temperature) fact-checks each claim against its cited sources, and a reviser corrects any issues before the answer reaches the user.
 
 Built on the **Solace Agent Mesh (SAM)** framework for event-driven, broker-based agent communication using the A2A protocol.
+
+---
+
+## Screenshots
+
+### Chat Interface
+
+The main chat view with message input, agent selector, and collapsible side panel.
+
+<p align="center">
+  <img src="docs/screenshots/01-chat-welcome.png" alt="Chat interface - dark mode" width="720" />
+</p>
+
+### Side Panel Tabs
+
+The right-side panel provides five tabs for inspecting research activity in real time.
+
+<table>
+  <tr>
+    <td align="center"><strong>Files</strong><br/>Uploaded documents and generated artifacts<br/><img src="docs/screenshots/02-side-panel-files.png" alt="Files tab" width="360" /></td>
+    <td align="center"><strong>Activity</strong><br/>Agent task workflow and step details<br/><img src="docs/screenshots/03-side-panel-activity.png" alt="Activity tab" width="360" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Data Sources</strong><br/>MCP server health and search tool status<br/><img src="docs/screenshots/04-side-panel-data.png" alt="Data Sources tab" width="360" /></td>
+    <td align="center"><strong>Memory</strong><br/>Session memory plane state<br/><img src="docs/screenshots/05-side-panel-memory.png" alt="Memory tab" width="360" /></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><strong>Performance</strong><br/>Self-evolving prompt metrics<br/><img src="docs/screenshots/06-side-panel-perf.png" alt="Performance tab" width="360" /></td>
+  </tr>
+</table>
+
+### Agent Mesh
+
+View discovered agents and experimental workflow definitions.
+
+<p align="center">
+  <img src="docs/screenshots/07-agent-mesh.png" alt="Agent Mesh page" width="720" />
+</p>
+
+### Projects & Prompts
+
+Manage reusable project contexts and prompt templates.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/08-projects.png" alt="Projects page" width="360" /></td>
+    <td align="center"><img src="docs/screenshots/09-prompts.png" alt="Prompts page" width="360" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Projects</strong></td>
+    <td align="center"><strong>Prompts</strong></td>
+  </tr>
+</table>
+
+### Light Mode
+
+<p align="center">
+  <img src="docs/screenshots/10-chat-light-mode.png" alt="Chat interface - light mode" width="720" />
+</p>
 
 ---
 
@@ -243,6 +303,27 @@ npm run dev                 # Vite dev server on http://localhost:3000
 npm run lint                # ESLint
 npm run build-package       # Production build
 ```
+
+### Regenerating README Screenshots
+
+The screenshots in `docs/screenshots/` are captured by a Playwright script. Open three separate terminals:
+
+```bash
+# Terminal 1 — Gateway (port 8000)
+cd medexpert
+sam run configs/gateways/webui.yaml
+
+# Terminal 2 — Vite dev server (port 3000)
+cd client/webui/frontend
+npm install          # first time only
+npm run dev
+
+# Terminal 3 — Capture (after both services are accepting connections)
+npx playwright install chromium   # first time only
+node docs/take_screenshots.mjs
+```
+
+The script uses stable selectors (`data-testid`, `aria-label`) mapped to the actual component source. Each section is independently wrapped in try/catch so a single selector change won't abort the entire run. See the header comment in the script for details.
 
 ---
 
