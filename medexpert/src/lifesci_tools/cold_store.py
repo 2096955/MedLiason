@@ -184,6 +184,18 @@ CREATE TABLE IF NOT EXISTS prompt_promotions (
     regression_detail     TEXT,
     promoted_at           TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS user_feedback (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id            TEXT    NOT NULL,
+    task_id               TEXT    NOT NULL DEFAULT '',
+    feedback_type         TEXT    NOT NULL CHECK(feedback_type IN ('up', 'down')),
+    feedback_text         TEXT    NOT NULL DEFAULT '',
+    query_domain          TEXT    NOT NULL DEFAULT '',
+    specialists_used_json TEXT    NOT NULL DEFAULT '[]',
+    verification_verdict  TEXT    NOT NULL DEFAULT '',
+    created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -283,6 +295,51 @@ _MIGRATIONS = [
             regression_detail     TEXT,
             promoted_at           TEXT    NOT NULL DEFAULT (datetime('now'))
         );
+        """,
+    ),
+    # M3: Add user_feedback table for learning loop integration.
+    (
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='user_feedback'",
+        """
+        CREATE TABLE IF NOT EXISTS user_feedback (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id            TEXT    NOT NULL,
+            task_id               TEXT    NOT NULL DEFAULT '',
+            feedback_type         TEXT    NOT NULL CHECK(feedback_type IN ('up', 'down')),
+            feedback_text         TEXT    NOT NULL DEFAULT '',
+            query_domain          TEXT    NOT NULL DEFAULT '',
+            specialists_used_json TEXT    NOT NULL DEFAULT '[]',
+            verification_verdict  TEXT    NOT NULL DEFAULT '',
+            created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
+    # M4: Add status column to prompt_versions for human approval gate.
+    (
+        "SELECT 1 FROM pragma_table_info('prompt_versions') WHERE name='status'",
+        "ALTER TABLE prompt_versions ADD COLUMN status TEXT NOT NULL DEFAULT 'active';",
+    ),
+    # M5: Remove FK constraint from user_feedback for existing databases.
+    # SQLite lacks ALTER TABLE DROP CONSTRAINT, so we recreate the table.
+    # Detects the old schema by checking for "REFERENCES" in the DDL.
+    (
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='user_feedback' "
+        "AND sql NOT LIKE '%REFERENCES%'",
+        """
+        CREATE TABLE IF NOT EXISTS user_feedback_new (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id            TEXT    NOT NULL,
+            task_id               TEXT    NOT NULL DEFAULT '',
+            feedback_type         TEXT    NOT NULL CHECK(feedback_type IN ('up', 'down')),
+            feedback_text         TEXT    NOT NULL DEFAULT '',
+            query_domain          TEXT    NOT NULL DEFAULT '',
+            specialists_used_json TEXT    NOT NULL DEFAULT '[]',
+            verification_verdict  TEXT    NOT NULL DEFAULT '',
+            created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO user_feedback_new SELECT * FROM user_feedback;
+        DROP TABLE user_feedback;
+        ALTER TABLE user_feedback_new RENAME TO user_feedback;
         """,
     ),
 ]
@@ -409,6 +466,117 @@ def write_routing_pattern(
             session_verification_score,
         ),
     )
+
+
+def write_user_feedback(
+    conn: sqlite3.Connection,
+    session_id: str,
+    task_id: str = "",
+    feedback_type: str = "up",
+    feedback_text: str = "",
+    query_domain: str = "",
+    specialists_used: list[str] | None = None,
+    verification_verdict: str = "",
+) -> int:
+    """Insert a user feedback row. Returns the row id."""
+    cursor = conn.execute(
+        """INSERT INTO user_feedback
+           (session_id, task_id, feedback_type, feedback_text,
+            query_domain, specialists_used_json, verification_verdict)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            session_id,
+            task_id,
+            feedback_type,
+            feedback_text,
+            query_domain,
+            json.dumps(specialists_used or []),
+            verification_verdict,
+        ),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_feedback_stats(
+    conn: sqlite3.Connection,
+    window_days: int = 90,
+    agent_name: str | None = None,
+) -> dict[str, Any]:
+    """Aggregate feedback stats over a rolling window.
+
+    If *agent_name* is provided, only counts feedback for sessions where
+    that specialist was used.
+
+    Returns dict with total, upvotes, downvotes, per_domain, and
+    per_specialist breakdowns.
+    """
+    cutoff = f"-{window_days} days"
+
+    # Build base query — optionally filter by specialist
+    if agent_name:
+        base_where = (
+            "WHERE created_at >= datetime('now', ?) "
+            "AND specialists_used_json LIKE ?"
+        )
+        base_params: tuple = (cutoff, f'%"{agent_name}"%')
+    else:
+        base_where = "WHERE created_at >= datetime('now', ?)"
+        base_params = (cutoff,)
+
+    # Totals
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total, "
+        f"SUM(CASE WHEN feedback_type='up' THEN 1 ELSE 0 END) AS upvotes, "
+        f"SUM(CASE WHEN feedback_type='down' THEN 1 ELSE 0 END) AS downvotes "
+        f"FROM user_feedback {base_where}",
+        base_params,
+    ).fetchone()
+    total = row["total"] if row else 0
+    upvotes = row["upvotes"] if row else 0
+    downvotes = row["downvotes"] if row else 0
+
+    # Per-domain breakdown
+    per_domain: dict[str, dict[str, int]] = {}
+    rows = conn.execute(
+        f"SELECT query_domain, feedback_type, COUNT(*) AS cnt "
+        f"FROM user_feedback {base_where} "
+        f"GROUP BY query_domain, feedback_type",
+        base_params,
+    ).fetchall()
+    for r in rows:
+        domain = r["query_domain"] or "unknown"
+        per_domain.setdefault(domain, {"up": 0, "down": 0})
+        per_domain[domain][r["feedback_type"]] = r["cnt"]
+
+    return {
+        "total": total,
+        "upvotes": upvotes,
+        "downvotes": downvotes,
+        "per_domain": per_domain,
+        "window_days": window_days,
+    }
+
+
+def get_recent_feedback_texts(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    limit: int = 5,
+    feedback_type: str = "down",
+) -> list[str]:
+    """Fetch recent feedback text for sessions involving a specific specialist.
+
+    Defaults to negative (thumbs-down) feedback for evolution signals.
+    """
+    rows = conn.execute(
+        """SELECT feedback_text FROM user_feedback
+           WHERE feedback_type = ?
+             AND specialists_used_json LIKE ?
+             AND feedback_text != ''
+           ORDER BY created_at DESC LIMIT ?""",
+        (feedback_type, f'%"{agent_name}"%', limit),
+    ).fetchall()
+    return [r["feedback_text"] for r in rows]
 
 
 def upsert_query_pattern(
@@ -775,13 +943,18 @@ def write_prompt_version(
     metadata: dict[str, Any] | None = None,
     is_active: bool = False,
     is_baseline: bool = False,
+    status: str = "active",
 ) -> int:
-    """Insert a new prompt version. Returns the row id."""
+    """Insert a new prompt version. Returns the row id.
+
+    The *status* parameter sets the lifecycle state: 'active', 'baseline',
+    'candidate' (awaiting approval), 'approved', 'rejected', 'archived'.
+    """
     cursor = conn.execute(
         """INSERT INTO prompt_versions
            (agent_name, version, instruction, model, temperature,
-            metadata_json, is_active, is_baseline)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            metadata_json, is_active, is_baseline, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             agent_name,
             version,
@@ -791,6 +964,7 @@ def write_prompt_version(
             json.dumps(metadata) if metadata else None,
             int(is_active),
             int(is_baseline),
+            status,
         ),
     )
     conn.commit()
@@ -1173,6 +1347,12 @@ def prune_cold_store(
         (f"-{max_age_days} days",),
     )
 
+    # 7. Prune old user_feedback
+    conn.execute(
+        "DELETE FROM user_feedback WHERE created_at < datetime('now', ?)",
+        (f"-{max_age_days} days",),
+    )
+
     conn.commit()
 
     total_deleted = deleted["age_based"] + deleted["count_based"]
@@ -1187,3 +1367,142 @@ def prune_cold_store(
         deleted["vacuumed"],
     )
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# Prompt candidate helpers (human approval gate)
+# ---------------------------------------------------------------------------
+
+
+def get_pending_candidates(
+    conn: sqlite3.Connection,
+    agent_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch prompt versions with status='candidate' awaiting human approval."""
+    if agent_name:
+        rows = conn.execute(
+            """SELECT id, agent_name, version, instruction, model, temperature,
+                      created_at, metadata_json, is_active, is_baseline, status
+               FROM prompt_versions
+               WHERE agent_name = ? AND status = 'candidate'
+               ORDER BY created_at DESC""",
+            (agent_name,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT id, agent_name, version, instruction, model, temperature,
+                      created_at, metadata_json, is_active, is_baseline, status
+               FROM prompt_versions
+               WHERE status = 'candidate'
+               ORDER BY created_at DESC"""
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "agent_name": r["agent_name"],
+            "version": r["version"],
+            "instruction": r["instruction"],
+            "model": r["model"],
+            "temperature": r["temperature"],
+            "created_at": r["created_at"],
+            "metadata": json.loads(r["metadata_json"]) if r["metadata_json"] else None,
+            "is_active": bool(r["is_active"]),
+            "is_baseline": bool(r["is_baseline"]),
+            "status": r["status"],
+        }
+        for r in rows
+    ]
+
+
+def approve_candidate(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    version: int,
+    reviewer: str = "",
+) -> bool:
+    """Approve a candidate prompt version and promote it to active.
+
+    Returns True if the candidate was found and promoted, False otherwise.
+    """
+    row = conn.execute(
+        """SELECT id, status FROM prompt_versions
+           WHERE agent_name = ? AND version = ?""",
+        (agent_name, version),
+    ).fetchone()
+    if not row or row["status"] != "candidate":
+        return False
+
+    # Find current active version for audit trail
+    prev_active = conn.execute(
+        "SELECT version FROM prompt_versions "
+        "WHERE agent_name = ? AND is_active = 1",
+        (agent_name,),
+    ).fetchone()
+    from_version = prev_active["version"] if prev_active else 0
+
+    # Archive current active version
+    conn.execute(
+        """UPDATE prompt_versions SET is_active = 0, status = 'archived'
+           WHERE agent_name = ? AND is_active = 1""",
+        (agent_name,),
+    )
+    # Promote the candidate
+    conn.execute(
+        """UPDATE prompt_versions SET is_active = 1, status = 'active',
+              metadata_json = json_set(COALESCE(metadata_json, '{}'),
+                  '$.approved_by', ?,
+                  '$.approved_at', datetime('now'))
+           WHERE agent_name = ? AND version = ?""",
+        (reviewer, agent_name, version),
+    )
+
+    # Record in prompt_promotions audit trail
+    write_prompt_promotion(
+        conn,
+        agent_name=agent_name,
+        from_version=from_version,
+        to_version=version,
+        reason=f"human_approval (reviewer: {reviewer or 'unknown'})",
+    )
+
+    log.info(
+        "Approved and promoted %s v%d (reviewer: %s)",
+        agent_name, version, reviewer or "unknown",
+    )
+    return True
+
+
+def reject_candidate(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    version: int,
+    reviewer: str = "",
+    reason: str = "",
+) -> bool:
+    """Reject a candidate prompt version.
+
+    Returns True if the candidate was found and rejected, False otherwise.
+    """
+    row = conn.execute(
+        """SELECT id, status FROM prompt_versions
+           WHERE agent_name = ? AND version = ?""",
+        (agent_name, version),
+    ).fetchone()
+    if not row or row["status"] != "candidate":
+        return False
+
+    conn.execute(
+        """UPDATE prompt_versions SET status = 'rejected',
+              metadata_json = json_set(COALESCE(metadata_json, '{}'),
+                  '$.rejected_by', ?,
+                  '$.rejected_at', datetime('now'),
+                  '$.rejection_reason', ?)
+           WHERE agent_name = ? AND version = ?""",
+        (reviewer, reason, agent_name, version),
+    )
+    conn.commit()
+    log.info(
+        "Rejected %s v%d (reviewer: %s, reason: %s)",
+        agent_name, version, reviewer or "unknown", reason or "none",
+    )
+    return True

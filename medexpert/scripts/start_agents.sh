@@ -36,6 +36,11 @@ echo "  Starting orchestrator..."
 sam run "$CONFIGS_DIR/agents/orchestrator.yaml" &
 PIDS+=($!)
 
+# Feedback bridge (learning loop integration)
+echo "  Starting feedback bridge..."
+sam run "$CONFIGS_DIR/feedback_bridge.yaml" &
+PIDS+=($!)
+
 # Gateway
 echo "  Starting webui gateway..."
 sam run "$CONFIGS_DIR/gateways/webui.yaml" &

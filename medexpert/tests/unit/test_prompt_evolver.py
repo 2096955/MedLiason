@@ -91,7 +91,7 @@ class TestBuildFailureFeedback:
             "avg_citation": 0.9,
             "avg_quality": 0.8,
         }
-        feedback = PromptEvolver._build_failure_feedback(underperf)
+        feedback = PromptEvolver(db_path="unused")._build_failure_feedback(underperf)
         assert "Entity preservation is low" in feedback
         assert "0.50" in feedback
         # Should not mention citation since 0.9 >= 0.7
@@ -105,7 +105,7 @@ class TestBuildFailureFeedback:
             "avg_citation": 0.8,
             "avg_quality": 0.7,
         }
-        feedback = PromptEvolver._build_failure_feedback(underperf)
+        feedback = PromptEvolver(db_path="unused")._build_failure_feedback(underperf)
         assert "Overall composite score has degraded" in feedback
 
     def test_build_failure_feedback_multiple_failures(self):
@@ -116,7 +116,7 @@ class TestBuildFailureFeedback:
             "avg_citation": 0.4,
             "avg_quality": 0.3,
         }
-        feedback = PromptEvolver._build_failure_feedback(underperf)
+        feedback = PromptEvolver(db_path="unused")._build_failure_feedback(underperf)
         assert "Entity preservation is low" in feedback
         assert "Evidence fidelity is low" in feedback
         assert "Citation accuracy is low" in feedback

@@ -27,12 +27,15 @@ from lifesci_tools import cold_store
 
 log = logging.getLogger(__name__)
 
-# Feature flag
+# Feature flags
 EVOLUTION_ENABLED = os.environ.get("PROMPT_EVOLUTION_ENABLED", "true").lower() in (
     "true",
     "1",
     "yes",
 )
+HUMAN_APPROVAL_REQUIRED = os.environ.get(
+    "PROMPT_EVOLUTION_HUMAN_APPROVAL", "true"
+).lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
 # Metaprompt template
@@ -198,7 +201,11 @@ class PromptEvolver:
     # ------------------------------------------------------------------
 
     def _check_underperformer(self, conn, agent_name: str) -> dict[str, Any] | None:
-        """Return details if agent's rolling avg composite < threshold."""
+        """Return details if agent's rolling avg composite < threshold.
+
+        Incorporates user feedback as a mild penalty: persistent thumbs-down
+        across recent sessions lowers the effective composite score.
+        """
         recent = cold_store.get_rolling_scores(
             conn, agent_name, EVOLUTION_ROLLING_WINDOW
         )
@@ -206,6 +213,19 @@ class PromptEvolver:
             return None  # Not enough data to judge
 
         avg_composite = sum(s["composite"] for s in recent) / len(recent)
+
+        # Apply user feedback penalty (if persistent negative feedback exists)
+        try:
+            feedback_stats = cold_store.get_feedback_stats(
+                conn, window_days=EVOLUTION_ROLLING_WINDOW * 10, agent_name=agent_name
+            )
+            if feedback_stats and feedback_stats.get("total", 0) > 0:
+                downvote_ratio = feedback_stats.get("downvotes", 0) / feedback_stats["total"]
+                # Mild penalty: max -0.05 for 100% downvotes
+                avg_composite -= downvote_ratio * 0.05
+        except Exception:
+            log.debug("Could not fetch feedback stats for %s", agent_name)
+
         if avg_composite >= EVOLUTION_COMPOSITE_THRESHOLD:
             return None  # Performing fine
 
@@ -244,7 +264,7 @@ class PromptEvolver:
             }
 
         current_instruction = active["instruction"]
-        failure_feedback = self._build_failure_feedback(underperf)
+        failure_feedback = self._build_failure_feedback(underperf, conn=conn)
 
         # 1. Generate improved prompt
         try:
@@ -290,8 +310,44 @@ class PromptEvolver:
                 "detail": regression,
             }
 
-        # 3. Promote
+        # 3. Write new version (candidate or auto-promote)
         new_version = cold_store.get_next_prompt_version(conn, agent_name)
+
+        if HUMAN_APPROVAL_REQUIRED:
+            # Write as candidate — requires human approval before promotion
+            cold_store.write_prompt_version(
+                conn,
+                agent_name=agent_name,
+                version=new_version,
+                instruction=improved,
+                model=active["model"],
+                temperature=active["temperature"],
+                metadata={
+                    "evolved_from": active["version"],
+                    "failure_feedback": failure_feedback,
+                    "regression": regression,
+                },
+                is_active=False,
+                status="candidate",
+            )
+            log.info(
+                "Created candidate %s v%d (composite %.3f → regression %.3f). "
+                "Awaiting human approval.",
+                agent_name,
+                new_version,
+                underperf["avg_composite"],
+                regression.get("avg_score", 0.0),
+            )
+            return {
+                "agent": agent_name,
+                "action": "candidate_created",
+                "from_version": active["version"],
+                "to_version": new_version,
+                "old_composite": underperf["avg_composite"],
+                "regression_score": regression.get("avg_score", 0.0),
+            }
+
+        # Auto-promote (when human approval disabled, e.g. testing)
         cold_store.write_prompt_version(
             conn,
             agent_name=agent_name,
@@ -302,6 +358,7 @@ class PromptEvolver:
             metadata={
                 "evolved_from": active["version"],
                 "failure_feedback": failure_feedback,
+                "regression": regression,
             },
             is_active=False,
         )
@@ -380,9 +437,11 @@ class PromptEvolver:
     # Failure feedback builder
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _build_failure_feedback(underperf: dict[str, Any]) -> str:
-        """Build human-readable failure feedback from grader averages."""
+    def _build_failure_feedback(self, underperf: dict[str, Any], conn=None) -> str:
+        """Build human-readable failure feedback from grader averages.
+
+        Includes recent user feedback text when available.
+        """
         lines = []
         if underperf.get("avg_entity", 1.0) < 0.8:
             lines.append(
@@ -412,6 +471,22 @@ class PromptEvolver:
                 "Overall composite score has degraded below threshold. "
                 "Improve specificity, evidence grounding, and citation accuracy."
             )
+
+        # Include recent user feedback text for richer evolution context
+        if conn is not None:
+            try:
+                agent_name = underperf.get("agent_name", "")
+                if agent_name:
+                    feedback_texts = cold_store.get_recent_feedback_texts(
+                        conn, agent_name, limit=5
+                    )
+                    if feedback_texts:
+                        lines.append("\nRecent user complaints:")
+                        for text in feedback_texts:
+                            lines.append(f"  - {text}")
+            except Exception:
+                log.debug("Could not fetch user feedback texts for failure feedback")
+
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

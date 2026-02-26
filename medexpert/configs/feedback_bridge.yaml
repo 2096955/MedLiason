@@ -1,0 +1,40 @@
+---
+# Feedback Bridge Flow
+#
+# Subscribes to user feedback events published by the gateway's
+# FeedbackService and bridges them to the MedExpert cold store
+# for learning loop integration (specialist calibration, prompt evolution).
+#
+# The gateway publishes feedback to the topic configured in webui.yaml:
+#   ${NAMESPACE}/sam/feedback/v1
+#
+# This flow subscribes with a wildcard to handle namespaced topics.
+# Run via: sam run configs/feedback_bridge.yaml
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: feedback_bridge.log
+
+shared_config:
+  - shared_config.yaml
+
+flows:
+  - name: feedback_bridge
+    components:
+      - component_name: feedback_broker_input
+        component_module: broker_input
+        component_config:
+          broker_type: solace
+          broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+          broker_username: ${SOLACE_BROKER_USERNAME, default}
+          broker_password: ${SOLACE_BROKER_PASSWORD, default}
+          broker_vpn: ${SOLACE_BROKER_VPN, default}
+          temporary_queue: true
+          broker_subscriptions:
+            - topic: "*/sam/feedback/>"
+            - topic: "sam/feedback/>"
+
+      - component_name: feedback_bridge_processor
+        component_module: lifesci_tools.feedback_bridge_component
+        component_config: {}

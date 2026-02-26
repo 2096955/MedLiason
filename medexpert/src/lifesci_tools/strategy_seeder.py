@@ -61,6 +61,18 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
         # Global best agent pairs
         agent_pairs = cold_store.get_best_agent_pairs(conn)
 
+        # Specialist weights (calibrated per-domain)
+        specialist_weights = (
+            cold_store.get_strategy_by_type(conn, "specialist_weights", domain)
+            if domain
+            else None
+        )
+
+        # Source reliability weights (global)
+        source_weights = cold_store.get_strategy_by_type(
+            conn, "source_weights", "_global"
+        )
+
         # Active prompt versions for observability
         active_prompts = {}
         for agent_name in EVOLVABLE_AGENTS:
@@ -74,7 +86,15 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
                 }
 
         has_data = any(
-            [routing_hints, source_rankings, query_intel, agent_pairs, active_prompts]
+            [
+                routing_hints,
+                source_rankings,
+                query_intel,
+                agent_pairs,
+                active_prompts,
+                specialist_weights,
+                source_weights,
+            ]
         )
 
         return {
@@ -84,6 +104,8 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
             "query_intelligence": query_intel,
             "agent_pairs": agent_pairs,
             "active_prompts": active_prompts or None,
+            "specialist_weights": specialist_weights,
+            "source_weights": source_weights,
         }
     except Exception as exc:
         log.exception("Error building seed payload")

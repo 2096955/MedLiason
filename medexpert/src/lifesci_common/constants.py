@@ -345,6 +345,20 @@ MAX_PROMPT_VERSIONS = 50
 # Number of consecutive poor sessions that trigger auto-rollback
 ROLLBACK_SESSION_COUNT = 3
 
+# ---------------------------------------------------------------------------
+# Specialist Calibration (DEFRA WeightCalibrator adaptation)
+# ---------------------------------------------------------------------------
+
+CALIBRATION_MIN_SAMPLES = 10
+CALIBRATION_NEGATIVE_THRESHOLD = 0.30
+CALIBRATION_POSITIVE_THRESHOLD = 0.05
+CALIBRATION_ADJUSTMENT_STEP = 0.05
+CALIBRATION_MIN_WEIGHT = 0.3
+CALIBRATION_MAX_WEIGHT = 1.0
+CALIBRATION_WINDOW_DAYS = 90
+CALIBRATION_FEEDBACK_WEIGHT = 0.6
+CALIBRATION_VERIFICATION_WEIGHT = 0.4
+
 # Medical entity regex patterns for entity preservation grader
 MEDICAL_ENTITY_PATTERNS = {
     "pmid": r"\b\d{7,8}\b",

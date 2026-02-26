@@ -20,11 +20,16 @@ from lifesci_common.constants import (
     EVOLVABLE_AGENTS,
 )
 from lifesci_tools.cold_store import (
+    approve_candidate,
     get_active_prompt,
     get_aggregate_score,
     get_connection,
+    get_feedback_stats,
+    get_pending_candidates,
     get_prompt_history,
     get_rolling_scores,
+    get_strategy_by_type,
+    reject_candidate,
 )
 
 log = logging.getLogger(__name__)
@@ -115,6 +120,66 @@ class HealthResponse(BaseModel):
     db_path: str
     session_count: int | None = None
     error: str | None = None
+
+
+class CandidateEntry(BaseModel):
+    agent_name: str
+    version: int
+    instruction_preview: str = ""
+    regression_score: float | None = None
+    failure_feedback: str = ""
+    created_at: str
+
+
+class CandidatesResponse(BaseModel):
+    candidates: list[CandidateEntry]
+
+
+class ApprovalRequest(BaseModel):
+    reviewer: str = ""
+
+
+class RejectionRequest(BaseModel):
+    reviewer: str = ""
+    reason: str = ""
+
+
+class CalibrationSuggestion(BaseModel):
+    agent: str
+    domain: str
+    action: str
+    current_weight: float
+    suggested_weight: float
+    negative_rate: float
+    sample_count: int
+    reason: str
+
+
+class CalibrationResponse(BaseModel):
+    status: str
+    window_days: int
+    suggestions: list[CalibrationSuggestion]
+
+
+class FeedbackSummaryResponse(BaseModel):
+    total: int
+    upvotes: int
+    downvotes: int
+    per_domain: dict[str, dict[str, int]]
+    window_days: int
+
+
+class SourceWeightEntry(BaseModel):
+    source: str
+    weight: float
+    validity_ratio: float
+    mean_grade: float
+    pass_rate: float
+    sessions: int
+
+
+class SourceReliabilityResponse(BaseModel):
+    sources: list[SourceWeightEntry]
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +447,218 @@ async def overview():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to build overview",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Candidate approval endpoints (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/candidates", response_model=CandidatesResponse)
+async def list_candidates():
+    """List prompt evolution candidates awaiting human approval."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        raw = get_pending_candidates(conn)
+        candidates = [
+            CandidateEntry(
+                agent_name=c["agent_name"],
+                version=c["version"],
+                instruction_preview=c.get("instruction", "")[:200],
+                regression_score=(
+                    c.get("metadata", {}) or {}
+                ).get("regression", {}).get("avg_score"),
+                failure_feedback=(
+                    (c.get("metadata", {}) or {}).get("failure_feedback", "")
+                ),
+                created_at=c.get("created_at", ""),
+            )
+            for c in raw
+        ]
+        return CandidatesResponse(candidates=candidates)
+    except Exception as exc:
+        log.exception("Error listing candidates: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list candidates",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/candidates/{agent_name}/{version}/approve")
+async def approve_prompt_candidate(
+    agent_name: str,
+    version: int,
+    body: ApprovalRequest | None = None,
+):
+    """Approve and promote a candidate prompt version."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        reviewer = body.reviewer if body else ""
+        success = approve_candidate(conn, agent_name, version, reviewer=reviewer)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No candidate found for {agent_name} v{version}",
+            )
+        return {"status": "approved", "agent_name": agent_name, "version": version}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Error approving candidate: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to approve candidate",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/candidates/{agent_name}/{version}/reject")
+async def reject_prompt_candidate(
+    agent_name: str,
+    version: int,
+    body: RejectionRequest | None = None,
+):
+    """Reject a candidate prompt version."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        reviewer = body.reviewer if body else ""
+        reason = body.reason if body else ""
+        success = reject_candidate(
+            conn, agent_name, version, reviewer=reviewer, reason=reason
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No candidate found for {agent_name} v{version}",
+            )
+        return {"status": "rejected", "agent_name": agent_name, "version": version}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Error rejecting candidate: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reject candidate",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Calibration dashboard endpoints (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/calibration", response_model=CalibrationResponse)
+async def calibration_overview(
+    window_days: int = Query(default=90, ge=7, le=365),
+):
+    """Specialist calibration analysis and weight suggestions."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        from lifesci_tools.specialist_calibrator import SpecialistCalibrator
+
+        calibrator = SpecialistCalibrator()
+        result = calibrator.calibrate(conn, window_days=window_days)
+        suggestions = [
+            CalibrationSuggestion(
+                agent=s["agent"],
+                domain=domain,
+                action=s["action"],
+                current_weight=s["current_weight"],
+                suggested_weight=s["weight"],
+                negative_rate=s["negative_rate"],
+                sample_count=s["sample_count"],
+                reason=s["reason"],
+            )
+            for domain in result.get("domains", [])
+            for s in (
+                get_strategy_by_type(conn, "specialist_weights", domain) or {}
+            ).get("strategy", [])
+        ]
+        return CalibrationResponse(
+            status="ok",
+            window_days=window_days,
+            suggestions=suggestions,
+        )
+    except Exception as exc:
+        log.exception("Error computing calibration: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to compute calibration",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/feedback/summary", response_model=FeedbackSummaryResponse)
+async def feedback_summary(
+    window_days: int = Query(default=90, ge=7, le=365),
+):
+    """Aggregated user feedback statistics."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        stats = get_feedback_stats(conn, window_days=window_days)
+        return FeedbackSummaryResponse(
+            total=stats.get("total", 0),
+            upvotes=stats.get("upvotes", 0),
+            downvotes=stats.get("downvotes", 0),
+            per_domain=stats.get("per_domain", {}),
+            window_days=window_days,
+        )
+    except Exception as exc:
+        log.exception("Error computing feedback summary: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to compute feedback summary",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.get("/sources/reliability", response_model=SourceReliabilityResponse)
+async def source_reliability():
+    """Source reliability rankings with calibrated weights."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        raw = get_strategy_by_type(conn, "source_weights", "_global")
+        sources = []
+        if raw:
+            for s in raw.get("strategy", []):
+                sources.append(
+                    SourceWeightEntry(
+                        source=s["source"],
+                        weight=s["weight"],
+                        validity_ratio=s.get("validity_ratio", 0.0),
+                        mean_grade=s.get("mean_grade", 0.0),
+                        pass_rate=s.get("pass_rate", 0.0),
+                        sessions=s.get("sessions", 0),
+                    )
+                )
+        return SourceReliabilityResponse(sources=sources)
+    except Exception as exc:
+        log.exception("Error fetching source reliability: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch source reliability",
         ) from exc
     finally:
         if conn:

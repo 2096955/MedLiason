@@ -159,7 +159,7 @@ def _worker_loop(db_path: str) -> None:
 
         _queue.task_done()
 
-        if success:
+        if success and item.get("type") != "feedback":
             sessions_since_refresh += 1
             # TODO(perf): Pruning runs every REFRESH_INTERVAL (10) sessions. Under high load,
             # this triggers full table scans + VACUUM frequently. Consider time-based guard
@@ -183,6 +183,28 @@ def _worker_loop(db_path: str) -> None:
                     except Exception:
                         log.exception("Prompt evolution check failed")
 
+                    # Specialist + source calibration
+                    try:
+                        from lifesci_tools.specialist_calibrator import (
+                            SpecialistCalibrator,
+                        )
+
+                        calibrator = SpecialistCalibrator()
+                        cal_result = calibrator.calibrate(conn)
+                        src_result = calibrator.calibrate_sources(conn)
+                        if cal_result.get("suggestions"):
+                            log.info(
+                                "Specialist calibration: %d suggestions",
+                                len(cal_result["suggestions"]),
+                            )
+                        if src_result.get("sources"):
+                            log.info(
+                                "Source calibration: %d sources",
+                                len(src_result["sources"]),
+                            )
+                    except Exception:
+                        log.exception("Specialist/source calibration failed")
+
                     cold_store.prune_cold_store(
                         conn,
                         max_age_days=PRUNE_MAX_AGE_DAYS,
@@ -198,8 +220,40 @@ def _worker_loop(db_path: str) -> None:
                     log.exception("Failed to refresh learned strategies")
 
 
+def _persist_feedback(db_path: str, item: dict[str, Any]) -> None:
+    """Write a user feedback row to the cold store."""
+    session_id = item.get("session_id", "")
+    if not session_id:
+        log.warning("Feedback payload missing session_id, skipping")
+        return
+    conn = cold_store.get_connection(db_path)
+    try:
+        cold_store.write_user_feedback(
+            conn,
+            session_id=session_id,
+            task_id=item.get("task_id", ""),
+            feedback_type=item.get("feedback_type", "up"),
+            feedback_text=item.get("feedback_text", ""),
+            query_domain=item.get("query_domain", ""),
+            specialists_used=item.get("specialists_used"),
+            verification_verdict=item.get("verification_verdict", ""),
+        )
+        log.info("Persisted user feedback for session %s", session_id)
+    finally:
+        conn.close()
+
+
 def _persist_one(db_path: str, item: dict[str, Any]) -> None:
-    """Write all raw tables for one session in a single transaction."""
+    """Write all raw tables for one session in a single transaction.
+
+    Dispatches on ``item["type"]``:
+    - ``"feedback"`` → persists user feedback enriched with session context
+    - default → persists full session flush (outcomes, sources, routing, etc.)
+    """
+    if item.get("type") == "feedback":
+        _persist_feedback(db_path, item)
+        return
+
     conn = cold_store.get_connection(db_path)
     try:
         session_id = item["session_id"]

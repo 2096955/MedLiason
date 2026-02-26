@@ -46,6 +46,7 @@ def test_schema_creates_prompt_tables(db):
             "routing_patterns",
             "session_outcomes",
             "source_reliability",
+            "user_feedback",
         ]
     )
     assert tables == expected

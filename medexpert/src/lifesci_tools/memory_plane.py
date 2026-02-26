@@ -578,7 +578,8 @@ class MemoryPlaneTool(DynamicTool):
                 "success": False,
                 "error": (
                     f"Unknown operation '{operation}'. Use: store, retrieve, list_keys, "
-                    "clear_session, append, flush_cold, seed_session, query_cold, get_strategy"
+                    "clear_session, append, flush_cold, seed_session, query_cold, "
+                    "get_strategy"
                 ),
             }
 
