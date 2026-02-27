@@ -1,0 +1,13 @@
+.git
+.venv
+medexpert/.venv
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+docs/
+tests/
+medexpert/tests/
+medexpert/data/
+*.egg-info
+NUL

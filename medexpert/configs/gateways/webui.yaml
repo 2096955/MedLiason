@@ -25,8 +25,8 @@ apps:
         default_behavior: "PERSISTENT"
 
       model: *general_model
-      fastapi_host: ${FASTAPI_HOST, localhost}
-      fastapi_port: ${FASTAPI_PORT, 8000}
+      fastapi_host: 0.0.0.0
+      fastapi_port: 8080
       cors_allowed_origins:
         - "http://localhost:3000"
         - "http://127.0.0.1:3000"

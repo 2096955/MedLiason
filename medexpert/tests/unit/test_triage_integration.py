@@ -253,7 +253,7 @@ class TestSSEEmission:
             signal = call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
         assert signal is not None
 
-        from solace_agent_mesh.common.data_parts import TriageProgressData
+        from lifesci_common.triage_progress import TriageProgressData
 
         assert isinstance(signal, TriageProgressData)
         assert signal.stage == 3

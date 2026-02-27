@@ -92,7 +92,7 @@ async def emit_triage_progress(
             )
             return
 
-        from solace_agent_mesh.common.data_parts import TriageProgressData
+        from lifesci_common.triage_progress import TriageProgressData
 
         # Build from known fields only
         progress_kwargs = {k: v for k, v in cumulative.items() if k in _KNOWN_FIELDS}

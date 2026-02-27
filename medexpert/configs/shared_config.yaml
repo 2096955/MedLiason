@@ -11,46 +11,51 @@ shared_config:
   # prevent silent behaviour changes when Google updates the model.
   # cache_strategy: "none" disables Google AI Studio's CreateCachedContent
   # API calls, which return 400 errors when using a standard API key
-  # (non-Vertex).  Do NOT remove unless deploying on Vertex AI.
+  # Vertex AI ADC — project and location for LiteLLM vertex_ai/ provider.
+  # On Cloud Run, ADC uses the service account identity automatically.
+  - vertex_ai:
+    vertex_project: "gbg-neuro"
+    vertex_location: "us-central1"
+
   - models:
     orchestrator: &orchestrator_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.2
       max_tokens: 16000
       parallel_tool_calls: true
       cache_strategy: "none"
 
     specialist: &specialist_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.3
       max_tokens: 12000
       cache_strategy: "none"
 
     advisory: &advisory_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.7
       max_tokens: 12000
       cache_strategy: "none"
 
     verifier: &verifier_model
-      model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, openai/gemini-2.5-pro-001}
+      model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, vertex_ai/gemini-2.5-pro}
       temperature: 0.1
       max_tokens: 8000
       cache_strategy: "none"
 
     reviser: &reviser_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.3
       max_tokens: 12000
       cache_strategy: "none"
 
     # Backward-compatible aliases for gateway and legacy configs
     general: &general_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       cache_strategy: "none"
 
     planning: &planning_model
-      model: "openai/gemini-2.5-flash-001"
+      model: "vertex_ai/gemini-2.5-flash"
       parallel_tool_calls: true
       max_tokens: ${MAX_TOKENS, 16000}
       temperature: 0.1

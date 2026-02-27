@@ -1,0 +1,27 @@
+steps:
+  # Copy branded frontend static assets into medexpert build context
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "cp -r client/webui/frontend/static medexpert/frontend-static && cp -r src/solace_agent_mesh/client/webui/frontend/static/* medexpert/frontend-static/ 2>/dev/null || true"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medliaison:latest"
+      - "-f"
+      - "medexpert/infra/Dockerfile.medliaison"
+      - "medexpert"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medliaison:latest"]
+
+images:
+  - "gcr.io/$PROJECT_ID/medliaison:latest"
+
+timeout: "600s"
+
+options:
+  machineType: "E2_HIGHCPU_8"
