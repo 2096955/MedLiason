@@ -10,15 +10,21 @@ steps:
     args:
       - "build"
       - "-t"
+      - "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"
+      - "-t"
       - "gcr.io/$PROJECT_ID/medliaison:latest"
       - "-f"
       - "medexpert/infra/Dockerfile.medliaison"
       - "medexpert"
 
   - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"]
+
+  - name: "gcr.io/cloud-builders/docker"
     args: ["push", "gcr.io/$PROJECT_ID/medliaison:latest"]
 
 images:
+  - "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"
   - "gcr.io/$PROJECT_ID/medliaison:latest"
 
 timeout: "600s"
