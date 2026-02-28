@@ -3,10 +3,10 @@ import { api } from "@/lib/api";
 
 import type { AgentCard, AgentExtension, AgentCardInfo, AgentSkill } from "@/lib/types";
 
-const DISPLAY_NAME_EXTENSION_URI = "https://medexpert.com/a2a/extensions/display-name";
-const PEER_AGENT_TOPOLOGY_EXTENSION_URI = "https://medexpert.com/a2a/extensions/peer-agent-topology";
-const TOOL_EXTENSION_URI = "https://medexpert.com/a2a/extensions/sam/tools";
-const AGENT_TYPE_EXTENSION_URI = "https://medexpert.com/a2a/extensions/agent-type";
+const DISPLAY_NAME_EXTENSION_URI = "https://solace.com/a2a/extensions/display-name";
+const PEER_AGENT_TOPOLOGY_EXTENSION_URI = "https://solace.com/a2a/extensions/peer-agent-topology";
+const TOOL_EXTENSION_URI = "https://solace.com/a2a/extensions/sam/tools";
+const AGENT_TYPE_EXTENSION_URI = "https://solace.com/a2a/extensions/agent-type";
 
 /**
  * Transforms a raw A2A AgentCard into a UI-friendly AgentCardInfo object,
