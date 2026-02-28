@@ -1542,7 +1542,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                     // For other cases, only create a new bubble if there is visible content to render.
                     // Include progress data parts as visible content
                     const hasVisibleContent =
-                        isTaskFailed || newContentParts.some((p: any) => (p.kind === "text" && (p as TextPart).text.trim()) || p.kind === "file" || (p.kind === "data" && (p as DataPart).data && VISIBLE_DATA_TYPES.has((p as DataPart).data.type)));
+                        isTaskFailed || newContentParts.some((p: any) => (p.kind === "text" && (p as TextPart).text.trim()) || p.kind === "file" || (p.kind === "data" && (p as DataPart).data && VISIBLE_DATA_TYPES.has(String((p as DataPart).data.type))));
                     if (hasVisibleContent) {
                         const newBubble: MessageFE = {
                             role: "agent",
