@@ -22,7 +22,7 @@ spec:
       containers:
         # Main container: MedExpert (Redis + 10 MCP + Memgraph MCP client + 13 agents + gateway)
         - name: medexpert
-          image: gcr.io/gbg-neuro/medliaison:771fecf7
+          image: gcr.io/gbg-neuro/medliaison:15550fca
           ports:
             - name: http1
               containerPort: 8080
