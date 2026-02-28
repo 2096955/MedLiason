@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── MedExpert (all-in-one: MCP servers + agents + gateway) ─
+  medexpert:
+    build:
+      context: ../..
+      dockerfile: medexpert/infra/Dockerfile.dev
+    ports:
+      - "8000:8000"
+      - "9001-9015:9001-9015"
+    env_file:
+      - ../.env
+    environment:
+      SOLACE_DEV_MODE: "true"
+      REDIS_URL: "redis://redis:6379/0"
+      FASTAPI_HOST: "0.0.0.0"
+      FASTAPI_PORT: "8000"
+      MEDEXPERT_ENV: "development"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped

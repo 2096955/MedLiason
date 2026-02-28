@@ -1,0 +1,40 @@
+FROM python:3.12-slim
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libxml2-dev libxslt-dev curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install uv
+
+WORKDIR /app
+
+# Copy project files needed for install
+COPY pyproject.toml uv.lock* ./
+COPY .github/helper_scripts/ .github/helper_scripts/
+
+# Create placeholder static dirs for SAM_SKIP_UI_BUILD
+RUN mkdir -p config_portal/frontend/static \
+             client/webui/frontend/static \
+             docs/build
+
+# Install SAM (skip frontend builds)
+RUN uv venv && \
+    SAM_SKIP_UI_BUILD=true uv sync --frozen --no-dev 2>/dev/null \
+    || SAM_SKIP_UI_BUILD=true uv sync --no-dev
+
+# Install medexpert-specific dependencies
+RUN uv pip install fastmcp httpx biopython lxml "redis[hiredis]"
+
+# Copy medexpert source and configs
+COPY medexpert/src/ medexpert/src/
+COPY medexpert/configs/ medexpert/configs/
+
+# Copy entrypoint
+COPY medexpert/infra/entrypoint.dev.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8000 9001-9015
+
+ENTRYPOINT ["/entrypoint.sh"]
