@@ -10,6 +10,7 @@ export { SessionSidePanel } from "./SessionSidePanel";
 export { MoveSessionDialog } from "./MoveSessionDialog";
 export { VariableDialog } from "./VariableDialog";
 export { SessionSearch } from "./SessionSearch";
+export { WelcomeScreen } from "./WelcomeScreen";
 export { MessageHoverButtons } from "./MessageHoverButtons";
 export * from "./file";
 export * from "./selection";
