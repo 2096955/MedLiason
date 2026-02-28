@@ -1,0 +1,111 @@
+{
+  "routing_rules": [
+    {
+      "keywords": ["chest pain", "palpitations", "heart", "blood pressure", "hypertension", "edema", "syncope", "irregular heartbeat"],
+      "specialist": "cardiologist"
+    },
+    {
+      "keywords": ["rash", "skin", "lesion", "itching", "mole", "acne", "eczema", "psoriasis", "hives", "hair loss"],
+      "specialist": "dermatologist"
+    },
+    {
+      "keywords": ["sad", "depressed", "anxiety", "panic", "hallucination", "suicidal", "insomnia", "mood", "paranoid", "self-harm", "compulsive"],
+      "specialist": "psychiatrist"
+    },
+    {
+      "keywords": ["cough", "breathing", "shortness of breath", "wheeze", "asthma", "sputum", "lung"],
+      "specialist": "pulmonologist"
+    },
+    {
+      "keywords": ["joint pain", "stiffness", "swelling joints", "arthritis", "lupus", "gout", "autoimmune"],
+      "specialist": "rheumatologist"
+    },
+    {
+      "keywords": ["headache", "seizure", "numbness", "tingling", "weakness", "dizziness", "tremor", "memory loss", "confusion"],
+      "specialist": "neurologist"
+    },
+    {
+      "keywords": ["stomach", "nausea", "vomiting", "diarrhea", "constipation", "abdominal pain", "heartburn", "bloating", "blood in stool"],
+      "specialist": "gastroenterologist"
+    },
+    {
+      "keywords": ["urination", "kidney", "flank pain", "blood in urine", "bladder", "prostate", "erectile"],
+      "specialist": "urologist"
+    },
+    {
+      "keywords": ["diabetes", "thyroid", "weight gain", "weight loss", "hormonal", "fatigue", "excessive thirst", "excessive urination"],
+      "specialist": "endocrinologist"
+    },
+    {
+      "keywords": ["pregnancy", "menstrual", "period", "vaginal", "pelvic pain", "fertility", "contraception"],
+      "specialist": "obgyn"
+    },
+    {
+      "keywords": ["eye", "vision", "blurry", "blind", "eye pain", "floaters", "double vision", "red eye"],
+      "specialist": "ophthalmologist"
+    },
+    {
+      "keywords": ["ear", "hearing", "throat", "sinus", "nose", "tinnitus", "vertigo", "hoarse", "swallowing"],
+      "specialist": "otolaryngologist"
+    },
+    {
+      "keywords": ["fever", "infection", "HIV", "hepatitis", "tuberculosis", "malaria", "travel", "bite", "abscess"],
+      "specialist": "infectious_disease"
+    },
+    {
+      "keywords": ["anemia", "bleeding", "bruising", "blood clot", "lymph node", "transfusion"],
+      "specialist": "hematologist"
+    },
+    {
+      "keywords": ["back pain", "spinal", "rehabilitation", "disability", "amputation", "mobility"],
+      "specialist": "physiatrist"
+    },
+    {
+      "keywords": ["foot", "ankle", "heel", "toe", "bunion", "ingrown nail", "plantar"],
+      "specialist": "podiatrist"
+    },
+    {
+      "keywords": ["child", "infant", "toddler", "pediatric", "growth", "developmental"],
+      "specialist": "pediatrician"
+    },
+    {
+      "keywords": ["elderly", "falls", "dementia", "frailty", "polypharmacy", "incontinence", "cognitive decline"],
+      "specialist": "geriatric_medicine"
+    },
+    {
+      "keywords": ["lump", "mass", "tumor", "cancer", "weight loss", "night sweats", "unexplained bleeding"],
+      "specialist": "oncologist"
+    },
+    {
+      "keywords": ["rectal", "colon", "hemorrhoid", "fissure", "bowel", "colostomy"],
+      "specialist": "colorectal_surgeon"
+    },
+    {
+      "keywords": ["genetic", "hereditary", "family history of", "chromosomal", "birth defect", "congenital"],
+      "specialist": "medical_geneticist"
+    },
+    {
+      "keywords": ["ICU", "critical", "ventilator", "organ failure", "shock", "unresponsive"],
+      "specialist": "critical_care"
+    },
+    {
+      "keywords": ["musculoskeletal", "muscle pain", "neck pain", "posture", "strain", "sprain", "manipulation"],
+      "specialist": "osteopath"
+    },
+    {
+      "keywords": ["biopsy", "pathology", "lab results", "histology", "cytology", "tissue sample"],
+      "specialist": "pathologist"
+    },
+    {
+      "keywords": ["sneezing", "allergy", "allergic", "hives", "anaphylaxis", "food allergy", "drug allergy", "immunodeficiency"],
+      "specialist": "allergist_immunologist"
+    },
+    {
+      "keywords": ["kidney failure", "dialysis", "proteinuria", "nephritis", "electrolyte", "creatinine"],
+      "specialist": "nephrologist"
+    }
+  ],
+  "max_tier2_specialists": 3,
+  "match_threshold": 1,
+  "notes": "Select up to max_tier2_specialists based on keyword match count. If multiple specialists tie, prefer those with more keyword matches. Tier 1 (family_physician, internist, emergency_medicine) are always invoked regardless of keywords."
+}

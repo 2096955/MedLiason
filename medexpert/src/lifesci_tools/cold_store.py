@@ -342,6 +342,25 @@ _MIGRATIONS = [
         ALTER TABLE user_feedback_new RENAME TO user_feedback;
         """,
     ),
+    # M6: Add triage_outcomes table for triage pipeline learning.
+    (
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='triage_outcomes'",
+        """
+        CREATE TABLE IF NOT EXISTS triage_outcomes (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id              TEXT    NOT NULL,
+            chief_complaint         TEXT    NOT NULL DEFAULT '',
+            consensus_diagnosis     TEXT    NOT NULL DEFAULT '',
+            mean_confidence         REAL    NOT NULL DEFAULT 0.0,
+            nba_route               TEXT    NOT NULL DEFAULT '',
+            nba_urgency             TEXT    NOT NULL DEFAULT '',
+            flag_for_review         INTEGER NOT NULL DEFAULT 0,
+            emergency_override      INTEGER NOT NULL DEFAULT 0,
+            specialists_invoked_json TEXT   NOT NULL DEFAULT '[]',
+            created_at              TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
 ]
 
 

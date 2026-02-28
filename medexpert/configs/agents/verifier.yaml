@@ -65,10 +65,10 @@ apps:
           component_module: lifesci_tools.claim_verifier
           component_base_path: src
           tool_config:
-            model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, openai/gemini-2.5-flash-001}
+            model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, vertex_ai/gemini-2.5-flash}
             temperature: 0.0
             use_llm: true
-            fallback_model: "openai/gemini-2.5-flash-001"
+            fallback_model: "vertex_ai/gemini-2.5-flash"
 
         - tool_type: python
           component_module: lifesci_tools.citation_validator

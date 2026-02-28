@@ -31,7 +31,7 @@ export const mockAgentCards: AgentCard[] = [
                             },
                         ],
                     },
-                    uri: "https://medexpert.com/a2a/extensions/sam/tools",
+                    uri: "https://solace.com/a2a/extensions/sam/tools",
                 },
             ],
         },
@@ -54,7 +54,7 @@ export const mockAgentCards: AgentCard[] = [
                     params: {
                         type: "workflow",
                     },
-                    uri: "https://medexpert.com/a2a/extensions/agent-type",
+                    uri: "https://solace.com/a2a/extensions/agent-type",
                 },
             ],
         },

@@ -171,3 +171,7 @@ client/webui/frontend/static/ui-version.json
 requirements.txt
 data/artifacts/
 CLAUDE.md
+
+# MedExpert runtime artifacts
+medexpert/medexpert_artifacts/
+medexpert/logs/

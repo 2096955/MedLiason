@@ -1,0 +1,42 @@
+steps:
+  # Build MedExpert frontend from source
+  - name: "node:22"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "cd client/webui/frontend && npm ci --ignore-engines && npm run build"
+
+  # Copy built static/ to Docker build context
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "rm -rf medexpert/frontend-static && cp -r client/webui/frontend/static medexpert/frontend-static"
+
+  # Docker build
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medliaison:latest"
+      - "-f"
+      - "medexpert/infra/Dockerfile.medliaison"
+      - "medexpert"
+
+  # Push
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medliaison:latest"]
+
+images:
+  - "gcr.io/$PROJECT_ID/medliaison:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/medliaison:latest"
+
+timeout: "1200s"
+
+options:
+  machineType: "E2_HIGHCPU_8"

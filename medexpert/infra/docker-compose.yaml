@@ -183,6 +183,18 @@ services:
     <<: *agent-base
     command: ["configs/agents/reviser.yaml"]
 
+  triage-intake:
+    <<: *agent-base
+    command: ["configs/agents/triage_intake.yaml"]
+
+  triage-orchestrator:
+    <<: *agent-base
+    command: ["configs/agents/triage_orchestrator.yaml"]
+
+  feedback-bridge:
+    <<: *agent-base
+    command: ["configs/feedback_bridge.yaml"]
+
   # ── Gateway ─────────────────────────────────────────────────
   webui:
     <<: *agent-base

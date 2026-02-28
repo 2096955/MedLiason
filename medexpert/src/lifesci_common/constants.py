@@ -369,12 +369,63 @@ MEDICAL_ENTITY_PATTERNS = {
 }
 
 # LLM-as-judge configuration
-LLM_JUDGE_MODEL = "openai/gemini-2.5-flash-001"
+LLM_JUDGE_MODEL = "vertex_ai/gemini-2.5-flash"
 LLM_JUDGE_TEMPERATURE = 0.1
 LLM_JUDGE_TIMEOUT_SECONDS = 15
 LLM_JUDGE_BATCH_SIZE = 10
 LLM_JUDGE_QUEUE_TRIGGER = 20
 
+
+# ---------------------------------------------------------------------------
+# Medical Triage Pipeline
+# ---------------------------------------------------------------------------
+
+TRIAGE_EMERGENCY_KEYWORDS = [
+    "chest pain",
+    "can't breathe",
+    "difficulty breathing",
+    "shortness of breath",
+    "stroke",
+    "sudden numbness",
+    "face drooping",
+    "arm weakness",
+    "speech difficulty",
+    "severe bleeding",
+    "unconscious",
+    "loss of consciousness",
+    "seizure",
+    "anaphylaxis",
+    "severe allergic reaction",
+    "throat swelling",
+    "suicidal",
+    "self harm",
+    "self-harm",
+    "overdose",
+    "poisoning",
+    "choking",
+]
+
+TRIAGE_TIER1_SPECIALISTS = [
+    "family_physician",
+    "internist",
+    "emergency_medicine",
+]
+
+TRIAGE_MAX_TIER2_SPECIALISTS = 3
+
+TRIAGE_NBA_ROUTES = {
+    "emergency_services": {"urgency": "immediate", "color": "red"},
+    "hospital": {"urgency": "urgent", "color": "orange"},
+    "specialist_referral": {"urgency": "soon", "color": "yellow"},
+    "gp_visit": {"urgency": "routine", "color": "blue"},
+    "pharmacist": {"urgency": "low", "color": "green"},
+    "self_care": {"urgency": "minimal", "color": "gray"},
+}
+
+TRIAGE_SPECIALIST_TIMEOUT_S = 30
+TRIAGE_PIPELINE_TIMEOUT_S = 120
+TRIAGE_CONSENSUS_JACCARD_THRESHOLD = 0.6
+TRIAGE_MAX_INTAKE_QUESTIONS = 10
 
 # ---------------------------------------------------------------------------
 # Runtime Validation

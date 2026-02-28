@@ -106,6 +106,12 @@ const defaultMockChatContext: DefaultMockContextType = {
     setArtifacts: () => {},
     displayError: () => {},
 
+    // Triage state
+    highlightedSourceId: null,
+    setHighlightedSourceId: () => {},
+    triageProgress: null,
+    setTriageProgress: () => {},
+
     // Prompt handling
     pendingPrompt: null,
     startNewChatWithPrompt: async () => {},

@@ -423,7 +423,7 @@ class PromptEvolver:
         )
 
         response = litellm.completion(
-            model="openai/gemini-2.5-flash-001",
+            model="vertex_ai/gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": "You are a prompt engineering expert."},
                 {"role": "user", "content": prompt},
@@ -535,7 +535,7 @@ class PromptEvolver:
             question = item["question"]
             try:
                 response = litellm.completion(
-                    model="openai/gemini-2.5-flash-001",
+                    model="vertex_ai/gemini-2.5-flash",
                     messages=[
                         {"role": "system", "content": new_instruction},
                         {"role": "user", "content": question},
@@ -625,7 +625,7 @@ def seed_baselines(db_path: str, configs_dir: str) -> int:
                 agent_name=agent_name,
                 version=0,
                 instruction=instruction,
-                model="openai/gemini-2.5-flash-001",
+                model="vertex_ai/gemini-2.5-flash",
                 temperature=0.3,
                 is_active=True,
                 is_baseline=True,

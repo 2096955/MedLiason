@@ -5,7 +5,7 @@
  * and allows users to clear their data (GDPR right to erasure).
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Database, Trash2, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/lib/components/ui";
 

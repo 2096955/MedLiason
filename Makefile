@@ -1,4 +1,4 @@
-.PHONY: help check-uv dev-setup test-setup test test-cov test-all test-unit test-integration clean ui-test ui-build ui-lint install-playwright
+.PHONY: help check-uv dev-setup test-setup test test-cov test-all test-unit test-integration clean ui-test ui-build ui-lint install-playwright medexpert-dev medexpert-docker
 
 # Check if uv is installed
 check-uv:
@@ -23,6 +23,10 @@ help:
 	@echo "  make ui-test           Run frontend linting and build"
 	@echo "  make ui-lint           Run frontend linting only"
 	@echo "  make ui-build          Build frontend packages"
+	@echo ""
+	@echo "MedExpert:"
+	@echo "  make medexpert-dev     One-command local dev setup (bash medexpert/dev.sh)"
+	@echo "  make medexpert-docker  Run MedExpert via Docker Compose"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean             Clean up test artifacts and cache"
@@ -103,3 +107,10 @@ clean:
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name '*.pyc' -delete 2>/dev/null || true
 	@echo "Cleanup complete!"
+
+# ── MedExpert one-command dev setup ──────────────────────────
+medexpert-dev:
+	@bash medexpert/dev.sh
+
+medexpert-docker:
+	@docker compose -f medexpert/infra/docker-compose.dev.yaml up --build

@@ -2,11 +2,11 @@ import React, { createContext, useContext } from "react";
 
 export interface SidePanelContextValue {
     isSidePanelCollapsed: boolean;
-    activeSidePanelTab: "files" | "activity" | "rag" | "datasources";
+    activeSidePanelTab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage";
     taskIdInSidePanel: string | null;
     setIsSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources">>;
-    openSidePanelTab: (tab: "files" | "activity" | "rag" | "datasources") => void;
+    setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage">>;
+    openSidePanelTab: (tab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage") => void;
     setTaskIdInSidePanel: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
