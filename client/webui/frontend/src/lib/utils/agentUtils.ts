@@ -1,8 +1,8 @@
 import type { AgentCardInfo, AgentExtension } from "@/lib/types";
 
-const EXTENSION_URI_WORKFLOW_VISUALIZATION = "https://medexpert.com/a2a/extensions/sam/workflow-visualization";
-const EXTENSION_URI_AGENT_TYPE = "https://medexpert.com/a2a/extensions/agent-type";
-const EXTENSION_URI_SCHEMAS = "https://medexpert.com/a2a/extensions/sam/schemas";
+const EXTENSION_URI_WORKFLOW_VISUALIZATION = "https://solace.com/a2a/extensions/sam/workflow-visualization";
+const EXTENSION_URI_AGENT_TYPE = "https://solace.com/a2a/extensions/agent-type";
+const EXTENSION_URI_SCHEMAS = "https://solace.com/a2a/extensions/sam/schemas";
 
 /**
  * Workflow configuration JSON structure
