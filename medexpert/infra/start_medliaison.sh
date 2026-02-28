@@ -29,7 +29,8 @@ REQUIRED_CONFIGS=(
   configs/agents/reviser.yaml
   configs/agents/triage_intake.yaml
   configs/agents/triage_orchestrator.yaml
-  configs/feedback_bridge.yaml
+  # feedback_bridge.yaml REMOVED — blocks gateway startup due to hanging
+  # broker connection. Re-add once the DevBroker connection issue is resolved.
   # webui.yaml MUST be last — uvicorn in the gateway keeps sam run alive.
   # All other configs must be loaded before the gateway initialises.
   configs/gateways/webui.yaml
