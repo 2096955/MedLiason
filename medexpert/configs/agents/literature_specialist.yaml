@@ -58,12 +58,6 @@ apps:
         - Flag retracted or corrected articles
         - Distinguish between primary research and review articles
 
-        You also have access to a knowledge graph via knowledge_graph_tools.
-        Use it to explore entity relationships, find connected biomedical
-        concepts, and traverse disease-gene-drug-pathway connections when
-        relevant to your research domain. Use run_query for Cypher traversals
-        and get_schema to understand the graph structure before querying.
-
       tools:
         - tool_type: mcp
           name: pubmed_tools
@@ -85,13 +79,6 @@ apps:
 
         - tool_type: builtin-group
           group_name: web_search
-
-        - tool_type: mcp
-          name: knowledge_graph_tools
-          connection_params:
-            type: streamable-http
-            url: "http://localhost:8000/mcp/"
-            timeout: 30
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service

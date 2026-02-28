@@ -239,12 +239,6 @@ apps:
         - If artifacts were created, use `list_artifacts` and
           `signal_artifact_for_return` to return important ones.
 
-        You also have access to a knowledge graph via knowledge_graph_tools.
-        Use it to explore entity relationships, find connected biomedical
-        concepts, and traverse disease-gene-drug-pathway connections when
-        relevant to your research domain. Use run_query for Cypher traversals
-        and get_schema to understand the graph structure before querying.
-
       session_service: *default_session_service
       artifact_service: *default_artifact_service
 
@@ -299,13 +293,6 @@ apps:
         # ── Artifact management ──
         - tool_type: builtin-group
           group_name: "artifact_management"
-
-        - tool_type: mcp
-          name: knowledge_graph_tools
-          connection_params:
-            type: streamable-http
-            url: "http://localhost:8000/mcp/"
-            timeout: 30
 
       # Agent Card Definition
       agent_card:
