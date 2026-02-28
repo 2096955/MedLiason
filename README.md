@@ -11,7 +11,7 @@
 
 ---
 
-MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 12 specialized agents across a rigorous 12-step research protocol. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
+MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 13 specialized agents across a rigorous 12-step research protocol and a separate triage pipeline. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
 
 Every answer goes through a Generator-Verifier-Reviser (GVR) loop: the orchestrator synthesizes a report, a verifier agent (using a stronger model at low temperature) fact-checks each claim against its cited sources, and a reviser corrects any issues before the answer reaches the user.
 
@@ -83,22 +83,30 @@ Manage reusable project contexts and prompt templates.
 ```
 User Query
     |
-    v
-Orchestrator (12-step protocol)
+    +---> Triage Pipeline (symptom-based queries)
+    |       |
+    |       +---> Triage Intake (symptom collection, specialist panel)
+    |       +---> Triage Orchestrator (evaluation, consensus, next-best-action)
+    |       |
+    |       v
+    |     Care pathway recommendation
     |
-    +---> 8 Specialist Agents (literature, clinical trials, drug,
-    |     regulatory, epidemiology, genomics, environmental, provider intel)
-    |
-    +---> 15 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
-    |     SEER, EPA, ClinVar, Census SDOH, ...)
-    |
-    +---> MedicalExpert Agent (web search for simple questions)
-    |
-    v
-GVR Loop: Generate --> Verify --> Revise
-    |
-    v
-Evidence-graded report with citations
+    +---> Research Pipeline (complex medical/scientific queries)
+            |
+            v
+        Orchestrator (12-step protocol)
+            |
+            +---> 8 Specialist Agents (literature, clinical trials, drug,
+            |     regulatory, epidemiology, genomics, environmental, provider intel)
+            |
+            +---> 15 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
+            |     SEER, EPA, ClinVar, Census SDOH, ...)
+            |
+            v
+        GVR Loop: Generate --> Verify --> Revise
+            |
+            v
+        Evidence-graded report with citations
 ```
 
 ### How the Agents Reason
@@ -153,7 +161,8 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 | **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-2.5-flash (temp 0.3) |
 | **Verifier** | Fact-checks claims against cited sources | gemini-2.5-pro (temp 0.1) |
 | **Reviser** | Surgically corrects issues flagged by verifier | gemini-2.5-flash (temp 0.3) |
-| **MedicalExpert** | Web search for simple factual questions | gemini-2.5-flash |
+| **Triage Intake** | Symptom collection, specialist panel consultation, care routing | gemini-2.5-flash (temp 0.3) |
+| **Triage Orchestrator** | Coordinates triage evaluation, consensus building, next-best-action | gemini-2.5-flash (temp 0.2) |
 
 ### Data Sources (15 MCP Servers)
 
@@ -194,7 +203,7 @@ The orchestrator executes a 12-step protocol for every complex query:
 | 10 | REVISE | Reviser fixes issues (skipped if verification passes) |
 | 11 | PERSIST | Save session signals to cold store for learning |
 
-Simple factual questions bypass the protocol and route directly to the MedicalExpert agent.
+Symptom-based queries are routed to the **triage pipeline** instead, which runs a specialist panel consultation, clinical evaluation, consensus building, and next-best-action determination.
 
 ### GVR Loop Detail
 
@@ -397,12 +406,12 @@ solace-agent-mesh/              # SAM framework (agent hosting, gateway, A2A)
 
 medexpert/                      # Life sciences research application
   configs/
-    agents/                     # YAML configs for all 11 agents
+    agents/                     # YAML configs for all 13 agents
     gateways/webui.yaml         # Web UI gateway config
     feedback_bridge.yaml        # Feedback→cold store broker subscriber
     shared_config.yaml          # Model anchors, broker, services
   src/
-    lifesci_tools/              # 21 custom tool/module implementations
+    lifesci_tools/              # 27 custom tool/module implementations
     lifesci_common/             # Constants, config validator, utilities
     mcp_servers/                # 15 FastMCP SSE servers
   tests/                        # Unit, contract, integration, eval runner
