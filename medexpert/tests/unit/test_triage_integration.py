@@ -632,3 +632,134 @@ class TestNBAToolEmitsStage5:
         assert cumulative["evaluation"] is not None
         assert cumulative["nba"] is not None
         assert cumulative["nba"]["route"] == "self_care"
+
+
+# ---------------------------------------------------------------------------
+# TestMildURIAcceptance
+# ---------------------------------------------------------------------------
+
+
+class TestMildURIAcceptance:
+    """Acceptance test: mild URI reaches a conclusive diagnosis through the
+    full consensus → evaluation → NBA chain.
+
+    Mock boundary: Option A — ``litellm.completion`` is patched so that
+    ``triage_evaluation.py``'s JSON extraction path is exercised.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mild_uri_reaches_conclusive_diagnosis(self):
+        """A mild URI case must NOT be INCONCLUSIVE and must route to
+        self_care or pharmacist."""
+        import json as _json
+
+        from lifesci_tools.triage_consensus import TriageConsensusTool
+        from lifesci_tools.triage_evaluation import TriageEvaluationTool
+        from lifesci_tools.triage_nba import TriageNBATool
+
+        # --- Step 1: Consensus -------------------------------------------
+        consensus_tool = TriageConsensusTool()
+        consensus_tool.tool_config = {}
+        ctx = MagicMock()
+        ctx.state = {}
+
+        verdicts = [
+            {
+                "specialist": "family_physician",
+                "diagnosis": "Viral upper respiratory infection",
+                "confidence": 60,
+                "thinking": "Runny nose, mild sore throat, no fever",
+                "tier": "tier1",
+            },
+            {
+                "specialist": "internist",
+                "diagnosis": "Upper respiratory infection",
+                "confidence": 55,
+                "thinking": "Common URI presentation",
+                "tier": "tier1",
+            },
+            {
+                "specialist": "emergency_medicine",
+                "diagnosis": "Insufficient information",
+                "confidence": 0,
+                "thinking": "No emergency features",
+                "tier": "tier1",
+            },
+        ]
+
+        consensus = await consensus_tool._run_async_impl(
+            {"verdicts": _json.dumps(verdicts)},
+            ctx,
+        )
+
+        assert consensus["consensus_diagnosis"] != "INCONCLUSIVE", (
+            f"Consensus returned INCONCLUSIVE for mild URI case. "
+            f"Verdicts: {verdicts!r}, Result: {consensus!r}"
+        )
+        assert consensus["mean_confidence"] > 0
+
+        # --- Step 2: Evaluation (LLM mocked — Option A) ------------------
+        eval_tool = TriageEvaluationTool()
+        eval_tool.tool_config = {"model": "test-model"}
+
+        eval_ctx = MagicMock()
+        eval_ctx.state = {"a2a_context": {"task_id": "uri-test"}}
+        host = MagicMock()
+        host.publish_data_signal_from_thread = MagicMock(return_value=True)
+        agent = MagicMock()
+        agent.host_component = host
+        inv = MagicMock()
+        inv.agent = agent
+        eval_ctx._invocation_context = inv
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = _json.dumps({
+            "eval_confidence": 65,
+            "explanation": "URI consistent with symptoms",
+            "flag_for_review": False,
+            "flag_reason": None,
+        })
+
+        litellm_mod = sys.modules["litellm"]
+        litellm_mod.completion = MagicMock(return_value=mock_response)
+
+        evaluation = await eval_tool._run_async_impl(
+            {
+                "consensus_diagnosis": consensus["consensus_diagnosis"],
+                "mean_confidence": str(consensus["mean_confidence"]),
+                "clinical_note": '{"chief_complaint": "runny nose, mild sore throat for 2 days"}',
+            },
+            eval_ctx,
+        )
+
+        # --- Step 3: NBA -------------------------------------------------
+        nba_tool = TriageNBATool()
+        nba_tool.tool_config = {}
+
+        nba_ctx = MagicMock()
+        nba_ctx.state = {"a2a_context": {"task_id": "uri-test"}}
+        nba_ctx._invocation_context = inv
+
+        nba_result = await nba_tool._run_async_impl(
+            {
+                "consensus_diagnosis": consensus["consensus_diagnosis"],
+                "mean_confidence": str(consensus["mean_confidence"]),
+                "eval_confidence": str(evaluation["eval_confidence"]),
+                "flag_for_review": evaluation.get("flag_for_review", False),
+            },
+            nba_ctx,
+        )
+
+        # Primary assertions
+        assert consensus["consensus_diagnosis"] != "INCONCLUSIVE"
+        assert consensus["consensus_diagnosis"], "Diagnosis must not be empty"
+        assert consensus["mean_confidence"] > 0
+
+        # NBA route must be self_care or pharmacist for a mild URI
+        assert nba_result["route"] in ("self_care", "pharmacist", "gp_visit"), (
+            f"Mild URI routed to unexpected '{nba_result['route']}' "
+            f"(urgency={nba_result['urgency']}). "
+            f"Diagnosis='{consensus['consensus_diagnosis']}', "
+            f"eval_confidence={evaluation['eval_confidence']}"
+        )

@@ -171,3 +171,101 @@ async def test_nba_default_to_gp(tool, mock_ctx):
     assert result["route"] == "gp_visit"
     assert result["urgency"] == "urgent"
     assert "disclaimer" in result
+
+
+# ── New variant coverage tests ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "diagnosis",
+    [
+        "Upper Respiratory Infection",
+        "Acute Rhinitis",
+        "Viral Rhinitis",
+        "Acute Nasopharyngitis",
+        "Influenza-like Illness",
+        "Acute Viral Illness",
+    ],
+    ids=[
+        "upper_respiratory_infection",
+        "acute_rhinitis",
+        "viral_rhinitis",
+        "acute_nasopharyngitis",
+        "influenza_like_illness",
+        "acute_viral_illness",
+    ],
+)
+async def test_self_care_eligible_new_variants(tool, mock_ctx, diagnosis):
+    """Each new _SELF_CARE_ELIGIBLE entry routes to self_care at high confidence."""
+    result = await tool._run_async_impl(
+        {
+            "consensus_diagnosis": diagnosis,
+            "mean_confidence": 80,
+            "eval_confidence": 80,
+        },
+        mock_ctx,
+    )
+    assert result["route"] == "self_care", (
+        f"Expected self_care for '{diagnosis}', got '{result['route']}'"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "diagnosis",
+    [
+        "Allergic Rhinitis",
+        "Viral Rhinitis",
+        "Allergic Conjunctivitis",
+    ],
+    ids=[
+        "allergic_rhinitis",
+        "viral_rhinitis",
+        "allergic_conjunctivitis",
+    ],
+)
+async def test_otc_eligible_new_variants(tool, mock_ctx, diagnosis):
+    """Each new _OTC_ELIGIBLE entry routes to pharmacist at sufficient confidence."""
+    result = await tool._run_async_impl(
+        {
+            "consensus_diagnosis": diagnosis,
+            "mean_confidence": 75,
+            "eval_confidence": 75,
+        },
+        mock_ctx,
+    )
+    # Some OTC entries also appear in self-care — pharmacist or self_care are both valid
+    assert result["route"] in ("pharmacist", "self_care"), (
+        f"Expected pharmacist or self_care for '{diagnosis}', got '{result['route']}'"
+    )
+
+
+@pytest.mark.asyncio
+async def test_self_care_exclusions(tool, mock_ctx):
+    """Conditions that should NOT match self-care or OTC eligibility."""
+    # "chronic rhinitis" should not match any self-care entry
+    result_chronic = await tool._run_async_impl(
+        {
+            "consensus_diagnosis": "Chronic Rhinitis",
+            "mean_confidence": 80,
+            "eval_confidence": 80,
+        },
+        mock_ctx,
+    )
+    assert result_chronic["route"] != "self_care", (
+        "'Chronic Rhinitis' should not route to self_care"
+    )
+
+    # "bacterial conjunctivitis" should not match OTC eligibility
+    result_bacterial = await tool._run_async_impl(
+        {
+            "consensus_diagnosis": "Bacterial Conjunctivitis",
+            "mean_confidence": 75,
+            "eval_confidence": 75,
+        },
+        mock_ctx,
+    )
+    assert result_bacterial["route"] != "pharmacist", (
+        "'Bacterial Conjunctivitis' should not route to pharmacist"
+    )

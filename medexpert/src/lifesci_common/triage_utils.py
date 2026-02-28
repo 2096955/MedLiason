@@ -3,14 +3,29 @@
 Provides a single SSE emission helper used by all triage tools, avoiding
 boilerplate duplication and implementing cumulative emission (D2).
 
+Also provides ``extract_json_from_text`` — a resilient JSON extractor for
+parsing LLM responses that may contain markdown fencing, leading/trailing
+prose, or stray balanced braces in chain-of-thought reasoning.
+
 Cumulative emission: each SSE event carries the full accumulated pipeline
 state.  The helper reads/writes ``tool_context.state["_triage_cumulative"]``
 so that later stages automatically include earlier stage data.
 """
 
+import json
 import logging
+import re
 
 from google.adk.tools import ToolContext
+
+# Compiled regex for detecting markdown-fenced JSON blocks.
+# re.IGNORECASE handles ```JSON (uppercase).
+# \s* handles trailing content on the opening fence line.
+# \r?\n handles Windows line endings.
+_FENCE_PATTERN = re.compile(
+    r"```(?:json)?\s*\r?\n(.*?)\r?\n\s*```",
+    re.DOTALL | re.IGNORECASE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -105,3 +120,99 @@ async def emit_triage_progress(
         )
     except Exception as exc:
         log.debug("%s Could not emit progress: %s", log_identifier, exc)
+
+
+def extract_json_from_text(text: str) -> dict | None:
+    """Extract a JSON **dict** from an LLM response string.
+
+    Three-stage fallback:
+
+    1. Raw ``json.loads`` on the stripped text.
+    2. Markdown fence extraction via ``_FENCE_PATTERN``.
+    3. Loop-over-candidates balanced-brace scan — finds each ``{`` in the
+       text, locates its matching ``}``, and attempts ``json.loads`` on the
+       substring.  Advances past failed candidates so that prose containing
+       balanced braces before the actual JSON object (e.g.
+       ``"Findings: {uncertain} — {\"diagnosis\": ...}"``) is handled.
+
+    Returns the parsed ``dict``, or ``None`` if no valid dict can be
+    extracted.  Never raises.
+    """
+    if not text or not isinstance(text, str):
+        return None
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    # Stage 1: raw parse
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict):
+            return parsed
+        # Valid JSON but wrong structural type (array, scalar, null).
+        # Return None immediately — do not scan for inner brace pairs,
+        # which risks silent partial extraction from multi-element arrays.
+        return None
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Stage 2: markdown fence extraction
+    match = _FENCE_PATTERN.search(text)
+    if match:
+        try:
+            parsed = json.loads(match.group(1).strip())
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Stage 3: loop-over-candidates balanced-brace scan
+    start = 0
+    while start < len(stripped):
+        idx = stripped.find("{", start)
+        if idx == -1:
+            break
+
+        # Walk forward tracking brace depth to find the matching '}'
+        depth = 0
+        end = idx
+        in_string = False
+        escape_next = False
+        for i in range(idx, len(stripped)):
+            ch = stripped[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == "\\":
+                escape_next = True
+                continue
+            if ch == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+
+        if depth != 0:
+            # Unbalanced — no more valid candidates possible
+            break
+
+        candidate = stripped[idx : end + 1]
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Advance past this candidate's closing brace
+        start = end + 1
+
+    return None

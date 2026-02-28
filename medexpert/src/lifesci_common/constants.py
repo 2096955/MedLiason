@@ -369,7 +369,7 @@ MEDICAL_ENTITY_PATTERNS = {
 }
 
 # LLM-as-judge configuration
-LLM_JUDGE_MODEL = "openai/gemini-2.5-flash-001"
+LLM_JUDGE_MODEL = "vertex_ai/gemini-2.5-flash"
 LLM_JUDGE_TEMPERATURE = 0.1
 LLM_JUDGE_TIMEOUT_SECONDS = 15
 LLM_JUDGE_BATCH_SIZE = 10

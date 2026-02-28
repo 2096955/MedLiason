@@ -15,7 +15,7 @@ from google.genai import types as adk_types
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 
 from lifesci_common.constants import TRIAGE_SPECIALIST_TIMEOUT_S
-from lifesci_common.triage_utils import emit_triage_progress
+from lifesci_common.triage_utils import emit_triage_progress, extract_json_from_text
 
 log = logging.getLogger(__name__)
 
@@ -178,12 +178,24 @@ class TriageSpecialistPanelTool(DynamicTool):
                     )
                     text = response.choices[0].message.content.strip()
 
-                    # Parse JSON — handle markdown fencing
-                    text = text.strip("`").strip()
-                    if text.startswith("json"):
-                        text = text[4:].strip()
-
-                    result = json.loads(text)
+                    result = extract_json_from_text(text)
+                    if result is None:
+                        # PHI compliance: log BEFORE raise — unreachable after raise.
+                        # preview is bounded to 50 chars; newlines replaced to prevent log injection.
+                        # Never log full response content — LLM responses may contain patient-derived data.
+                        log.debug(
+                            "Parse failure for specialist=%s | response_len=%d | preview='%s'",
+                            specialist,
+                            len(text),
+                            text[:50].replace("\n", " "),
+                        )
+                        # PHI compliance: doc arg intentionally redacted — LLM response may contain
+                        # patient-derived content and must not be stored on the exception object.
+                        raise json.JSONDecodeError(
+                            "Specialist response returned None after extraction",
+                            "[response redacted]",
+                            0,
+                        )
                     return {
                         "specialist": specialist,
                         "diagnosis": result.get("diagnosis", "Unknown"),
@@ -220,6 +232,13 @@ class TriageSpecialistPanelTool(DynamicTool):
                 log.warning("Specialist task exception: %s", r)
                 continue
             verdicts.append(r)
+
+        log.info(
+            "Specialist panel: %d consulted, %d valid, %d insufficient",
+            len(verdicts),
+            sum(1 for v in verdicts if v["confidence"] > 0),
+            sum(1 for v in verdicts if v["confidence"] == 0),
+        )
 
         # Emit cumulative stage 3 progress
         await emit_triage_progress(

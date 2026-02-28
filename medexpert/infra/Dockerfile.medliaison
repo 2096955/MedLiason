@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libxml2-dev libxslt-dev \
+    gcc libxml2-dev libxslt-dev redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Install SAM from PyPI (clean, no build hook)
@@ -14,6 +14,13 @@ COPY pyproject.toml .
 COPY src/ src/
 RUN pip install --no-cache-dir -e .
 
+# Memgraph MCP server (streamable-http transport, connects to Memgraph sidecar)
+RUN pip install --no-cache-dir mcp-memgraph
+
+# Cold store data directory (ephemeral on Cloud Run — lost on restart.
+# Learning loops reset to defaults after each container restart.)
+RUN mkdir -p /app/data
+
 # Runtime files
 COPY configs/ configs/
 COPY prompts/ prompts/
@@ -22,8 +29,10 @@ COPY prompts/ prompts/
 COPY infra/start_medliaison.sh /app/start_medliaison.sh
 RUN chmod +x /app/start_medliaison.sh
 
-# Overlay custom MedExpert-branded frontend over SAM's default Solace UI
-# Static files path inside the PyPI package
+# Overlay custom MedExpert-branded frontend over SAM's default Solace UI.
+# SAM is installed from PyPI (non-editable), so __file__ in the gateway
+# resolves to site-packages/. This COPY destination matches the gateway's
+# StaticFiles mount path (main.py:464-467).
 COPY frontend-static/ /usr/local/lib/python3.12/site-packages/solace_agent_mesh/client/webui/frontend/static/
 
 ENV PORT=8080

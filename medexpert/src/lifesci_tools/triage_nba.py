@@ -279,6 +279,9 @@ _SELF_CARE_ELIGIBLE = [
     "common cold", "viral upper respiratory", "plantar fasciitis",
     "tension headache", "muscle strain", "minor sprain", "sunburn",
     "mild allergic rhinitis", "seasonal allergies",
+    "upper respiratory infection", "acute rhinitis",
+    "viral rhinitis", "acute nasopharyngitis",
+    "influenza-like illness", "acute viral illness",
 ]
 
 
@@ -292,6 +295,8 @@ _OTC_ELIGIBLE = [
     "acid reflux", "gerd", "mild eczema", "contact dermatitis",
     "hemorrhoids", "athlete's foot", "urticaria", "hives",
     "mild conjunctivitis", "heartburn",
+    "allergic rhinitis", "viral rhinitis",
+    "allergic conjunctivitis",  # excludes bacterial conjunctivitis
 ]
 
 

@@ -60,15 +60,21 @@ apps:
         - Flag weak support as MINOR
         - Never modify the report — only produce a verification assessment
 
+        You also have access to a knowledge graph via knowledge_graph_tools.
+        Use it to explore entity relationships, find connected biomedical
+        concepts, and traverse disease-gene-drug-pathway connections when
+        relevant to your research domain. Use run_query for Cypher traversals
+        and get_schema to understand the graph structure before querying.
+
       tools:
         - tool_type: python
           component_module: lifesci_tools.claim_verifier
           component_base_path: src
           tool_config:
-            model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, openai/gemini-2.5-flash-001}
+            model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, vertex_ai/gemini-2.5-flash}
             temperature: 0.0
             use_llm: true
-            fallback_model: "openai/gemini-2.5-flash-001"
+            fallback_model: "vertex_ai/gemini-2.5-flash"
 
         - tool_type: python
           component_module: lifesci_tools.citation_validator
@@ -85,6 +91,13 @@ apps:
           tool_config:
             read_only: true
             cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+
+        - tool_type: mcp
+          name: knowledge_graph_tools
+          connection_params:
+            type: streamable-http
+            url: "http://localhost:8000/mcp/"
+            timeout: 30
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service

@@ -17,7 +17,7 @@ from google.adk.tools import ToolContext
 from google.genai import types as adk_types
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 
-from lifesci_common.triage_utils import emit_triage_progress
+from lifesci_common.triage_utils import emit_triage_progress, extract_json_from_text
 
 log = logging.getLogger(__name__)
 
@@ -160,12 +160,13 @@ class TriageEvaluationTool(DynamicTool):
             )
             text = response.choices[0].message.content.strip()
 
-            # Parse JSON response
-            text = text.strip("`").strip()
-            if text.startswith("json"):
-                text = text[4:].strip()
-
-            result = json.loads(text)
+            result = extract_json_from_text(text)
+            if result is None:
+                raise json.JSONDecodeError(
+                    "Evaluation response returned None after extraction",
+                    "[response redacted]",
+                    0,
+                )
             eval_conf = int(result.get("eval_confidence", 50))
             flag = bool(result.get("flag_for_review", False))
             flag_reason = result.get("flag_reason")

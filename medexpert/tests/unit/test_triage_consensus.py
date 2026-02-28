@@ -92,7 +92,9 @@ async def test_consensus_all_insufficient_returns_inconclusive(tool, mock_ctx):
         mock_ctx,
     )
     assert result["consensus_diagnosis"] == "INCONCLUSIVE"
-    assert result["mean_confidence"] == 0
+    # _INCONCLUSIVE_FALLBACK_CONFIDENCE = 10 when specialists were consulted
+    # but all returned "Insufficient information"
+    assert result["mean_confidence"] == 10
     assert result["insufficient_count"] == 2
 
 

@@ -17,6 +17,12 @@ from lifesci_common.constants import TRIAGE_CONSENSUS_JACCARD_THRESHOLD
 
 log = logging.getLogger(__name__)
 
+# Minimum confidence returned when all specialists report "Insufficient
+# information".  Zero means a hard failure (no verdicts at all); a small
+# positive value (10) signals that specialists *were* consulted but could not
+# form an opinion — allowing downstream NBA routing to distinguish the two.
+_INCONCLUSIVE_FALLBACK_CONFIDENCE = 10
+
 # Reuse stop words from cold_store for consistency
 _STOP_WORDS = frozenset(
     [
@@ -78,7 +84,8 @@ class TriageConsensusTool(DynamicTool):
             verdicts = []
 
         if not verdicts:
-            return _inconclusive_result()
+            # confidence=0 intentional — distinguishes system failure from insufficient info
+            return _inconclusive_result(confidence=0)
 
         # 1. Discard insufficient information (confidence == 0)
         valid = [
@@ -90,7 +97,10 @@ class TriageConsensusTool(DynamicTool):
         insufficient_count = len(verdicts) - len(valid)
 
         if not valid:
-            return _inconclusive_result(insufficient_count=insufficient_count)
+            return _inconclusive_result(
+                confidence=_INCONCLUSIVE_FALLBACK_CONFIDENCE,
+                insufficient_count=insufficient_count,
+            )
 
         # 2. Group by exact match (lowercased, stripped)
         clusters: list[list[dict]] = []
@@ -164,11 +174,13 @@ class TriageConsensusTool(DynamicTool):
         }
 
 
-def _inconclusive_result(insufficient_count: int = 0) -> dict:
+def _inconclusive_result(
+    confidence: int = 0, insufficient_count: int = 0
+) -> dict:
     """Return when no valid consensus can be formed."""
     return {
         "consensus_diagnosis": "INCONCLUSIVE",
-        "mean_confidence": 0,
+        "mean_confidence": confidence,
         "supporting_specialists": [],
         "dissenting_specialists": [],
         "cluster_count": 0,
