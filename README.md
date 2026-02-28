@@ -253,31 +253,40 @@ python scripts/manage_prompts.py approve DrugSpecialist 3      # Promote to acti
 
 ### Prerequisites
 
-- Python 3.10.16+
-- Redis (for memory plane)
-- API key for Gemini, OpenAI, or Anthropic
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Docker (for Redis)
+- Node.js 20+ (for frontend)
+- API key for OpenAI, Gemini, or Anthropic
 
-### Setup
-
-```bash
-cd medexpert
-cp .env.example .env          # Fill in API keys
-pip install -e ".[dev]"
-```
-
-### Run the full stack
+### One-command setup
 
 ```bash
-./scripts/start_all.sh        # Redis check -> MCP servers -> Agents -> Gateway
+bash medexpert/dev.sh
 ```
 
-This starts:
-1. Config validation (fails fast on missing keys)
-2. Redis health check
-3. 15 MCP servers on ports 9001-9015
-4. 11 agents (orchestrator + 8 specialists + verifier + reviser)
-5. Feedback bridge (broker subscriber for learning loops)
-6. Web UI gateway on http://localhost:8000
+This single command handles everything:
+1. Creates Python venv and installs all dependencies
+2. Generates `.env` from `.env.example` (prompts for API key if missing)
+3. Starts Redis container
+4. Starts 15 MCP servers on ports 9001-9015
+5. Starts 11 agents + gateway on http://localhost:8000
+6. Starts frontend dev server on http://localhost:3000
+
+Press `Ctrl+C` to stop all processes. Redis container is preserved for next run.
+
+```bash
+# Options
+bash medexpert/dev.sh --no-frontend   # Skip frontend dev server
+bash medexpert/dev.sh --skip-mcp      # Skip MCP server startup
+bash medexpert/dev.sh --reset         # Clean slate (delete venv, .env, stop Redis)
+```
+
+### Docker alternative
+
+```bash
+make medexpert-docker
+```
 
 ### Run components individually
 
@@ -290,6 +299,13 @@ This starts:
 
 ## Development
 
+### MedExpert
+
+```bash
+make medexpert-dev           # One-command local dev setup
+make medexpert-docker        # Run via Docker Compose
+```
+
 ### SAM Framework (root)
 
 ```bash
@@ -301,7 +317,7 @@ uv run ruff check .         # Lint
 uv run ruff format .        # Format
 ```
 
-### MedExpert Application (medexpert/)
+### MedExpert Tests (medexpert/)
 
 ```bash
 cd medexpert
