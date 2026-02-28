@@ -270,8 +270,13 @@ This single command handles everything:
 2. Generates `.env` from `.env.example` (prompts for API key if missing)
 3. Starts Redis container
 4. Starts 15 MCP servers on ports 9001-9015
-5. Starts 11 agents + gateway on http://localhost:8000
+5. Starts 13 agents + gateway on http://localhost:8000
 6. Starts frontend dev server on http://localhost:3000
+
+All agents run in a **single `sam run` process** so they share one in-memory
+DevBroker. Running agents as separate processes creates isolated brokers where
+agents cannot discover each other — this was identified and fixed by
+[@M-Elsaied](https://github.com/M-Elsaied) in [PR #13](https://github.com/2096955/MedLiason/pull/13).
 
 Press `Ctrl+C` to stop all processes. Redis container is preserved for next run.
 
