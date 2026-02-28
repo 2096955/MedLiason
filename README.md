@@ -2,6 +2,7 @@
 <h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
+  <a href="https://medliaison-534348290993.us-central1.run.app"><strong>Live Demo</strong></a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
