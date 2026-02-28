@@ -5,7 +5,7 @@
  * Shows each step's status (pending/active/complete/error) with details.
  */
 
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Sparkles,
   GitBranch,
