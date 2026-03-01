@@ -24,7 +24,14 @@ Built on the **Solace Agent Mesh (SAM)** framework for event-driven, broker-base
 
 ### Chat Interface
 
-The main chat view with message input, agent selector, and collapsible side panel.
+The main chat view with message input, agent selector, and collapsible side panel. New users see a **welcome screen** with clickable sample queries to get started immediately — clicking a query populates the input for review before sending.
+
+Sample queries include:
+- Treatment guidelines (e.g., Type 2 diabetes)
+- Drug comparisons (e.g., SSRIs vs SNRIs)
+- Genomic biomarkers (e.g., immunotherapy response in NSCLC)
+- Clinical trial summaries (e.g., Alzheimer's disease treatments)
+- Drug interactions (e.g., warfarin and common antibiotics)
 
 <p align="center">
   <img src="docs/screenshots/01-chat-welcome.png" alt="Chat interface - dark mode" width="720" />
@@ -175,7 +182,7 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 |-----------|-----------|---------|
 | Agent hosting | Google ADK + Solace AI Connector | LLM orchestration + broker connectivity |
 | Communication | A2A protocol over Solace Event Mesh | Async agent-to-agent messaging |
-| Web UI | React + Vite + SSE streaming | Chat interface with citations panel |
+| Web UI | React + Vite + SSE streaming | Chat interface with welcome screen, sample queries, and citations panel |
 | MCP servers | FastMCP 2.x (SSE transport) | External API integration |
 | Memory plane | Redis | Shared state across agents per session |
 | Cold store | SQLite | Learning from past research sessions |
