@@ -61,12 +61,11 @@ function getStepStatus(
   stepIndex: number,
   currentStep: number,
   isComplete: boolean,
-  verdict?: string | null
+  _verdict?: string | null
 ): StepStatus {
   if (isComplete) return "complete";
   if (stepIndex < currentStep) return "complete";
   if (stepIndex === currentStep) return "active";
-  // REVISE is embedded in step 5 (VERIFY); no separate skip logic needed
   return "pending";
 }
 
