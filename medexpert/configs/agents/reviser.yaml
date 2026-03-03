@@ -53,7 +53,7 @@ apps:
           component_base_path: src
           tool_config:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
         - tool_type: python
           component_module: lifesci_tools.evidence_grader

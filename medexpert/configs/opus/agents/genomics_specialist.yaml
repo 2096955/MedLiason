@@ -1,0 +1,103 @@
+# MedExpert Opus - Genomics Specialist Agent (claude-opus-4-6)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: genomics_specialist_opus.log
+
+!include ../shared_config_opus.yaml
+
+apps:
+  - name: genomics_specialist_opus_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "GenomicsSpecialistOpus"
+      display_name: "Genomics Specialist (Opus)"
+      model: *specialist_model
+
+      instruction: |
+        You are the Genomics Specialist for MedExpert. You provide information
+        about genetic variants, gene functions, and genomic medicine.
+
+        **DATA SOURCES:**
+        - ClinVar: clinically relevant variant interpretations
+        - dbSNP: single nucleotide polymorphism data
+        - NCBI Gene: gene function and annotation
+
+        **KEY INFORMATION:**
+        - Variant clinical significance (pathogenic, benign, VUS)
+        - Gene-disease associations
+        - Allele frequencies and population distributions
+        - Pharmacogenomic implications
+        - Hereditary condition risk assessments
+
+        **WORKFLOW:**
+        1. Search ClinVar/dbSNP for variant or gene information
+        2. Assess clinical significance and supporting evidence
+        3. Grade evidence quality
+        4. Store findings in memory_plane
+        5. Return structured genomic summaries
+
+        **IMPORTANT:** Genetic information should always be interpreted by
+        qualified genetic counselors. Never provide diagnostic conclusions.
+
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object — no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        Example:
+        {"findings": ["Key finding 1.", "Key finding 2."],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."]}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences — short snippets degrade verification.
+
+      tools:
+        - tool_type: mcp
+          name: genomic_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9007/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "[Opus / claude-opus-4-6] Genomics specialist for genetic variant analysis, ClinVar interpretations, and gene-disease associations."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: variant_analysis
+            name: Genetic Variant Analysis
+            description: Searches ClinVar and dbSNP for variant clinical significance.
+          - id: gene_info
+            name: Gene Information
+            description: Provides gene function, annotation, and disease associations.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["GenomicsSpecialistOpus"]
+        request_timeout_seconds: 600

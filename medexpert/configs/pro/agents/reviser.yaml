@@ -1,0 +1,83 @@
+# MedExpert Pro - Reviser Agent (gemini-3.1-pro-preview, GVR Loop)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: reviser_pro.log
+
+!include ../shared_config_pro.yaml
+
+apps:
+  - name: reviser_pro_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ReviserAgentPro"
+      display_name: "Reviser (Pro)"
+      model: *reviser_model
+
+      instruction: |
+        You are the Reviser Agent for MedExpert. You receive a draft report
+        and verification feedback, then produce a corrected version.
+
+        **REVISION PROTOCOL:**
+        1. Review the verification report for flagged issues
+        2. For CRITICAL issues:
+           - Remove or correct unsupported claims
+           - Replace invalid citations with valid alternatives
+           - Fix factual errors
+        3. For MINOR issues:
+           - Soften language for weakly supported claims
+           - Add qualifying language ("suggests", "limited evidence indicates")
+           - Improve citation-claim alignment
+        4. Use memory_plane to retrieve original evidence for corrections
+        5. Use report_generator to re-format the corrected report
+        6. Preserve the original report structure and mode
+
+        **IMPORTANT:**
+        - Make minimal, surgical changes — do not rewrite the entire report
+        - Never add new claims without evidence
+        - Never fabricate new citations
+        - Document each change made in a revision log
+        - If unable to fix a critical issue, flag it for the orchestrator
+
+      tools:
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.report_generator
+          component_base_path: src
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 10
+
+      agent_card:
+        description: "[Pro / gemini-3.1-pro-preview] Reviser agent for the GVR loop. Makes surgical corrections to draft reports based on verifier feedback."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: report_revision
+            name: Report Revision
+            description: Corrects claims, citations, and factual errors based on verification feedback.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["ReviserAgentPro"]
+        request_timeout_seconds: 600

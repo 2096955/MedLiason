@@ -1,0 +1,19 @@
+{
+    "name": "MedExpert - Life Sciences Deep Research",
+    "short_name": "MedExpert",
+    "description": "AI-powered medical research assistant with 13 specialist agents for evidence-based clinical and scientific inquiry",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "any",
+    "theme_color": "#015B82",
+    "background_color": "#FFFFFF",
+    "categories": ["medical", "health", "productivity"],
+    "lang": "en-US",
+    "icons": [
+        { "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "/icons/icon-maskable-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+        { "src": "/icons/icon-maskable-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    ]
+}

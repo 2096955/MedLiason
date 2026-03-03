@@ -58,6 +58,19 @@ apps:
         - Flag retracted or corrected articles
         - Distinguish between primary research and review articles
 
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object — no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        Example:
+        {"findings": ["Key finding 1.", "Key finding 2."],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."]}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences — short snippets degrade verification.
+
       tools:
         - tool_type: mcp
           name: pubmed_tools
@@ -65,6 +78,30 @@ apps:
             type: sse
             url: "http://localhost:9001/sse"
             timeout: 30
+
+        # -- NHS 111 Clinical Guidance (Firecrawl) --
+        - tool_type: mcp
+          name: nhs_111_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9016/sse"
+            timeout: 30
+
+        # -- BMA Library Clinical Guidelines (Firecrawl) --
+        - tool_type: mcp
+          name: bma_library_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9017/sse"
+            timeout: 30
+
+        # -- OpenEvidence Clinical Q&A --
+        - tool_type: mcp
+          name: openevidence_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9018/sse"
+            timeout: 180
 
         - tool_type: python
           component_module: lifesci_tools.evidence_grader
@@ -75,7 +112,7 @@ apps:
           component_base_path: src
           tool_config:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
         - tool_type: builtin-group
           group_name: web_search

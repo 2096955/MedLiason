@@ -137,6 +137,10 @@ DOMAIN_AGENT_ROUTING = {
             "nct",
             "intervention",
             "investigational",
+            "treatment",
+            "therapy",
+            "efficacy",
+            "safety profile",
         ],
     },
     "drugs": {
@@ -155,6 +159,8 @@ DOMAIN_AGENT_ROUTING = {
             "dosage",
             "pharmacology",
             "pharmacokinetics",
+            "prescription",
+            "drug interaction",
         ],
     },
     "regulatory": {
@@ -190,6 +196,10 @@ DOMAIN_AGENT_ROUTING = {
             "population",
             "vaccination",
             "immunization",
+            "how common",
+            "risk factor",
+            "survival rate",
+            "prognosis",
         ],
     },
     "genomics": {
@@ -268,6 +278,9 @@ MCP_PORTS = {
     "vigibase": 9013,
     "imaging": 9014,
     "pharmacovigilance": 9015,
+    "nhs_111": 9016,
+    "bma_library": 9017,
+    "openevidence": 9018,
 }
 
 # ---------------------------------------------------------------------------

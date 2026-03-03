@@ -12,7 +12,7 @@
 
 ---
 
-MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 13 specialized agents across a rigorous 12-step research protocol and a separate triage pipeline. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
+MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 13 specialized agents across a streamlined 7-step research protocol with parallel specialist delegation, plus a separate triage pipeline. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
 
 Every answer goes through a Generator-Verifier-Reviser (GVR) loop: the orchestrator synthesizes a report, a verifier agent (using a stronger model at low temperature) fact-checks each claim against its cited sources, and a reviser corrects any issues before the answer reaches the user.
 
@@ -95,7 +95,7 @@ User Query
     +---> Research Pipeline (complex medical/scientific queries)
             |
             v
-        Orchestrator (12-step protocol)
+        Orchestrator (7-step protocol, parallel delegation)
             |
             +---> 8 Specialist Agents (literature, clinical trials, drug,
             |     regulatory, epidemiology, genomics, environmental, provider intel)
@@ -116,12 +116,12 @@ MedExpert agents don't just call APIs — they implement structured reasoning pa
 
 **Orchestrator: Protocol-Driven Decomposition**
 
-The orchestrator uses a prescriptive 12-step protocol (not free-form chain-of-thought) to ensure systematic coverage. It decomposes complex questions into domain-routed sub-questions using keyword heuristics, delegates to specialists in priority order, then reflectively identifies gaps before synthesizing. This is closer to a research methodology than a chatbot prompt.
+The orchestrator uses a prescriptive 7-step protocol (not free-form chain-of-thought) to ensure systematic coverage. It decomposes complex questions into domain-routed sub-questions using keyword heuristics with multi-domain routing (primary + secondary specialists per sub-question), then delegates to all specialists in a single parallel batch. This is closer to a research methodology than a chatbot prompt.
 
 Key reasoning mechanisms:
-- **Query decomposition** — Breaks multi-faceted questions into domain-specific sub-questions (e.g., "What are the drug interactions and genomic factors for metformin?" becomes separate queries for DrugSpecialist and GenomicsSpecialist)
-- **Reflective gap analysis** — After collecting evidence, explicitly identifies contradictions, missing perspectives, and logical gaps before synthesis
-- **Advisory board deliberation** — Generates 6 distinct analytical perspectives (Clinical Pragmatist, Research Methodologist, Patient Advocate, Health Economist, Bioethicist, Global Health Specialist) to prevent single-perspective bias, then synthesizes consensus and dissent
+- **Multi-domain query decomposition** — Breaks multi-faceted questions into sub-questions, each routed to a primary specialist plus 1-2 secondary specialists for multi-source evidence (e.g., "What are the treatments for endometriosis?" routes to LiteratureSpecialist + ClinicalTrialsSpecialist + DrugSpecialist)
+- **Parallel specialist delegation** — All specialist agents are called in a single LLM turn, executing concurrently. This reduces LLM call overhead from ~60-80 to ~20-25 calls per research session
+- **Structured specialist responses** — Specialists return JSON-formatted summaries (findings, sources, confidence, gaps) instead of prose, reducing orchestrator context bloat
 - **Learned routing** — Seeds each session with historical intelligence from the cold store (which specialists and sources worked well for similar queries in the past, calibrated per-domain specialist weights, source reliability scores)
 
 **Specialists: Evidence-First Retrieval**
@@ -158,7 +158,7 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 
 | Agent | Role | Model |
 |-------|------|-------|
-| **Orchestrator** | Coordinates 12-step protocol, hosts 6 advisory board personas | gemini-2.5-flash (temp 0.2) |
+| **Orchestrator** | Coordinates 7-step protocol with parallel delegation and GVR loop | gemini-2.5-flash (temp 0.2) |
 | **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-2.5-flash (temp 0.3) |
 | **Verifier** | Fact-checks claims against cited sources | gemini-2.5-pro (temp 0.1) |
 | **Reviser** | Surgically corrects issues flagged by verifier | gemini-2.5-flash (temp 0.3) |
@@ -187,22 +187,17 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 
 ## Research Protocol
 
-The orchestrator executes a 12-step protocol for every complex query:
+The orchestrator executes a streamlined 7-step protocol for every complex query:
 
 | Step | Name | What Happens |
 |------|------|-------------|
 | 0 | SEED | Load learned routing hints from past sessions |
-| 1 | DECOMPOSE | Break query into domain-routed sub-questions |
-| 2 | DELEGATE | Assign sub-questions to specialist agents |
-| 3 | COLLECT | Gather evidence, publish source citations |
-| 4 | REFLECT | Identify gaps, contradictions, missing perspectives |
-| 5 | RE-QUERY | Targeted follow-up queries for gaps found |
-| 6 | VALIDATE | Check research completeness (target: 70%+ coverage) |
-| 7 | ADVISORY | 6-persona advisory board deliberation |
-| 8 | SYNTHESIZE | Generate evidence-graded report with citations |
-| 9 | VERIFY | Verifier agent checks claim-citation alignment |
-| 10 | REVISE | Reviser fixes issues (skipped if verification passes) |
-| 11 | PERSIST | Save session signals to cold store for learning |
+| 1 | PLAN | Decompose query into sub-questions with primary + secondary specialist routing |
+| 2 | DELEGATE | Call ALL specialist agents in parallel (single LLM turn) |
+| 3 | COLLECT + PUBLISH | Gather evidence, publish citations, validate coverage (70%+ target) |
+| 4 | SYNTHESIZE | Generate evidence-graded report with citations |
+| 5 | VERIFY + REVISE | GVR loop: fact-check claims, revise if critical issues (max 1 cycle) |
+| 6 | PERSIST | Save session signals to cold store for learning |
 
 Symptom-based queries are routed to the **triage pipeline** instead, which runs a specialist panel consultation, clinical evaluation, consensus building, and next-best-action determination.
 

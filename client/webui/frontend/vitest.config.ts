@@ -43,6 +43,7 @@ export default mergeConfig(
                         setupFiles: ["./.storybook/vitest.globals.ts", "./.storybook/vitest.setup.ts"],
                         alias: {
                             "@": path.resolve(dirname, "src"),
+                            "virtual:pwa-register/react": path.resolve(dirname, "src/stories/mocks/virtual-pwa-register-react.ts"),
                         },
                     },
                 }),

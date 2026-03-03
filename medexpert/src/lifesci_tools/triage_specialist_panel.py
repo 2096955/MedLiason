@@ -132,7 +132,14 @@ class TriageSpecialistPanelTool(DynamicTool):
             (self.tool_config or {}).get("prompts_dir", "")
         )
 
-        model = (self.tool_config or {}).get("model", "openai/gemini-2.5-flash-001")
+        # YAML anchor *specialist_model expands to a dict; extract model string + vertex kwargs
+        raw_model = (self.tool_config or {}).get("model", "openai/gemini-2.5-flash-001")
+        if isinstance(raw_model, dict):
+            model = raw_model.get("model", "openai/gemini-2.5-flash-001")
+            vertex_kwargs = {k: raw_model[k] for k in ("vertex_project", "vertex_location") if k in raw_model}
+        else:
+            model = raw_model
+            vertex_kwargs = {}
         temperature = float((self.tool_config or {}).get("temperature", 0.3))
         timeout = int((self.tool_config or {}).get("timeout", TRIAGE_SPECIALIST_TIMEOUT_S))
 
@@ -173,6 +180,7 @@ class TriageSpecialistPanelTool(DynamicTool):
                             ],
                             temperature=temperature,
                             max_tokens=500,
+                            **vertex_kwargs,
                         ),
                         timeout=timeout,
                     )

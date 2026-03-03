@@ -41,6 +41,19 @@ apps:
         **SAFETY:** Never recommend specific dosages. Always note that
         prescribing decisions should be made by healthcare providers.
 
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object — no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        Example:
+        {"findings": ["Key finding 1.", "Key finding 2."],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."]}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences — short snippets degrade verification.
+
       tools:
         - tool_type: mcp
           name: openfda_tools
@@ -58,7 +71,7 @@ apps:
           component_base_path: src
           tool_config:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service

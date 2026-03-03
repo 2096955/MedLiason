@@ -10,6 +10,7 @@ dependencies = [
     "biopython>=1.83,<2.0",
     "lxml>=5.0,<6.0",
     "redis[hiredis]>=5.0,<6.0",
+    "firecrawl-py>=1.5,<2.0",
 ]
 
 [project.optional-dependencies]

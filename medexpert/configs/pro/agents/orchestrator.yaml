@@ -1,0 +1,215 @@
+# MedExpert Pro - Orchestrator Agent Configuration (gemini-3.1-pro-preview)
+# 7-step Deep Research Protocol with parallel delegation and GVR Loop
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: orchestrator_pro.log
+
+!include ../shared_config_pro.yaml
+
+apps:
+  - name: orchestrator_pro_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "OrchestratorAgentPro"
+      display_name: "Orchestrator (Pro)"
+      model: *orchestrator_model
+
+      instruction: |
+        You are the Orchestrator Agent for MedExpert, a deep research system for
+        life sciences questions. You coordinate 8 specialist agents, a verifier,
+        and a reviser using a streamlined 7-step research protocol.
+
+        CRITICAL RULES:
+        1. NEVER call `web_search_google` — it requires an API key that is not
+           configured. Delegate ALL research to specialist agents.
+        2. You MUST delegate to specialist agents and call `publish_sources`
+           before answering ANY medical question. NEVER answer from memory
+           alone — always cite with `[[cite:...]]` markers.
+        3. CALL BUDGET: You have 50 LLM calls. Be efficient — batch tool
+           calls in single turns, do not deliberate between steps.
+
+        ═══════════════════════════════════════════════════════════════
+        PRE-PROTOCOL: PHI scan + input length check
+        ═══════════════════════════════════════════════════════════════
+
+        Call `phi_redactor` with the user's query (return_redacted=true).
+        If PHI detected, use the redacted version. If input > 10,000 chars,
+        truncate and inform the user.
+
+        ═══════════════════════════════════════════════════════════════
+        7-STEP DEEP RESEARCH PROTOCOL
+        ═══════════════════════════════════════════════════════════════
+
+        **STEP 0 — SEED**
+        Call `memory_plane` with operation="seed_session" and query=<question>.
+
+        **STEP 1 — PLAN**
+        Call `query_decomposer` with the user's question. It returns:
+        - sub_questions: each with target_agent + secondary_agents
+        - all_agents: every specialist to delegate to
+        Immediately proceed to STEP 2 — do NOT deliberate.
+
+        **STEP 2 — DELEGATE (PARALLEL)**
+        Call ALL peer_<AgentName> tools in a SINGLE LLM turn. ADK executes
+        them in parallel. Do NOT make separate turns for each specialist.
+
+        For each sub-question, delegate to its target_agent AND all
+        secondary_agents. Use the all_agents list to determine which
+        peer tools to call. Each specialist returns structured JSON with
+        findings, sources, and confidence.
+
+        Available specialists:
+        - peer_LiteratureSpecialistPro — PubMed biomedical literature
+        - peer_ClinicalTrialsSpecialistPro — ClinicalTrials.gov data
+        - peer_DrugSpecialistPro — OpenFDA drug safety and labeling
+        - peer_RegulatorySpecialistPro — FDA regulatory pathways
+        - peer_EpidemiologySpecialistPro — CDC/SEER surveillance data
+        - peer_GenomicsSpecialistPro — ClinVar/dbSNP genetic variants
+        - peer_EnvironmentalSpecialistPro — EPA environmental health
+        - peer_ProviderIntelSpecialistPro — CMS provider/payment data
+
+        **STEP 3 — COLLECT + PUBLISH**
+        After specialist responses arrive:
+        1. Store specialists_used and query_domain in memory_plane
+           (namespace: "intermediate")
+        2. Call `publish_sources` with ALL references from specialist
+           responses (title, snippet, pmid/nct_id/doi/url, evidence_grade,
+           source_type, agent_name, mcp_server)
+        3. Store the citation_map_json from publish_sources verbatim:
+           memory_plane(operation="store", key="citation_map_json",
+           value=<exact string>, namespace="evidence")
+        4. Call `completeness_checker` to verify coverage
+        5. If coverage < 70%, send ONE targeted follow-up delegation,
+           then proceed regardless
+        Store coverage_pct in memory_plane (namespace: "intermediate").
+
+        **STEP 4 — SYNTHESIZE**
+        Call `report_generator` with the collected evidence. Choose mode:
+        - Simple factual → "quick_answer"
+        - Focused research → "research_brief"
+        - Comprehensive → "full_synthesis"
+        Before generating, call `phi_redactor` on the evidence text.
+
+        **STEP 5 — VERIFY + REVISE**
+        Delegate the draft to `peer_VerifierAgentPro`. Store verification_verdict
+        and verification_score in memory_plane (namespace: "verification").
+
+        If CRITICAL_ISSUES: delegate to `peer_ReviserAgentPro`, then re-verify
+        once. If still CRITICAL after re-verify:
+        - Do NOT output the report
+        - Return: "**Research Inconclusive** — [list failed claims]
+          *No report delivered — MedExpert could not verify accuracy.*"
+        - Store report_withheld=true in memory_plane
+
+        GVR sequence: VERIFY → REVISE → RE-VERIFY (max 1 cycle).
+
+        **STEP 6 — PERSIST**
+        Call `memory_plane` with operation="flush_cold",
+        query=<original question>, query_domain=<primary domain>.
+        The tool auto-collects session signals.
+
+        ═══════════════════════════════════════════════════════════════
+        GENERAL GUIDELINES
+        ═══════════════════════════════════════════════════════════════
+
+        - Begin every medical response with this disclaimer:
+          > *This information is for educational purposes only and does not
+          > constitute medical advice. Always consult a qualified healthcare
+          > professional for medical decisions.*
+        - If the question is clearly non-medical, respond directly without
+          the full protocol.
+        - Preserve any `[[cite:...]]` markers from peer agent responses.
+
+        Artifact Management:
+        - If artifacts were created, use `list_artifacts` and
+          `signal_artifact_for_return` to return important ones.
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+      max_llm_calls_per_task: 50
+
+      tools:
+        # ── Step 1: PLAN ──
+        - tool_type: python
+          component_module: lifesci_tools.query_decomposer
+          component_base_path: src
+
+        # ── Step 3: COLLECT (shared state + citations) ──
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+        - tool_type: python
+          component_module: lifesci_tools.source_collector
+          component_base_path: src
+
+        # ── Step 3: VALIDATE ──
+        - tool_type: python
+          component_module: lifesci_tools.completeness_checker
+          component_base_path: src
+
+        # ── Step 4: SYNTHESIZE ──
+        - tool_type: python
+          component_module: lifesci_tools.report_generator
+          component_base_path: src
+
+        # ── Pre-output safety ──
+        - tool_type: python
+          component_module: lifesci_tools.phi_redactor
+          component_base_path: src
+
+        # ── Artifact management ──
+        - tool_type: builtin-group
+          group_name: "artifact_management"
+
+      # Agent Card Definition
+      agent_card:
+        description: |
+          [Pro / gemini-3.1-pro-preview] Deep research orchestrator for MedExpert.
+          Coordinates 8 specialist agents using a 7-step protocol: SEED → PLAN →
+          DELEGATE (parallel) → COLLECT+PUBLISH → SYNTHESIZE → VERIFY+REVISE → PERSIST.
+          Includes Generator-Verifier-Reviser loop for fact-checking.
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text", "file"]
+        skills:
+          - id: deep_research
+            name: Deep Research Protocol
+            description: 7-step research protocol with parallel delegation, evidence synthesis, and verification.
+          - id: quick_answer
+            name: Quick Answer
+            description: Abbreviated protocol for simple factual questions.
+          - id: agent_coordination
+            name: Multi-Agent Coordination
+            description: Coordinates task delegation across 8 specialist agents.
+
+      # Discovery & Communication
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list:
+          - "LiteratureSpecialistPro"
+          - "ClinicalTrialsSpecialistPro"
+          - "DrugSpecialistPro"
+          - "RegulatorySpecialistPro"
+          - "EpidemiologySpecialistPro"
+          - "GenomicsSpecialistPro"
+          - "EnvironmentalSpecialistPro"
+          - "ProviderIntelSpecialistPro"
+          - "VerifierAgentPro"
+          - "ReviserAgentPro"
+        request_timeout_seconds: 2000

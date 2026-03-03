@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig, loadEnv } from "vite";
 
 /**
@@ -50,7 +51,30 @@ export default defineConfig(({ mode }) => {
     const platformTarget = `http://localhost:${platformPort}`;
 
     return {
-        plugins: [react(), tailwindcss(), generateVersionMetadata()],
+        plugins: [
+            react(),
+            tailwindcss(),
+            VitePWA({
+                registerType: "prompt",
+                manifest: false, // already have public/manifest.json
+                workbox: {
+                    globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+                    navigateFallback: null, // medical app: no stale cached content
+                    runtimeCaching: [
+                        {
+                            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+                            handler: "CacheFirst",
+                            options: {
+                                cacheName: "google-fonts",
+                                expiration: { maxEntries: 10, maxAgeSeconds: 365 * 24 * 60 * 60 },
+                            },
+                        },
+                    ],
+                },
+                devOptions: { enabled: false },
+            }),
+            generateVersionMetadata(),
+        ],
         resolve: {
             alias: {
                 "@": path.resolve(__dirname, "./src"),

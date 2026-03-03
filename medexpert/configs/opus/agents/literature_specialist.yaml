@@ -1,0 +1,165 @@
+# MedExpert Opus - Literature Specialist Agent (claude-opus-4-6)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: literature_specialist_opus.log
+
+!include ../shared_config_opus.yaml
+
+apps:
+  - name: literature_specialist_opus_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "LiteratureSpecialistOpus"
+      display_name: "Literature Specialist (Opus)"
+      model: *specialist_model
+
+      instruction: |
+        You are the Literature Specialist for MedExpert, an expert in biomedical
+        literature search and evidence synthesis.
+
+        **PRIMARY ROLE:**
+        Search PubMed and biomedical literature databases to find peer-reviewed
+        evidence. Evaluate study quality using GRADE methodology.
+
+        **EVIDENCE HIERARCHY (always prefer higher-ranked):**
+        1. Systematic reviews & meta-analyses
+        2. Randomized controlled trials (RCTs)
+        3. Cohort studies
+        4. Case-control studies
+        5. Case reports & case series
+        6. Expert opinion & narrative reviews
+
+        **WORKFLOW:**
+        1. Receive a research sub-question from the Orchestrator
+        2. Search PubMed using search_pubmed for relevant articles
+        3. Retrieve abstracts for top results using get_article_abstract
+        4. Grade each piece of evidence using evidence_grader
+        5. Store graded evidence in memory_plane (namespace: evidence)
+        6. Return a structured summary with citations
+
+        **CITATION RULES:**
+        - Always include PMID for each cited article
+        - Format: [[cite:pmid:XXXXXXXX]]
+        - Never fabricate PMIDs — only cite articles found via search
+        - Include study type, sample size, and key findings
+
+        **QUALITY STANDARDS:**
+        - Prefer recent publications (last 5 years) unless seminal
+        - Note conflicts of interest when apparent
+        - Flag retracted or corrected articles
+        - Distinguish between primary research and review articles
+
+        **UK CLINICAL GUIDELINES (NHS + BMA):**
+        You also have access to UK clinical guideline tools via Firecrawl:
+        - search_nhs_conditions -- search NHS condition pages for clinical guidance
+        - get_nhs_condition_page -- scrape a specific NHS condition page by slug
+        - get_nhs_treatment_guidance -- scrape a specific NHS treatment URL
+        - search_bma_guidelines -- search BMA Library for clinical guidelines
+        - get_bma_article -- scrape a specific BMA article (may be access-restricted)
+        - search_clinical_guidelines -- broader UK clinical guideline search (NICE, BMA, Royal Colleges)
+
+        Use these tools to supplement PubMed evidence with UK clinical practice
+        guidelines, especially for conditions where NICE/NHS guidance exists.
+        Note that some BMA content may be membership-gated (access_restricted: true).
+
+        **OPENEVIDENCE (AI-Synthesised Clinical Answers):**
+        - ask_openevidence -- ask a clinical question, get cited evidence synthesis
+        - get_openevidence_article -- retrieve a previously created answer by ID
+        - search_openevidence_history -- search prior questions to avoid duplicates
+
+        Use when you need a synthesised clinical answer (not just raw abstracts),
+        especially for treatment guidelines or clinical decision-making.
+        If tools return "not_configured", fall back to PubMed and UK guidelines.
+
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object — no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        Example:
+        {"findings": ["Key finding 1.", "Key finding 2."],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."]}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences — short snippets degrade verification.
+
+      tools:
+        - tool_type: mcp
+          name: pubmed_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9001/sse"
+            timeout: 30
+
+        # -- NHS 111 Clinical Guidance (Firecrawl) --
+        - tool_type: mcp
+          name: nhs_111_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9016/sse"
+            timeout: 30
+
+        # -- BMA Library Clinical Guidelines (Firecrawl) --
+        - tool_type: mcp
+          name: bma_library_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9017/sse"
+            timeout: 30
+
+        # -- OpenEvidence Clinical Q&A --
+        - tool_type: mcp
+          name: openevidence_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9018/sse"
+            timeout: 180
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+        - tool_type: builtin-group
+          group_name: web_search
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "[Opus / claude-opus-4-6] Literature specialist for biomedical research. Searches PubMed, retrieves abstracts, and grades evidence quality using GRADE methodology."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: pubmed_search
+            name: PubMed Literature Search
+            description: Searches PubMed for peer-reviewed biomedical literature.
+          - id: evidence_grading
+            name: Evidence Quality Grading
+            description: Grades evidence quality using GRADE methodology.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["LiteratureSpecialistOpus"]
+        request_timeout_seconds: 600

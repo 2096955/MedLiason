@@ -23,30 +23,54 @@ def _score_domain(text: str, domain_info: dict) -> float:
     return matches / max(len(keywords), 1)
 
 
-def _route_question(question: str) -> tuple[str, str, float]:
-    """Route a question to the best-matching domain and agent.
+def _route_question(question: str) -> list[dict]:
+    """Route a question to primary + secondary specialist agents.
 
-    Returns (domain, agent_name, confidence).
+    Returns list of dicts: [{domain, agent, confidence, role}, ...].
+    Primary = highest keyword match. Up to 2 secondary agents included
+    if they have any keyword matches, ensuring multi-source evidence.
     """
-    best_domain = "literature"
-    best_agent = "LiteratureSpecialist"
-    best_score = 0.0
-
+    scored = []
     for domain, info in DOMAIN_AGENT_ROUTING.items():
         score = _score_domain(question, info)
-        if score > best_score:
-            best_score = score
-            best_domain = domain
-            best_agent = info["agent"]
+        scored.append((domain, info["agent"], score))
 
-    # Confidence is 0-1 based on keyword match density
-    confidence = min(best_score * 5, 1.0)  # Scale up since individual scores are low
+    scored.sort(key=lambda x: x[2], reverse=True)
 
-    # If no keywords matched at all, default to literature with low confidence
-    if best_score == 0:
-        return "literature", "LiteratureSpecialist", 0.2
+    results = []
 
-    return best_domain, best_agent, round(confidence, 2)
+    # Primary: best match, or literature if nothing matched
+    if scored[0][2] > 0:
+        primary = scored[0]
+    else:
+        primary = ("literature", "LiteratureSpecialist", 0.04)
+    results.append({
+        "domain": primary[0],
+        "agent": primary[1],
+        "confidence": round(min(primary[2] * 5, 1.0), 2),
+        "role": "primary",
+    })
+
+    # Secondary: up to 2 more with any keyword match
+    for domain, agent, score in scored[1:]:
+        if score > 0 and agent != results[0]["agent"] and len(results) < 3:
+            results.append({
+                "domain": domain,
+                "agent": agent,
+                "confidence": round(min(score * 5, 1.0), 2),
+                "role": "secondary",
+            })
+
+    # Always include LiteratureSpecialist if not already present
+    if not any(r["agent"] == "LiteratureSpecialist" for r in results):
+        results.append({
+            "domain": "literature",
+            "agent": "LiteratureSpecialist",
+            "confidence": 0.3,
+            "role": "secondary",
+        })
+
+    return results
 
 
 def _split_question(question: str, max_sub: int) -> list[str]:
@@ -110,9 +134,9 @@ class QueryDecomposerTool(DynamicTool):
     def tool_description(self) -> str:
         return (
             "Breaks down a complex research question into sub-questions, each "
-            "routed to the appropriate specialist agent based on domain keywords. "
-            "Returns the original question, sub-questions with domain/agent routing, "
-            "and an overall routing confidence score."
+            "routed to a primary specialist plus secondary specialists for "
+            "multi-source evidence. Returns sub-questions with domain/agent "
+            "routing, secondary agents, and a list of all agents to delegate to."
         )
 
     @property
@@ -153,17 +177,27 @@ class QueryDecomposerTool(DynamicTool):
         sub_questions_text = _split_question(question, max_sub)
 
         sub_questions = []
+        all_agents: set[str] = set()
         total_confidence = 0.0
         for i, sq in enumerate(sub_questions_text):
-            domain, agent, confidence = _route_question(sq)
+            routes = _route_question(sq)
+            primary = routes[0]
+            secondaries = routes[1:]
             sub_questions.append({
                 "question": sq,
-                "domain": domain,
-                "target_agent": agent,
+                "domain": primary["domain"],
+                "target_agent": primary["agent"],
+                "secondary_agents": [
+                    {"agent": r["agent"], "domain": r["domain"]}
+                    for r in secondaries
+                ],
                 "priority": i + 1,
-                "routing_confidence": confidence,
+                "routing_confidence": primary["confidence"],
             })
-            total_confidence += confidence
+            total_confidence += primary["confidence"]
+            all_agents.add(primary["agent"])
+            for r in secondaries:
+                all_agents.add(r["agent"])
 
         avg_confidence = (
             round(total_confidence / len(sub_questions), 2) if sub_questions else 0.0
@@ -174,4 +208,5 @@ class QueryDecomposerTool(DynamicTool):
             "sub_questions": sub_questions,
             "routing_confidence": avg_confidence,
             "count": len(sub_questions),
+            "all_agents": sorted(all_agents),
         }

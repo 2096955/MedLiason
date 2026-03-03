@@ -21,79 +21,111 @@ def ctx():
     return MagicMock()
 
 
-# ── _route_question unit tests ────────────────────────────────
+# ── _route_question unit tests (now returns list of dicts) ───
 
 
 def test_route_pubmed_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What does the PubMed literature say about metformin?"
     )
-    assert domain == "literature"
-    assert agent == "LiteratureSpecialist"
-    assert conf > 0.2
+    assert routes[0]["domain"] == "literature"
+    assert routes[0]["agent"] == "LiteratureSpecialist"
+    assert routes[0]["role"] == "primary"
+    assert routes[0]["confidence"] > 0.2
 
 
 def test_route_clinical_trials_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What clinical trials are recruiting for phase 3 randomized studies?"
     )
-    assert domain == "clinical_trials"
-    assert agent == "ClinicalTrialsSpecialist"
+    assert routes[0]["domain"] == "clinical_trials"
+    assert routes[0]["agent"] == "ClinicalTrialsSpecialist"
 
 
 def test_route_drug_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What are the adverse events and side effects of this medication?"
     )
-    assert domain == "drugs"
-    assert agent == "DrugSpecialist"
+    assert routes[0]["domain"] == "drugs"
+    assert routes[0]["agent"] == "DrugSpecialist"
 
 
 def test_route_regulatory_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What 510k clearance has the FDA granted for this device?"
     )
-    assert domain == "regulatory"
-    assert agent == "RegulatorySpecialist"
+    assert routes[0]["domain"] == "regulatory"
+    assert routes[0]["agent"] == "RegulatorySpecialist"
 
 
 def test_route_epidemiology_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What is the mortality and prevalence of this disease according to CDC surveillance?"
     )
-    assert domain == "epidemiology"
-    assert agent == "EpidemiologySpecialist"
+    assert routes[0]["domain"] == "epidemiology"
+    assert routes[0]["agent"] == "EpidemiologySpecialist"
 
 
 def test_route_genomics_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What genetic variants and mutations are pathogenic in ClinVar?"
     )
-    assert domain == "genomics"
-    assert agent == "GenomicsSpecialist"
+    assert routes[0]["domain"] == "genomics"
+    assert routes[0]["agent"] == "GenomicsSpecialist"
 
 
 def test_route_environmental_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What is the air quality and pollution level in this area?"
     )
-    assert domain == "environmental"
-    assert agent == "EnvironmentalSpecialist"
+    assert routes[0]["domain"] == "environmental"
+    assert routes[0]["agent"] == "EnvironmentalSpecialist"
 
 
 def test_route_provider_question():
-    domain, agent, conf = _route_question(
+    routes = _route_question(
         "What providers and physicians have CMS open payments?"
     )
-    assert domain == "provider_intel"
-    assert agent == "ProviderIntelSpecialist"
+    assert routes[0]["domain"] == "provider_intel"
+    assert routes[0]["agent"] == "ProviderIntelSpecialist"
 
 
 def test_route_ambiguous_defaults_to_literature():
-    domain, agent, conf = _route_question("Tell me about aspirin")
-    assert domain == "literature"
-    assert agent == "LiteratureSpecialist"
-    assert conf == 0.2
+    routes = _route_question("Tell me about aspirin")
+    assert routes[0]["domain"] == "literature"
+    assert routes[0]["agent"] == "LiteratureSpecialist"
+    assert routes[0]["confidence"] == 0.2
+
+
+def test_route_returns_secondary_agents():
+    """A treatment question should route to clinical_trials + drug as secondary."""
+    routes = _route_question(
+        "What are the treatments for endometriosis?"
+    )
+    agents = {r["agent"] for r in routes}
+    # Should have at least 2 agents (primary + secondary)
+    assert len(routes) >= 2
+    # Literature should be one of them since it always gets included
+    assert "LiteratureSpecialist" in agents
+
+
+def test_route_always_includes_literature():
+    """Even when primary is non-literature, LiteratureSpecialist appears as secondary."""
+    routes = _route_question(
+        "What genetic variants cause hereditary breast cancer?"
+    )
+    assert routes[0]["agent"] == "GenomicsSpecialist"
+    agents = {r["agent"] for r in routes}
+    assert "LiteratureSpecialist" in agents
+
+
+def test_route_prevalence_hits_epidemiology():
+    """Clinical terms like 'prevalence' and 'risk factor' should route to epidemiology."""
+    routes = _route_question(
+        "What is the prevalence of diabetes and what are the risk factors?"
+    )
+    agents = {r["agent"] for r in routes}
+    assert "EpidemiologySpecialist" in agents
 
 
 # ── _split_question unit tests ────────────────────────────────
@@ -145,9 +177,11 @@ async def test_simple_question(tool, ctx):
     assert result["original_question"] == "What are the side effects of metformin?"
     assert result["count"] >= 1
     assert len(result["sub_questions"]) >= 1
-    assert "question" in result["sub_questions"][0]
-    assert "domain" in result["sub_questions"][0]
-    assert "target_agent" in result["sub_questions"][0]
+    sq = result["sub_questions"][0]
+    assert "question" in sq
+    assert "domain" in sq
+    assert "target_agent" in sq
+    assert "secondary_agents" in sq
 
 
 async def test_compound_question(tool, ctx):
@@ -177,6 +211,26 @@ async def test_multi_domain_question(tool, ctx):
         ctx,
     )
     assert result["count"] == 3
+
+
+async def test_all_agents_field(tool, ctx):
+    """The all_agents field should list every unique agent across all routes."""
+    result = await tool._run_async_impl(
+        {"question": "What are the treatments for endometriosis?"}, ctx
+    )
+    assert "all_agents" in result
+    assert isinstance(result["all_agents"], list)
+    assert len(result["all_agents"]) >= 2
+
+
+async def test_secondary_agents_in_sub_questions(tool, ctx):
+    """Each sub-question should have a secondary_agents list."""
+    result = await tool._run_async_impl(
+        {"question": "What is the prevalence and treatment of type 2 diabetes?"}, ctx
+    )
+    for sq in result["sub_questions"]:
+        assert "secondary_agents" in sq
+        assert isinstance(sq["secondary_agents"], list)
 
 
 async def test_max_sub_questions_default(tool, ctx):

@@ -1,7 +1,7 @@
 /**
  * Research Protocol Stepper Component
  *
- * Displays the MedExpert 12-step research protocol progress.
+ * Displays the MedExpert 7-step research protocol progress.
  * Shows each step's status (pending/active/complete/error) with details.
  */
 
@@ -11,19 +11,15 @@ import {
   GitBranch,
   Send,
   Inbox,
-  Eye,
-  RefreshCw,
-  CheckSquare,
-  Users,
   FileText,
   Shield,
-  Pencil,
   Database,
   ChevronDown,
   ChevronUp,
   CheckCircle,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 export interface ResearchProtocolProgressData {
@@ -51,17 +47,12 @@ interface StepInfo {
 
 const PROTOCOL_STEPS: StepInfo[] = [
   { step: 0, name: "SEED", label: "Loading intelligence", icon: Sparkles },
-  { step: 1, name: "DECOMPOSE", label: "Analyzing query", icon: GitBranch },
-  { step: 2, name: "DELEGATE", label: "Assigning specialists", icon: Send },
-  { step: 3, name: "COLLECT", label: "Gathering evidence", icon: Inbox },
-  { step: 4, name: "REFLECT", label: "Identifying gaps", icon: Eye },
-  { step: 5, name: "RE_QUERY", label: "Follow-up queries", icon: RefreshCw },
-  { step: 6, name: "VALIDATE", label: "Checking completeness", icon: CheckSquare },
-  { step: 7, name: "ADVISORY", label: "Advisory board review", icon: Users },
-  { step: 8, name: "SYNTHESIZE", label: "Generating report", icon: FileText },
-  { step: 9, name: "VERIFY", label: "Verifying claims", icon: Shield },
-  { step: 10, name: "REVISE", label: "Revising if needed", icon: Pencil },
-  { step: 11, name: "PERSIST", label: "Saving results", icon: Database },
+  { step: 1, name: "PLAN", label: "Analyzing query", icon: GitBranch },
+  { step: 2, name: "DELEGATE", label: "Querying specialists", icon: Send },
+  { step: 3, name: "COLLECT", label: "Gathering & publishing evidence", icon: Inbox },
+  { step: 4, name: "SYNTHESIZE", label: "Generating report", icon: FileText },
+  { step: 5, name: "VERIFY", label: "Verifying claims", icon: Shield },
+  { step: 6, name: "PERSIST", label: "Saving results", icon: Database },
 ];
 
 type StepStatus = "pending" | "active" | "complete" | "skipped" | "error";
@@ -75,10 +66,7 @@ function getStepStatus(
   if (isComplete) return "complete";
   if (stepIndex < currentStep) return "complete";
   if (stepIndex === currentStep) return "active";
-  // Step 10 (REVISE) is skipped if verification passed
-  if (stepIndex === 10 && currentStep > 10 && verdict && verdict !== "CRITICAL_ISSUES") {
-    return "skipped";
-  }
+  // REVISE is embedded in step 5 (VERIFY); no separate skip logic needed
   return "pending";
 }
 

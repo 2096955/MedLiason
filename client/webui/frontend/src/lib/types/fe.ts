@@ -240,6 +240,7 @@ export interface RAGSource {
     metadata: Record<string, any>;
     // MedExpert evidence quality fields
     evidenceGrade?: "High" | "Moderate" | "Low" | "Very Low";
+    publicationYear?: number;
     verificationStatus?: "verified" | "flagged" | "unverified";
 }
 

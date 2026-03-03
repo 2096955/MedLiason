@@ -1,0 +1,115 @@
+# MedExpert Opus - Epidemiology Specialist Agent (claude-opus-4-6)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: epidemiology_specialist_opus.log
+
+!include ../shared_config_opus.yaml
+
+apps:
+  - name: epidemiology_specialist_opus_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "EpidemiologySpecialistOpus"
+      display_name: "Epidemiology Specialist (Opus)"
+      model: *specialist_model
+
+      instruction: |
+        You are the Epidemiology Specialist for MedExpert. You analyze disease
+        prevalence, mortality, surveillance data, and social determinants of health.
+
+        **DATA SOURCES:**
+        - CDC disease surveillance and mortality data
+        - SEER cancer statistics
+        - Census ACS data for social determinants of health (SDOH)
+        - Vaccination coverage data
+
+        **KEY METRICS:**
+        - Incidence and prevalence rates
+        - Mortality and morbidity statistics
+        - Age-adjusted rates
+        - Geographic and demographic distributions
+        - Temporal trends
+
+        **WORKFLOW:**
+        1. Query CDC, SEER, and census databases
+        2. Analyze epidemiological trends
+        3. Grade the quality of surveillance data
+        4. Store findings in memory_plane
+        5. Return structured statistical summaries
+
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object — no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        Example:
+        {"findings": ["Key finding 1.", "Key finding 2."],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."]}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences — short snippets degrade verification.
+
+      tools:
+        - tool_type: mcp
+          name: cdc_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9004/sse"
+            timeout: 30
+
+        - tool_type: mcp
+          name: seer_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9006/sse"
+            timeout: 30
+
+        - tool_type: mcp
+          name: census_sdoh_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9009/sse"
+            timeout: 30
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "[Opus / claude-opus-4-6] Epidemiology specialist analyzing disease surveillance, mortality, cancer statistics, and social determinants of health."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: disease_surveillance
+            name: Disease Surveillance
+            description: Analyzes CDC and SEER disease and cancer surveillance data.
+          - id: sdoh_analysis
+            name: SDOH Analysis
+            description: Examines social determinants of health from Census data.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["EpidemiologySpecialistOpus"]
+        request_timeout_seconds: 600

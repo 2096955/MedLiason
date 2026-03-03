@@ -148,10 +148,8 @@ export const AudioSettingsProvider: React.FC<{ children: React.ReactNode }> = ({
                 setSettings(prev => {
                     const updated = { ...prev };
 
-                    // First, apply speechTab settings from server (YAML defaults)
-                    // Only apply if localStorage doesn't have a user-set value
-                    Object.entries(speechTabSettings).forEach(([key, value]) => {
-                        if (value === undefined) return; // Skip undefined values
+                    // First, apply legacy TTS settings from main config (lower priority)
+                    Object.entries(ttsSettings).forEach(([key, value]) => {
                         const settingKey = key as keyof SpeechSettings;
                         const storageKey = STORAGE_KEY_MAP[settingKey];
                         if (settingKey in updated && storageKey && localStorage.getItem(storageKey) === null) {
@@ -159,8 +157,9 @@ export const AudioSettingsProvider: React.FC<{ children: React.ReactNode }> = ({
                         }
                     });
 
-                    // Then apply TTS settings from main config (these may override speechTab)
-                    Object.entries(ttsSettings).forEach(([key, value]) => {
+                    // Then apply speechTab settings from speech config (higher priority YAML defaults)
+                    Object.entries(speechTabSettings).forEach(([key, value]) => {
+                        if (value === undefined) return; // Skip undefined values
                         const settingKey = key as keyof SpeechSettings;
                         const storageKey = STORAGE_KEY_MAP[settingKey];
                         if (settingKey in updated && storageKey && localStorage.getItem(storageKey) === null) {

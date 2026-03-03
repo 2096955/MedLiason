@@ -35,7 +35,6 @@ export function ChatPage() {
     const { currentTheme } = useThemeContext();
     const { autoTitleGenerationEnabled } = useConfigContext();
     const {
-        agents,
         sessionId,
         sessionName,
         messages,
@@ -230,8 +229,8 @@ export function ChatPage() {
     }, [isTaskMonitorConnected, isTaskMonitorConnecting, taskMonitorSseError, connectTaskMonitorStream]);
 
     return (
-        <div className="relative flex h-screen w-full flex-col overflow-hidden">
-            <div className={`absolute top-0 left-0 z-20 h-screen transition-transform duration-300 ${isSessionSidePanelCollapsed ? "-translate-x-full" : "translate-x-0"}`}>
+        <div className="relative flex h-full w-full flex-col overflow-hidden">
+            <div className={`absolute top-0 left-0 z-20 h-full transition-transform duration-300 ${isSessionSidePanelCollapsed ? "-translate-x-full" : "translate-x-0"}`}>
                 <SessionSidePanel onToggle={handleSessionSidePanelToggle} />
             </div>
             <div className={`transition-all duration-300 ${isSessionSidePanelCollapsed ? "ml-0" : "ml-100"}`}>
@@ -295,7 +294,7 @@ export function ChatPage() {
                                             </ChatMessageList>
                                             <div style={CHAT_STYLES}>
                                                 {isResponding && <LoadingMessageRow statusText={(backendStatusText || latestStatusText.current) ?? undefined} onViewWorkflow={handleViewProgressClick} />}
-                                                <ChatInputArea agents={agents} scrollToBottom={chatMessageListRef.current?.scrollToBottom} />
+                                                <ChatInputArea scrollToBottom={chatMessageListRef.current?.scrollToBottom} />
                                             </div>
                                         </>
                                     )}

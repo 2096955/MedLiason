@@ -10,6 +10,7 @@ const v4 = () => uuidv4({});
 import { api, RateLimitError } from "@/lib/api";
 import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData, type TriageProgressData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
+import { resolveAgentName } from "@/lib/config/modelOptions";
 import { useProjectContext, registerProjectDeletedCallback } from "@/lib/providers";
 import { getErrorMessage, fileToBase64, migrateTask, CURRENT_SCHEMA_VERSION, getApiBearerToken, internalToDisplayText } from "@/lib/utils";
 import { ConfirmationDialog } from "@/lib/components/common/ConfirmationDialog";
@@ -1379,7 +1380,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                     break;
                                 }
                                 case "research_protocol_progress": {
-                                    // MedExpert 12-step research protocol progress tracking
+                                    // MedExpert 7-step research protocol progress tracking
                                     // Clear latestStatusText so LoadingMessageRow doesn't show duplicate status
                                     latestStatusText.current = null;
                                     // Don't return early - let the data part flow through to ChatMessage for rendering
@@ -2859,7 +2860,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                         selectedAgent = agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
                     }
                 } else {
-                    selectedAgent = agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
+                    // Respect model selector localStorage preference on refresh
+                    const persistedModel = localStorage.getItem("medexpert-model");
+                    const persistedMode = localStorage.getItem("medexpert-mode");
+                    const preferredName = (persistedModel || persistedMode)
+                        ? resolveAgentName((persistedModel || "flash") as any, (persistedMode || "research") as any)
+                        : "OrchestratorAgent";
+                    selectedAgent = agents.find(agent => agent.name === preferredName) ?? agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
                 }
             }
 

@@ -1,0 +1,100 @@
+# MedExpert Pro — shared config with ALL models on gemini-3.1-pro-preview
+# This is a standalone config that does NOT modify the original shared_config.yaml.
+#
+# IMPORTANT: gemini-3.1-pro-preview is the correct LiteLLM model ID.
+# "gemini-3.1-pro" (without the -preview suffix) does NOT resolve to a valid endpoint.
+# Requires LiteLLM >= 1.81.14 (verified: first version with this model in registry).
+# Model is PUBLIC PREVIEW (launched 2026-02-19), not GA.
+# Requires global Vertex AI endpoint (not regional like us-central1).
+
+shared_config:
+  - broker_connection: &broker_connection
+      dev_mode: ${SOLACE_DEV_MODE, true}
+      broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+      broker_username: ${SOLACE_BROKER_USERNAME, default}
+      broker_password: ${SOLACE_BROKER_PASSWORD, default}
+      broker_vpn: ${SOLACE_BROKER_VPN, default}
+      temporary_queue: ${USE_TEMPORARY_QUEUES, true}
+
+  # Vertex AI ADC — gemini-3.1-pro-preview requires global endpoint.
+  # Regional endpoints (us-central1, europe-west4, etc.) return model-not-found.
+  # See: https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-pro
+  - vertex_ai:
+    vertex_project: "gbg-neuro"
+    vertex_location: "global"
+
+  # ── All tiers pinned to gemini-3.1-pro-preview for evaluation ──
+  # vertex_project and vertex_location are passed as kwargs to litellm.acompletion(),
+  # overriding the VERTEXAI_LOCATION env var. This is required because the env var
+  # defaults to us-central1 (for standard agents) but Pro needs the global endpoint.
+  - models:
+    orchestrator: &orchestrator_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      temperature: 0.2
+      max_tokens: 16000
+      parallel_tool_calls: true
+      cache_strategy: "none"
+
+    specialist: &specialist_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      temperature: 0.3
+      max_tokens: 12000
+      cache_strategy: "none"
+
+    advisory: &advisory_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      temperature: 0.7
+      max_tokens: 12000
+      cache_strategy: "none"
+
+    verifier: &verifier_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      temperature: 0.1
+      max_tokens: 8000
+      cache_strategy: "none"
+
+    reviser: &reviser_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      temperature: 0.3
+      max_tokens: 12000
+      cache_strategy: "none"
+
+    general: &general_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      cache_strategy: "none"
+
+    planning: &planning_model
+      model: "vertex_ai/gemini-3.1-pro-preview"
+      vertex_project: "gbg-neuro"
+      vertex_location: "global"
+      parallel_tool_calls: true
+      max_tokens: ${MAX_TOKENS, 16000}
+      temperature: 0.1
+      cache_strategy: "none"
+
+  - services:
+    session_service: &default_session_service
+      type: "memory"
+
+    artifact_service: &default_artifact_service
+      type: "filesystem"
+      base_path: "/tmp/medexpert-pro"
+      artifact_scope: namespace
+
+    data_tools_config: &default_data_tools_config
+      data_tools_enabled: true
+      sqlite_memory_threshold_mb: 100
+      max_result_preview_rows: 50
+      max_result_preview_bytes: 4096

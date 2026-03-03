@@ -12,6 +12,7 @@ URL construction rules:
   explicit URL → used as-is
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -214,6 +215,7 @@ class SourceCollectorTool(DynamicTool):
                     "evidence_grade": src.get("evidence_grade")
                         or _DEFAULT_GRADES.get(src.get("source_type", ""), ""),
                     "study_type": src.get("study_type", ""),
+                    "publication_year": src.get("publication_year"),
                 },
             )
             rag_sources.append(rag_source)
@@ -231,6 +233,19 @@ class SourceCollectorTool(DynamicTool):
             len(rag_sources),
             query[:80],
         )
+
+        # Build citation map in the EXACT format claim_verifier expects.
+        # This is programmatic — the orchestrator stores it verbatim in
+        # memory_plane for the verifier to retrieve and pass directly.
+        citation_map = []
+        for i, src in enumerate(sources):
+            citation_map.append({
+                "id": f"s0r{i}",
+                "title": src.get("title", ""),
+                "snippet": src.get("snippet", ""),
+                "url": _build_url(src),
+            })
+        citation_map_json = json.dumps(citation_map)
 
         # Build formatted results for the LLM
         lines = [f"=== PUBLISHED SOURCES ({len(rag_sources)} references) ==="]
@@ -258,4 +273,5 @@ class SourceCollectorTool(DynamicTool):
             "rag_metadata": rag_metadata,
             "valid_citation_ids": valid_citation_ids,
             "num_sources": len(rag_sources),
+            "citation_map_json": citation_map_json,
         }

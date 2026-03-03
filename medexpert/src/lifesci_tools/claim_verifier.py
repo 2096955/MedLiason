@@ -120,6 +120,7 @@ async def _llm_entailment(
     model: str,
     temperature: float,
     session_id: str,
+    vertex_kwargs: dict | None = None,
 ) -> dict:
     """Call LLM to classify entailment.
 
@@ -135,6 +136,7 @@ async def _llm_entailment(
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
         max_tokens=256,
+        **(vertex_kwargs or {}),
     )
     content = response.choices[0].message.content.strip()
 
@@ -204,7 +206,16 @@ class ClaimVerifierTool(DynamicTool):
     def __init__(self, tool_config: Optional[dict] = None, **kwargs):
         super().__init__(tool_config=tool_config, **kwargs)
         cfg = tool_config or {}
-        self.model: str = cfg.get("model", "openai/gemini-2.5-flash-001")
+        # YAML anchor *specialist_model expands to a dict; extract model string + vertex kwargs
+        raw_model = cfg.get("model", "openai/gemini-2.5-flash-001")
+        if isinstance(raw_model, dict):
+            self.model: str = raw_model.get("model", "openai/gemini-2.5-flash-001")
+            self._vertex_kwargs: dict = {
+                k: raw_model[k] for k in ("vertex_project", "vertex_location") if k in raw_model
+            }
+        else:
+            self.model = raw_model
+            self._vertex_kwargs = {}
         self.temperature: float = float(cfg.get("temperature", 0.0))
         # Explicit bool coercion: YAML string "false" must map to False
         raw_llm = cfg.get("use_llm", True)
@@ -282,6 +293,28 @@ class ClaimVerifierTool(DynamicTool):
         # Extract claims
         extracted_claims = _extract_claims_with_citations(response_text)
 
+        # Defense-in-depth: if citation map is empty but claims exist,
+        # return a neutral score instead of failing all claims at 0.0.
+        # This prevents the all-or-nothing failure mode when the verifier
+        # LLM fails to reconstruct or pass the citation map.
+        if not citation_map and extracted_claims:
+            logger.warning(
+                "[claim_verifier] Empty citation map with %d claims — "
+                "returning neutral score (verification skipped)",
+                len(extracted_claims),
+            )
+            return {
+                "overall_score": 0.5,
+                "verified_claims": [],
+                "unsupported_claims": [],
+                "method": "skipped",
+                "reason": "Citation map was empty — verification could not be performed. "
+                          "This is likely a pipeline issue, not evidence of fabrication.",
+                "total_claims": len(extracted_claims),
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+            }
+
         verified_claims: list[dict] = []
         unsupported_claims: list[str] = []
         total_score = 0.0
@@ -321,6 +354,7 @@ class ClaimVerifierTool(DynamicTool):
                             model=self.model,
                             temperature=self.temperature,
                             session_id=session_id,
+                            vertex_kwargs=self._vertex_kwargs,
                         )
                         entailment_label = ent_result["entailment"]  # already normalised
                         confidence = float(ent_result.get("confidence", 0.5))
@@ -372,6 +406,7 @@ class ClaimVerifierTool(DynamicTool):
                                     model=self.fallback_model,
                                     temperature=self.temperature,
                                     session_id=session_id,
+                                    vertex_kwargs=self._vertex_kwargs,
                                 )
                                 entailment_label = ent_result["entailment"]
                                 confidence = float(ent_result.get("confidence", 0.5))

@@ -7,8 +7,8 @@ import { Ban, Paperclip, Send, Quote, X, Timer } from "lucide-react";
 import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/lib/components/ui";
 import { MessageBanner } from "@/lib/components/common";
 import { MentionContentEditable } from "@/lib/components/ui/chat/MentionContentEditable";
-import { useChatContext, useDragAndDrop, useAgentSelection, useAudioSettings, useConfigContext } from "@/lib/hooks";
-import type { AgentCardInfo, Person } from "@/lib/types";
+import { useChatContext, useDragAndDrop, useAudioSettings, useConfigContext, useModelSelection } from "@/lib/hooks";
+import type { Person } from "@/lib/types";
 import type { PromptGroup } from "@/lib/types/prompts";
 import { detectVariables } from "@/lib/utils/promptUtils";
 import { detectMentionTrigger, insertMention, buildMessageFromDOM } from "@/lib/utils/mentionUtils";
@@ -50,11 +50,11 @@ const createEnhancedMessage = (command: ChatCommand, conversationContext?: strin
     }
 };
 
-export const ChatInputArea: React.FC<{ agents: AgentCardInfo[]; scrollToBottom?: () => void }> = ({ agents = [], scrollToBottom }) => {
+export const ChatInputArea: React.FC<{ scrollToBottom?: () => void }> = ({ scrollToBottom }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { isResponding, isCancelling, selectedAgentName, sessionId, setSessionId, handleSubmit, handleCancel, uploadArtifactFile, displayError, artifacts, messages, startNewChatWithPrompt, pendingPrompt, clearPendingPrompt } = useChatContext();
-    const { handleAgentSelection } = useAgentSelection();
+    const { selectedModel, selectedMode, isAgentAvailable, handleModelChange, handleModeChange, modelOptions, modeOptions } = useModelSelection();
     const { settings } = useAudioSettings();
     const { configFeatureEnablement } = useConfigContext();
 
@@ -336,7 +336,7 @@ export const ChatInputArea: React.FC<{ agents: AgentCardInfo[]; scrollToBottom?:
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
-    const isSubmittingEnabled = useMemo(() => !isResponding && (inputValue?.trim() || selectedFiles.length !== 0 || pendingPastedTextItems.length !== 0), [isResponding, inputValue, selectedFiles, pendingPastedTextItems]);
+    const isSubmittingEnabled = useMemo(() => !isResponding && isAgentAvailable && (inputValue?.trim() || selectedFiles.length !== 0 || pendingPastedTextItems.length !== 0), [isResponding, isAgentAvailable, inputValue, selectedFiles, pendingPastedTextItems]);
 
     const onSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -978,27 +978,35 @@ export const ChatInputArea: React.FC<{ agents: AgentCardInfo[]; scrollToBottom?:
                     <Paperclip className="size-4" />
                 </Button>
 
-                <div>Agent: </div>
-                <Select
-                    value={selectedAgentName}
-                    onValueChange={agentName => {
-                        handleAgentSelection(agentName);
-                    }}
-                    disabled={isResponding || agents.length === 0}
-                >
-                    <SelectTrigger className="w-[250px]">
-                        <SelectValue placeholder="Select an agent..." />
+                <span className="text-muted-foreground hidden shrink-0 text-xs md:inline">Model</span>
+                <Select value={selectedModel} onValueChange={handleModelChange} disabled={isResponding}>
+                    <SelectTrigger className="min-w-0 w-[100px] shrink md:w-[180px]" aria-label="Select AI model">
+                        <SelectValue placeholder="Model..." />
                     </SelectTrigger>
                     <SelectContent>
-                        {agents
-                            .filter(agent => !agent.isWorkflow)
-                            .map(agent => (
-                                <SelectItem key={agent.name} value={agent.name}>
-                                    {agent.displayName || agent.name}
-                                </SelectItem>
-                            ))}
+                        {modelOptions.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.shortLabel}</SelectItem>
+                        ))}
                     </SelectContent>
                 </Select>
+
+                <span className="text-muted-foreground hidden shrink-0 text-xs md:inline">Mode</span>
+                <Select value={selectedMode} onValueChange={handleModeChange} disabled={isResponding}>
+                    <SelectTrigger className="min-w-0 w-[100px] shrink md:w-[160px]" aria-label="Select mode">
+                        <SelectValue placeholder="Mode..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {modeOptions.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.shortLabel}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <div aria-live="polite" className="invisible w-0 md:visible md:w-auto md:min-w-[110px]">
+                    {!isAgentAvailable && !isResponding && (
+                        <span className="text-muted-foreground flex items-center gap-1.5 text-xs">Connecting...</span>
+                    )}
+                </div>
 
                 {/* Spacer to push buttons to the right */}
                 <div className="flex-1" />

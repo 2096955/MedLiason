@@ -626,15 +626,15 @@ const getChatBubble = (
         return <AuthenticationMessage message={message} />;
     }
 
-    // Check for research progress data (deep research or 12-step protocol)
+    // Check for research progress data (deep research or 7-step protocol)
     const progressPart = message.parts?.find(p => p.kind === "data") as DataPart | undefined;
     const progressType = progressPart?.data ? (progressPart.data as { type?: string }).type : undefined;
     const hasDeepResearchProgress = progressType === "deep_research_progress";
     const hasProtocolProgress = progressType === "research_protocol_progress";
 
-    // Show 12-step protocol progress stepper.
+    // Show 7-step protocol progress stepper.
     // DEV: To test, inject mock data: { type: "research_protocol_progress", step: 3,
-    //   step_name: "COLLECT", total_steps: 12, detail: "Gathering from 3 specialists",
+    //   step_name: "COLLECT", total_steps: 7, detail: "Gathering from 3 specialists",
     //   coverage_pct: null, gvr_cycle: 0, verification_verdict: null }
     // as a DataPart in a status_update SSE event. See ResearchProtocolStepper.tsx for full type.
     if (hasProtocolProgress && !message.isComplete) {

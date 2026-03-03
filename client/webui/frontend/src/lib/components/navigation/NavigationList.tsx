@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Settings, LogOut, User } from "lucide-react";
 
 import { NavigationButton } from "@/lib/components/navigation";
@@ -25,10 +25,17 @@ export const NavigationList: React.FC<NavigationListProps> = ({ items, bottomIte
     const { userInfo, logout } = useAuthContext();
     const userName = typeof userInfo?.username === "string" ? userInfo.username : "Guest";
 
-    const handleSettingsClick = () => {
+    const handleSettingsClick = useCallback(() => {
         setMenuOpen(false);
         setSettingsDialogOpen(true);
-    };
+    }, []);
+
+    // Listen for mobile bottom nav "Settings" tap (dispatches custom event from AppLayout)
+    useEffect(() => {
+        const handler = () => handleSettingsClick();
+        window.addEventListener("open-settings-dialog", handler);
+        return () => window.removeEventListener("open-settings-dialog", handler);
+    }, [handleSettingsClick]);
     const handleLogoutClick = async () => {
         setMenuOpen(false);
         await logout();

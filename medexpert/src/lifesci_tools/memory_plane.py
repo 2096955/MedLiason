@@ -27,17 +27,17 @@ NAMESPACES = ("citations", "evidence", "intermediate", "learning", "verification
 # This emits ResearchProtocolProgressData without depending on LLM output.
 _STEP_MAP = {
     "seed_session": (0, "SEED", "Loading learned strategies from past sessions"),
-    "flush_cold": (11, "PERSIST", "Saving session signals to cold store"),
+    "flush_cold": (6, "PERSIST", "Saving session signals to cold store"),
 }
 _KEY_STEP_MAP = {
     # store/append operations with these keys signal specific steps
     ("intermediate", "specialists_used"): (3, "COLLECT", "Gathering evidence from specialists"),
     ("intermediate", "query_domain"): (3, "COLLECT", "Gathering evidence from specialists"),
-    ("intermediate", "coverage_pct"): (6, "VALIDATE", "Checking research completeness"),
-    ("verification", "verification_verdict"): (9, "VERIFY", "Verifying claims against sources"),
-    ("verification", "verification_score"): (9, "VERIFY", "Verifying claims against sources"),
-    ("intermediate", "revision_triggered"): (10, "REVISE", "Revising flagged claims"),
-    ("verification", "re_verification_verdict"): (10, "REVISE", "Re-verifying revised report"),
+    ("intermediate", "coverage_pct"): (3, "COLLECT", "Checking research completeness"),
+    ("verification", "verification_verdict"): (5, "VERIFY", "Verifying claims against sources"),
+    ("verification", "verification_score"): (5, "VERIFY", "Verifying claims against sources"),
+    ("intermediate", "revision_triggered"): (5, "VERIFY", "Revising flagged claims"),
+    ("verification", "re_verification_verdict"): (5, "VERIFY", "Re-verifying revised report"),
 }
 
 
@@ -279,7 +279,7 @@ class MemoryPlaneTool(DynamicTool):
             progress = ResearchProtocolProgressData(
                 step=step,
                 step_name=step_name,
-                total_steps=12,
+                total_steps=7,
                 detail=detail,
                 coverage_pct=coverage_pct,
                 gvr_cycle=0,
