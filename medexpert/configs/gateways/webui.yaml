@@ -82,6 +82,7 @@ apps:
         auto_title_generation: true
         speechToText: true
         textToSpeech: true
+        knowledgeGraph: true
 
       # ── Speech Configuration ───────────────────────────────────
       # TTS: Gemini via Vertex AI ADC (service account key at

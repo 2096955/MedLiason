@@ -69,7 +69,10 @@ class TestSearchBmaGuidelines:
             patch("mcp_servers.bma_library.server.firecrawl_search", new_callable=AsyncMock, side_effect=FirecrawlCircuitOpenError("open")),
         ):
             resp = await search_bma_guidelines("test")
-        assert "circuit breaker" in resp["error"].lower()
+        assert resp["success"] is False
+        assert resp["error_category"] == "circuit_open"
+        assert resp["is_retryable"] is True
+        assert resp["results"] == []
 
     async def test_cache_hit(self):
         results = [{"title": "Cached", "url": "https://bma.org.uk/1", "markdown": "x"}]

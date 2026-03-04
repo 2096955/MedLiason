@@ -21,11 +21,13 @@ import type {
     FileAttachment,
     FilePart,
     JSONRPCErrorResponse,
+    MCPFailure,
     Message,
     MessageFE,
     Notification,
     Part,
     PartFE,
+    PipelineErrorData,
     SendStreamingMessageRequest,
     SendStreamingMessageSuccessResponse,
     Session,
@@ -74,6 +76,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         }
     });
     const triageAutoOpenedRef = useRef<boolean>(false);
+
+    // Pipeline Error State
+    const [pipelineErrors, setPipelineErrors] = useState<PipelineErrorData | null>(null);
 
     // Triage pipeline timeout (120s) — show warning if pipeline stalls
     const triageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1456,6 +1461,40 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                             }
                                         }
                                     }
+
+                                    // Extract pipeline error metadata from tool results
+                                    if (resultData && typeof resultData === "object") {
+                                        // publish_sources returns aggregate_status and mcp_failures
+                                        const aggStatus = (resultData as any).aggregate_status;
+                                        if (aggStatus && aggStatus !== "all_retrieved") {
+                                            const failures: MCPFailure[] = Array.isArray((resultData as any).mcp_failures)
+                                                ? (resultData as any).mcp_failures
+                                                : [];
+                                            const crossRefWarnings: string[] = Array.isArray((resultData as any).cross_reference_warnings)
+                                                ? (resultData as any).cross_reference_warnings
+                                                : [];
+                                            setPipelineErrors(prev => ({
+                                                aggregate_status: aggStatus,
+                                                mcp_failures: [...(prev?.mcp_failures || []), ...failures],
+                                                cross_reference_warnings: [...(prev?.cross_reference_warnings || []), ...crossRefWarnings],
+                                                verification_status: prev?.verification_status,
+                                                pipeline_error: prev?.pipeline_error,
+                                            }));
+                                        }
+
+                                        // claim_verifier returns verification_status: "skipped"
+                                        const verStatus = (resultData as any).verification_status;
+                                        if (verStatus === "skipped") {
+                                            setPipelineErrors(prev => ({
+                                                aggregate_status: prev?.aggregate_status,
+                                                mcp_failures: prev?.mcp_failures || [],
+                                                cross_reference_warnings: prev?.cross_reference_warnings || [],
+                                                verification_status: "skipped",
+                                                pipeline_error: (resultData as any).pipeline_error || prev?.pipeline_error,
+                                            }));
+                                        }
+                                    }
+
                                     // Don't add tool_result to content parts - it's metadata only
                                     break;
                                 }
@@ -1894,6 +1933,8 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             setTriageProgress(null);
             triageAutoOpenedRef.current = false;
             sessionStorage.removeItem("triageProgress");
+            // Clear pipeline errors on new session
+            setPipelineErrors(null);
             // Clear deep research query history
             deepResearchQueryHistoryRef.current.clear();
             // Artifacts will be automatically refreshed by useArtifacts hook when sessionId changes
@@ -2038,6 +2079,8 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 setTriageProgress(null);
                 triageAutoOpenedRef.current = false;
                 sessionStorage.removeItem("triageProgress");
+                // Clear pipeline errors when switching sessions
+                setPipelineErrors(null);
                 // Clear deep research query history when switching sessions
                 deepResearchQueryHistoryRef.current.clear();
 
@@ -3096,6 +3139,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         /** Triage */
         triageProgress,
         setTriageProgress,
+
+        /** Pipeline Errors */
+        pipelineErrors,
+        setPipelineErrors,
 
         /** Background Task Monitoring */
         backgroundTasks,

@@ -81,6 +81,7 @@ MCP_SERVERS=(
   "mcp_servers.environmental.server:9008"
   "mcp_servers.census_sdoh.server:9009"
   "mcp_servers.provider_intel.server:9010"
+  "mcp_servers.knowledge_graph.server:9011"
   "mcp_servers.nhs_111.server:9016"
   "mcp_servers.bma_library.server:9017"
   "mcp_servers.openevidence.server:9018"

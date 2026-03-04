@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#015B82" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>MedExpert</title>
+    <style>
+        body { margin: 0; background: #015B82; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .loading { color: white; font-family: system-ui; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <p>Loading MedExpert...</p>
+    </div>
+    <script>
+        // Mode B: redirect to bundled www/ assets
+        // In Mode A (server.url set), this page is never loaded
+        window.location.href = "/index.html";
+    </script>
+</body>
+</html>

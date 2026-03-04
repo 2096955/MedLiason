@@ -21,6 +21,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import type { PipelineErrorData } from "@/lib/types";
 
 export interface ResearchProtocolProgressData {
   type: "research_protocol_progress";
@@ -36,6 +37,7 @@ export interface ResearchProtocolProgressData {
 interface ResearchProtocolStepperProps {
   progress: ResearchProtocolProgressData;
   isComplete?: boolean;
+  pipelineErrors?: PipelineErrorData | null;
 }
 
 interface StepInfo {
@@ -55,16 +57,25 @@ const PROTOCOL_STEPS: StepInfo[] = [
   { step: 6, name: "PERSIST", label: "Saving results", icon: Database },
 ];
 
-type StepStatus = "pending" | "active" | "complete" | "skipped" | "error";
+type StepStatus = "pending" | "active" | "complete" | "skipped" | "error" | "warning";
 
 function getStepStatus(
   stepIndex: number,
   currentStep: number,
   isComplete: boolean,
-  _verdict?: string | null
+  _verdict?: string | null,
+  pipelineErrors?: PipelineErrorData | null
 ): StepStatus {
-  if (isComplete) return "complete";
-  if (stepIndex < currentStep) return "complete";
+  // Helper: check pipeline errors for specific steps
+  const collectHasError = stepIndex === 3 && pipelineErrors?.aggregate_status === "all_failed";
+  const collectHasWarning = stepIndex === 3 && pipelineErrors?.aggregate_status === "partial";
+  const verifySkipped = stepIndex === 5 && pipelineErrors?.verification_status === "skipped";
+
+  if (isComplete || stepIndex < currentStep) {
+    if (collectHasError) return "error";
+    if (collectHasWarning || verifySkipped) return "warning";
+    if (stepIndex < currentStep || isComplete) return "complete";
+  }
   if (stepIndex === currentStep) return "active";
   return "pending";
 }
@@ -93,13 +104,19 @@ const statusStyles: Record<StepStatus, { dot: string; text: string; line: string
   error: {
     dot: "bg-red-500",
     text: "text-red-600 dark:text-red-400",
-    line: "bg-red-300",
+    line: "bg-red-300 dark:bg-red-700",
+  },
+  warning: {
+    dot: "bg-amber-500",
+    text: "text-amber-600 dark:text-amber-400",
+    line: "bg-amber-300 dark:bg-amber-600",
   },
 };
 
 export function ResearchProtocolStepper({
   progress,
   isComplete = false,
+  pipelineErrors,
 }: ResearchProtocolStepperProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -112,6 +129,8 @@ export function ResearchProtocolStepper({
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        aria-label="Toggle research protocol steps"
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -130,7 +149,14 @@ export function ResearchProtocolStepper({
               {Math.round(progress.coverage_pct * 100)}% coverage
             </span>
           )}
-          {progress.verification_verdict && (
+          {pipelineErrors?.verification_status === "skipped" ? (
+            <span
+              className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+              title={`Pipeline issue: ${pipelineErrors?.pipeline_error || "verification skipped"}`}
+            >
+              Skipped
+            </span>
+          ) : progress.verification_verdict ? (
             <span
               className={`text-xs px-1.5 py-0.5 rounded ${
                 progress.verification_verdict === "PASS"
@@ -146,7 +172,7 @@ export function ResearchProtocolStepper({
                   ? "Minor issues"
                   : "Revising..."}
             </span>
-          )}
+          ) : null}
           {expanded ? (
             <ChevronUp className="w-4 h-4 text-gray-400" />
           ) : (
@@ -171,7 +197,8 @@ export function ResearchProtocolStepper({
               idx,
               progress.step,
               isComplete,
-              progress.verification_verdict
+              progress.verification_verdict,
+              pipelineErrors
             );
             const styles = statusStyles[status];
             const Icon = stepInfo.icon;
@@ -191,6 +218,8 @@ export function ResearchProtocolStepper({
                     <CheckCircle className="w-[18px] h-[18px] text-green-500" />
                   ) : status === "error" ? (
                     <AlertTriangle className="w-[18px] h-[18px] text-red-500" />
+                  ) : status === "warning" ? (
+                    <AlertTriangle className="w-[18px] h-[18px] text-amber-500" />
                   ) : (
                     <div className={`w-[18px] h-[18px] rounded-full ${styles.dot} flex items-center justify-center`}>
                       {isActive && <Icon className="w-2.5 h-2.5 text-white" />}
@@ -209,6 +238,24 @@ export function ResearchProtocolStepper({
                     <span className="text-xs text-gray-500 ml-1">
                       ({Math.round(progress.coverage_pct * 100)}%)
                     </span>
+                  )}
+                  {/* MCP failure detail for step 3 (COLLECT) */}
+                  {idx === 3 && (status === "error" || status === "warning") &&
+                    pipelineErrors?.mcp_failures && pipelineErrors.mcp_failures.length > 0 && (
+                    <div className="mt-1 text-xs space-y-0.5">
+                      <span className="font-medium text-amber-600 dark:text-amber-400">
+                        {pipelineErrors.aggregate_status === "all_failed"
+                          ? "All sources failed"
+                          : `${pipelineErrors.mcp_failures.length} source(s) unavailable`}
+                      </span>
+                      {pipelineErrors.mcp_failures.map((f, i) => (
+                        <div key={i} className="flex items-center gap-1 pl-2 text-muted-foreground">
+                          <span className="h-1 w-1 rounded-full bg-amber-500 flex-shrink-0" />
+                          <span>{f.server}: {f.error_category.replace(/_/g, " ")}</span>
+                          {f.is_retryable && <span className="opacity-60">(retryable)</span>}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>

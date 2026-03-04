@@ -14,8 +14,9 @@ URL construction rules:
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from google.adk.tools import ToolContext
 from google.genai import types as adk_types
@@ -59,6 +60,76 @@ def _source_label(source: Dict[str, Any]) -> str:
         return url
 
 
+# ── Inline source reference extraction ────────────────────────────────
+
+# Matches [[pmid:XXXX]], [[nct:NCTXXXX]], [[doi:XXXX]], [[url:XXXX]]
+_INLINE_REF_PATTERN = re.compile(r"\[\[(pmid|nct|doi|url):([^\]]+)\]\]")
+
+# Map from inline ref type to the source dict key that holds the ID
+_REF_TYPE_TO_SOURCE_KEY = {
+    "pmid": "pmid",
+    "nct": "nct_id",
+    "doi": "doi",
+    "url": "url",
+}
+
+
+def _extract_inline_refs(findings: List[str]) -> Set[Tuple[str, str]]:
+    """Extract all inline source references from findings strings.
+
+    Returns a set of (ref_type, ref_value) tuples, e.g.
+    {("pmid", "38901234"), ("nct", "NCT06123456")}.
+    """
+    refs: Set[Tuple[str, str]] = set()
+    for finding in findings:
+        if not isinstance(finding, str):
+            continue
+        for match in _INLINE_REF_PATTERN.finditer(finding):
+            refs.add((match.group(1).lower(), match.group(2).strip()))
+    return refs
+
+
+def _build_source_id_set(sources: List[Dict[str, Any]]) -> Set[Tuple[str, str]]:
+    """Build a set of (ref_type, id_value) from the sources array.
+
+    This enables O(1) lookup when cross-referencing inline refs.
+    """
+    ids: Set[Tuple[str, str]] = set()
+    for src in sources:
+        for ref_type, src_key in _REF_TYPE_TO_SOURCE_KEY.items():
+            value = src.get(src_key)
+            if value:
+                ids.add((ref_type, str(value).strip()))
+    return ids
+
+
+def cross_reference_findings(
+    findings: List[str],
+    sources: List[Dict[str, Any]],
+) -> List[str]:
+    """Cross-reference inline source refs in findings against sources array.
+
+    Returns a list of warning strings for any unmatched references.
+    Best-effort: returns empty list if no findings or no refs found.
+    """
+    if not findings:
+        return []
+
+    inline_refs = _extract_inline_refs(findings)
+    if not inline_refs:
+        return []
+
+    source_ids = _build_source_id_set(sources)
+    warnings = []
+    for ref_type, ref_value in sorted(inline_refs):
+        if (ref_type, ref_value) not in source_ids:
+            warnings.append(
+                f"Inline reference [[{ref_type}:{ref_value}]] in findings "
+                f"has no matching source in the sources array"
+            )
+    return warnings
+
+
 class SourceCollectorTool(DynamicTool):
     """Publishes structured references as RAG citations visible in the UI."""
 
@@ -73,7 +144,11 @@ class SourceCollectorTool(DynamicTool):
             "in the Sources sidebar. Call this AFTER collecting specialist results. "
             "Provide a list of sources — each with a title, snippet, and at least "
             "one identifier (pmid, nct_id, doi) or a url. Returns citation IDs "
-            "you MUST use in your answer with [[cite:...]] markers."
+            "you MUST use in your answer with [[cite:...]] markers.\n\n"
+            "Returns citation_map_json — the orchestrator MUST store this verbatim "
+            "in memory_plane(namespace='evidence', key='citation_map_json') for the "
+            "verifier to use. Without this step, claim verification will be skipped "
+            "and return a neutral 0.5 score."
         )
 
     @property
@@ -146,6 +221,44 @@ class SourceCollectorTool(DynamicTool):
                         required=["title", "snippet"],
                     ),
                 ),
+                "mcp_failures": adk_types.Schema(
+                    type=adk_types.Type.ARRAY,
+                    description=(
+                        "Optional list of MCP server failures from specialist responses. "
+                        "Each entry: {server, error_category, is_retryable}."
+                    ),
+                    items=adk_types.Schema(
+                        type=adk_types.Type.OBJECT,
+                        properties={
+                            "server": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="Name of the failed MCP server.",
+                            ),
+                            "error_category": adk_types.Schema(
+                                type=adk_types.Type.STRING,
+                                description="Error category: rate_limited, service_unavailable, circuit_open, auth_error, not_found.",
+                            ),
+                            "is_retryable": adk_types.Schema(
+                                type=adk_types.Type.BOOLEAN,
+                                description="Whether the failure is transient and retryable.",
+                            ),
+                        },
+                    ),
+                ),
+                "findings": adk_types.Schema(
+                    type=adk_types.Type.ARRAY,
+                    description=(
+                        "Optional list of finding strings from specialist responses. "
+                        "When provided, inline source references ([[pmid:XXXX]], "
+                        "[[nct:NCTXXXX]], [[doi:XXXX]], [[url:XXXX]]) are extracted "
+                        "and cross-referenced against the sources array. Unmatched "
+                        "references are reported in cross_reference_warnings."
+                    ),
+                    items=adk_types.Schema(
+                        type=adk_types.Type.STRING,
+                        description="A finding string, potentially containing inline source references.",
+                    ),
+                ),
             },
             required=["query", "sources"],
         )
@@ -161,8 +274,25 @@ class SourceCollectorTool(DynamicTool):
         sources = args.get("sources") or []
 
         if not sources:
+            mcp_failures = args.get("mcp_failures", [])
+            if mcp_failures:
+                logger.warning(
+                    "%s All sources failed — %d MCP failures reported",
+                    log_id,
+                    len(mcp_failures),
+                )
+                return {
+                    "status": "all_sources_failed",
+                    "mcp_failures": mcp_failures,
+                    "valid_citation_ids": [],
+                    "aggregate_status": "all_failed",
+                }
             logger.warning("%s Called with empty sources list", log_id)
-            return {"status": "no_sources", "valid_citation_ids": []}
+            return {
+                "status": "no_sources",
+                "valid_citation_ids": [],
+                "aggregate_status": "no_evidence",
+            }
 
         # Default evidence grade mapping by source type when not explicitly provided.
         # This ensures citations always have a grade badge in the UI.
@@ -186,6 +316,14 @@ class SourceCollectorTool(DynamicTool):
         for i, src in enumerate(sources):
             citation_id = f"s0r{i}"
             valid_citation_ids.append(citation_id)
+
+            if not src.get("publication_year"):
+                logger.warning(
+                    "%s Source '%s' missing publication_year",
+                    log_id,
+                    src.get("title", "unknown"),
+                )
+
             url = _build_url(src)
             domain = _source_label(src)
 
@@ -267,6 +405,22 @@ class SourceCollectorTool(DynamicTool):
             lines.append("")
         lines.append("=== END PUBLISHED SOURCES ===")
 
+        # Determine aggregate status based on MCP failures
+        mcp_failures = args.get("mcp_failures", [])
+        if mcp_failures:
+            aggregate_status = "partial"
+        else:
+            aggregate_status = "all_retrieved"
+
+        # Cross-reference inline source refs in findings against sources.
+        # Best-effort: only runs when findings are provided.
+        cross_ref_warnings: List[str] = []
+        findings = args.get("findings")
+        if findings and isinstance(findings, list):
+            cross_ref_warnings = cross_reference_findings(findings, sources)
+            for warning in cross_ref_warnings:
+                logger.warning("%s %s", log_id, warning)
+
         return {
             "status": "published",
             "formatted_results": "\n".join(lines),
@@ -274,4 +428,6 @@ class SourceCollectorTool(DynamicTool):
             "valid_citation_ids": valid_citation_ids,
             "num_sources": len(rag_sources),
             "citation_map_json": citation_map_json,
+            "aggregate_status": aggregate_status,
+            "cross_reference_warnings": cross_ref_warnings,
         }

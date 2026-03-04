@@ -134,11 +134,87 @@ class CircuitOpenError(Exception):
 
     def __init__(self, url: str):
         self.url = url
+        self.error_category = "circuit_open"
+        self.is_retryable = True
+        self.retry_after_seconds = _circuit_breaker.recovery_timeout
         super().__init__(f"Circuit breaker OPEN for {url}")
 
 
 # Module-level singleton
 _circuit_breaker = CircuitBreaker()
+
+
+# ---------------------------------------------------------------------------
+# Status-to-category mapping
+# ---------------------------------------------------------------------------
+
+
+def _status_to_category(status_code: int) -> str:
+    """Map an HTTP status code to a human-readable error category."""
+    if status_code == 429:
+        return "rate_limited"
+    if status_code in (500, 502, 503, 504):
+        return "service_unavailable"
+    if status_code == 404:
+        return "not_found"
+    if status_code in (401, 403):
+        return "auth_error"
+    if status_code == 0:
+        return "network_error"
+    return "api_error"
+
+
+# ---------------------------------------------------------------------------
+# Structured error response builder
+# ---------------------------------------------------------------------------
+
+
+def structured_error_response(
+    exc: Exception,
+    server_name: str,
+    tool_name: str,
+) -> dict:
+    """Build a structured error dict from an exception.
+
+    Returns a dict with at least: ``success``, ``error``, ``error_category``,
+    ``is_retryable``, ``server``, ``tool``.  Additional keys depend on the
+    exception type (e.g. ``retry_after_seconds``, ``last_status``, ``attempts``).
+    """
+    base = {
+        "success": False,
+        "server": server_name,
+        "tool": tool_name,
+    }
+
+    if isinstance(exc, CircuitOpenError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+        })
+    elif isinstance(exc, RetryExhaustedError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "last_status": exc.last_status,
+            "attempts": exc.attempts,
+        })
+    elif isinstance(exc, httpx.HTTPError):
+        base.update({
+            "error": str(exc),
+            "error_category": "network_error",
+            "is_retryable": True,
+        })
+    else:
+        base.update({
+            "error": str(exc),
+            "error_category": "api_error",
+            "is_retryable": False,
+        })
+
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +229,8 @@ class RetryExhaustedError(Exception):
         self.url = url
         self.last_status = last_status
         self.attempts = attempts
+        self.error_category = _status_to_category(last_status)
+        self.is_retryable = last_status in RETRYABLE_STATUS_CODES
         super().__init__(
             f"All {attempts} retries exhausted for {url} (last status: {last_status})"
         )

@@ -52,7 +52,10 @@ class CompletenessCheckerTool(DynamicTool):
         return (
             "Checks whether collected evidence fully covers all sub-questions from "
             "the decomposition plan. Returns coverage percentage, answered questions, "
-            "gaps, and suggestions for filling those gaps."
+            "gaps, and suggestions for filling those gaps.\n\n"
+            "Returns proceed=true when structural_coverage >= 0.70 AND "
+            "quality_coverage >= 0.40. If proceed=false, one targeted follow-up "
+            "delegation is recommended before synthesis."
         )
 
     @property
@@ -157,11 +160,26 @@ class CompletenessCheckerTool(DynamicTool):
                 if best_domain_matched:
                     domain_match_count += 1
             else:
+                # Determine failure type from evidence metadata.
+                # If collected evidence for this sub-question's domain contains
+                # execution_status="failed" or mcp_failures, it's an MCP error,
+                # not a lack of evidence.
+                failure_type = "no_evidence"  # default
+                for ev in evidence:
+                    ev_domain = ev.get("domain", "")
+                    if ev_domain and sq_domain and ev_domain.lower() == sq_domain.lower():
+                        exec_status = ev.get("execution_status", "success")
+                        ev_failures = ev.get("mcp_failures", [])
+                        if exec_status in ("failed", "partial") or ev_failures:
+                            failure_type = "mcp_error"
+                            break
+
                 gaps.append({
                     "question": sq["question"],
                     "domain": sq_domain,
                     "target_agent": sq.get("target_agent", ""),
                     "priority": sq.get("priority", 99),
+                    "failure_type": failure_type,
                 })
 
         total = len(sub_questions)

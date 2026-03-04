@@ -273,3 +273,56 @@ export interface RAGSearchResultEvent {
         };
     };
 }
+
+// Knowledge Graph Types
+
+export interface GraphNode {
+    id: string;
+    labels: string[];
+    name: string;
+    description?: string;
+    properties: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+    id: string;
+    source: string;
+    target: string;
+    label: string;
+}
+
+export interface SessionGraph {
+    session_id: string;
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+    total_nodes: number;
+    total_edges: number;
+}
+
+export interface GraphStats {
+    node_counts: Record<string, number>;
+    edge_counts: Record<string, number>;
+    total_nodes: number;
+    total_edges: number;
+}
+
+/** MCP server failure reported by specialists during source collection */
+export interface MCPFailure {
+    server: string;
+    error_category: string;
+    is_retryable: boolean;
+}
+
+/** Pipeline error metadata extracted from tool_result events */
+export interface PipelineErrorData {
+    /** Overall source collection status */
+    aggregate_status?: "all_failed" | "no_evidence" | "partial" | "all_retrieved";
+    /** Individual MCP server failures */
+    mcp_failures: MCPFailure[];
+    /** Cross-reference warnings (unmatched inline refs) */
+    cross_reference_warnings: string[];
+    /** Verification status when verification was skipped */
+    verification_status?: "skipped" | "completed";
+    /** Pipeline error reason (e.g., "citation_map_empty") */
+    pipeline_error?: string;
+}

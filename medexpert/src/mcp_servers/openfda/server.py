@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import (
     OPENFDA_DRUG_EVENT_URL,
@@ -151,7 +151,11 @@ async def search_drug_events(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openfda", "search_drug_events"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA drug events API returned {response.status_code}",
@@ -168,6 +172,7 @@ async def search_drug_events(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -191,7 +196,11 @@ async def search_drug_labels(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DRUG_LABEL_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_LABEL_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openfda", "search_drug_labels"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA drug labels API returned {response.status_code}",
@@ -208,6 +217,7 @@ async def search_drug_labels(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -230,7 +240,11 @@ async def search_drug_recalls(query: str, max_results: int = 5) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DRUG_RECALL_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_RECALL_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openfda", "search_drug_recalls"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA drug recalls API returned {response.status_code}",
@@ -247,6 +261,7 @@ async def search_drug_recalls(query: str, max_results: int = 5) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -270,7 +285,11 @@ async def search_device_events(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_EVENT_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_EVENT_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openfda", "search_device_events"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA device events API returned {response.status_code}",
@@ -287,6 +306,7 @@ async def search_device_events(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),

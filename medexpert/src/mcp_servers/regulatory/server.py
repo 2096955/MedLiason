@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import (
     OPENFDA_DEVICE_510K_URL,
@@ -120,7 +120,11 @@ async def search_510k(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_510K_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_510K_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "regulatory", "search_510k"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA 510(k) API returned {response.status_code}",
@@ -132,6 +136,7 @@ async def search_510k(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -156,7 +161,11 @@ async def search_pma(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_PMA_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_PMA_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "regulatory", "search_pma"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA PMA API returned {response.status_code}",
@@ -168,6 +177,7 @@ async def search_pma(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -194,7 +204,11 @@ async def get_device_classification(product_code: str) -> dict:
         "limit": 5,
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_CLASS_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_CLASS_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return structured_error_response(exc, "regulatory", "get_device_classification")
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA classification API returned {response.status_code}"
@@ -207,6 +221,7 @@ async def get_device_classification(product_code: str) -> dict:
         return {"error": f"No classification found for product code '{safe_code}'"}
 
     return {
+        "success": True,
         "product_code": safe_code.upper(),
         "returned_count": len(results),
         "results": results,
@@ -233,7 +248,11 @@ async def search_guidance_documents(query: str, max_results: int = 10) -> dict:
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(FDA_GUIDANCE_URL, params=params)
+    try:
+        response = await resilient_get(FDA_GUIDANCE_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "regulatory", "search_guidance_documents"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"FDA guidance API returned {response.status_code}",
@@ -266,6 +285,7 @@ async def search_guidance_documents(query: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),

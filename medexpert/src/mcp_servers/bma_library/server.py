@@ -145,9 +145,15 @@ async def search_bma_guidelines(
             f"{safe_query} site:bma.org.uk",
             params={"limit": capped},
         )
-    except FirecrawlCircuitOpenError:
+    except FirecrawlCircuitOpenError as exc:
         return {
-            "error": "Firecrawl circuit breaker open — too many recent failures",
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "bma_library",
+            "tool": "search_bma_guidelines",
             "fallback_search_query": f"{safe_query} site:bma.org.uk",
             "results": [],
         }
@@ -214,8 +220,17 @@ async def get_bma_article(url: str) -> dict:
             validated,
             params={"formats": ["markdown"], "onlyMainContent": True},
         )
-    except FirecrawlCircuitOpenError:
-        return {"error": "Firecrawl circuit breaker open", "url": validated}
+    except FirecrawlCircuitOpenError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "bma_library",
+            "tool": "get_bma_article",
+            "url": validated,
+        }
 
     if "error" in result:
         return {"error": f"Failed to scrape: {result['error']}", "url": validated}
@@ -303,9 +318,15 @@ async def search_clinical_guidelines(
             f"{safe_query} clinical practice guidelines UK",
             params={"limit": capped},
         )
-    except FirecrawlCircuitOpenError:
+    except FirecrawlCircuitOpenError as exc:
         return {
-            "error": "Firecrawl circuit breaker open — too many recent failures",
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "bma_library",
+            "tool": "search_clinical_guidelines",
             "fallback_search_query": f"{safe_query} clinical practice guidelines UK",
             "results": [],
         }

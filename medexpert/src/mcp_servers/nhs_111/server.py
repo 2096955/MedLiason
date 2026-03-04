@@ -135,9 +135,15 @@ async def search_nhs_conditions(
             f"{safe_query} site:nhs.uk/conditions",
             params={"limit": capped},
         )
-    except FirecrawlCircuitOpenError:
+    except FirecrawlCircuitOpenError as exc:
         return {
-            "error": "Firecrawl circuit breaker open — too many recent failures",
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "nhs_111",
+            "tool": "search_nhs_conditions",
             "fallback_search_query": f"{safe_query} site:nhs.uk/conditions",
             "results": [],
         }
@@ -209,9 +215,15 @@ async def get_nhs_condition_page(condition: str) -> dict:
             url,
             params={"formats": ["markdown"], "onlyMainContent": True},
         )
-    except FirecrawlCircuitOpenError:
+    except FirecrawlCircuitOpenError as exc:
         return {
-            "error": "Firecrawl circuit breaker open",
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "nhs_111",
+            "tool": "get_nhs_condition_page",
             "url": url,
             "fallback_search_query": f"{slug} site:nhs.uk/conditions",
         }
@@ -275,8 +287,17 @@ async def get_nhs_treatment_guidance(url: str) -> dict:
             validated,
             params={"formats": ["markdown"], "onlyMainContent": True},
         )
-    except FirecrawlCircuitOpenError:
-        return {"error": "Firecrawl circuit breaker open", "url": validated}
+    except FirecrawlCircuitOpenError as exc:
+        return {
+            "success": False,
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "server": "nhs_111",
+            "tool": "get_nhs_treatment_guidance",
+            "url": validated,
+        }
 
     if "error" in result:
         return {"error": f"Failed to scrape: {result['error']}", "url": validated}

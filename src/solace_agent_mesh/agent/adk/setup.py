@@ -1401,6 +1401,30 @@ def initialize_adk_agent(
             component.log_identifier,
         )
 
+        # 2.5 Protocol step validation (MedExpert orchestrator only)
+        # Only registered when agent config has protocol_enforcement: true.
+        # Non-MedExpert deployments are completely unaffected.
+        if component.get_config("app_config", {}).get("protocol_enforcement"):
+            try:
+                from lifesci_tools.protocol_step_validator import (
+                    protocol_step_validator_callback,
+                )
+
+                protocol_step_cb = functools.partial(
+                    protocol_step_validator_callback, host_component=component
+                )
+                callbacks_in_order_for_after_model.append(protocol_step_cb)
+                log.debug(
+                    "%s Added protocol_step_validator_callback to after_model chain.",
+                    component.log_identifier,
+                )
+            except ImportError:
+                log.warning(
+                    "%s protocol_enforcement enabled but lifesci_tools not found. "
+                    "Protocol step validation will be skipped.",
+                    component.log_identifier,
+                )
+
         # 3. Fenced Artifact Block Processing (must run before auto-continue)
         artifact_block_cb = functools.partial(
             adk_callbacks.process_artifact_blocks_callback, host_component=component

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import CLINVAR_API_URL, DBSNP_API_URL
 
@@ -136,11 +136,14 @@ async def search_variants(
 
         variants = _parse_clinvar_esummary(summary_resp.text)
         return {
+            "success": True,
             "query": gene_or_variant,
             "results": variants,
             "total_results": len(variants),
         }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "genomic", "search_variants"), "results": []}
     except Exception as exc:
         log.error("ClinVar search failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -182,10 +185,13 @@ async def get_variant_details(variant_id: str) -> dict:
             }
 
         return {
+            "success": True,
             "variant_id": variant_id,
             "details": variants[0],
         }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return structured_error_response(exc, "genomic", "get_variant_details")
     except Exception as exc:
         log.error("ClinVar variant lookup failed: %s", exc)
         return {"error": str(exc)}
@@ -234,12 +240,14 @@ async def search_gene_info(gene_name: str) -> dict:
                         )[0].get("seq_id", "") if snp.get("primary_snapshot_data", {}).get("placement_with_allele") else "",
                     })
                 return {
+                    "success": True,
                     "gene": safe_gene,
                     "results": results,
                     "total_results": len(results),
                 }
             elif isinstance(data, dict):
                 return {
+                    "success": True,
                     "gene": safe_gene,
                     "results": [data],
                     "total_results": 1,
@@ -263,6 +271,8 @@ async def search_gene_info(gene_name: str) -> dict:
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "genomic", "search_gene_info"), "results": []}
     except Exception as exc:
         log.error("dbSNP gene search failed: %s", exc)
         return {"error": str(exc), "results": []}

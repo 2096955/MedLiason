@@ -118,6 +118,7 @@ function AppLayoutContent() {
         if (path.startsWith("/projects")) return "projects";
         if (path.startsWith("/prompts")) return "prompts";
         if (path.startsWith("/agents")) return "agentMesh";
+        if (path.startsWith("/knowledge-graph")) return "knowledgeGraph";
         return "chat";
     };
 
@@ -144,7 +145,11 @@ function AppLayoutContent() {
         if (item?.onClick && itemId !== "settings") {
             item.onClick();
         } else if (itemId !== "settings") {
-            navigate(`/${itemId === "agentMesh" ? "agents" : itemId}`);
+            const routeMap: Record<string, string> = {
+                agentMesh: "agents",
+                knowledgeGraph: "knowledge-graph",
+            };
+            navigate(`/${routeMap[itemId] || itemId}`);
         }
     };
 

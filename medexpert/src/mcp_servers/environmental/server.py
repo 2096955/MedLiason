@@ -16,7 +16,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import EPA_AQS_URL, EPA_EJSCREEN_URL
 
@@ -136,6 +136,7 @@ async def get_air_quality(
                     "state": rec.get("state_name", ""),
                 })
             return {
+                "success": True,
                 "state_code": safe_state,
                 "county_code": safe_county,
                 "year": query_year,
@@ -148,6 +149,8 @@ async def get_air_quality(
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "environmental", "get_air_quality"), "results": []}
     except Exception as exc:
         log.error("EPA AQS query failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -198,6 +201,7 @@ async def get_environmental_justice_data(location: str) -> dict:
                 }
 
             return {
+                "success": True,
                 "location": safe_location,
                 "data": data,
                 "source": "EPA EJScreen",
@@ -209,6 +213,8 @@ async def get_environmental_justice_data(location: str) -> dict:
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "environmental", "get_environmental_justice_data"), "results": []}
     except Exception as exc:
         log.error("EJScreen query failed: %s", exc)
         return {"error": str(exc), "results": []}

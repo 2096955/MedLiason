@@ -2,8 +2,13 @@
 
 Uses keyword-based heuristics to split compound research questions and
 route each sub-question to the appropriate specialist agent.
+
+Also stores the selected agent list in session state (``_selected_agents``)
+so that the protocol_step_validator callback can restrict DELEGATE-step
+peer tools to only those agents the decomposer chose.
 """
 
+import logging
 import re
 from typing import Optional
 
@@ -13,6 +18,11 @@ from google.genai import types as adk_types
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 
 from lifesci_common.constants import DOMAIN_AGENT_ROUTING
+
+log = logging.getLogger(__name__)
+
+# Session state key read by protocol_step_validator to restrict peer tools
+_SELECTED_AGENTS_KEY = "_selected_agents"
 
 
 def _score_domain(text: str, domain_info: dict) -> float:
@@ -203,10 +213,33 @@ class QueryDecomposerTool(DynamicTool):
             round(total_confidence / len(sub_questions), 2) if sub_questions else 0.0
         )
 
+        sorted_agents = sorted(all_agents)
+
+        # ── Store selected agents in session state for protocol validator ──
+        # The protocol_step_validator callback reads _selected_agents to
+        # restrict DELEGATE-step peer tools to only those the decomposer
+        # selected, reducing tool-selection noise from 10 peer tools to 3-5.
+        # Uses the same _invocation_context.session.state pattern as
+        # memory_plane.py (lines 507-512).
+        try:
+            inv = getattr(tool_context, "_invocation_context", None)
+            session_obj = getattr(inv, "session", None) if inv else None
+            if session_obj and hasattr(session_obj, "state"):
+                session_obj.state[_SELECTED_AGENTS_KEY] = sorted_agents
+                log.info(
+                    "[QueryDecomposer] Stored _selected_agents in session state: %s",
+                    sorted_agents,
+                )
+        except Exception:
+            # Don't break decomposition if session state is unavailable
+            log.debug(
+                "[QueryDecomposer] Could not store _selected_agents in session state"
+            )
+
         return {
             "original_question": question,
             "sub_questions": sub_questions,
             "routing_confidence": avg_confidence,
             "count": len(sub_questions),
-            "all_agents": sorted(all_agents),
+            "all_agents": sorted_agents,
         }

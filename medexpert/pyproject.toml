@@ -11,6 +11,7 @@ dependencies = [
     "lxml>=5.0,<6.0",
     "redis[hiredis]>=5.0,<6.0",
     "firecrawl-py>=1.5,<2.0",
+    "neo4j>=5.0,<6.0",  # Bolt driver for Memgraph (bolt-compatible)
 ]
 
 [project.optional-dependencies]

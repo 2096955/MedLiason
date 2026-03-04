@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import (
     PUBMED_ESEARCH_URL,
@@ -163,7 +163,11 @@ async def search_pubmed(query: str, max_results: int = 10) -> dict:
         "sort": "relevance",
     })
 
-    response = await resilient_get(PUBMED_ESEARCH_URL, params=params)
+    try:
+        response = await resilient_get(PUBMED_ESEARCH_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "pubmed", "search_pubmed"), "results": []}
+
     if response.status_code != 200:
         return {"error": f"PubMed API returned {response.status_code}", "results": []}
 
@@ -185,6 +189,7 @@ async def search_pubmed(query: str, max_results: int = 10) -> dict:
         log.error("Failed to parse esearch count: %s", exc)
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": total_count,
         "returned_count": len(pmids),
@@ -208,11 +213,15 @@ async def get_article_abstract(pmid: str) -> dict:
         "rettype": "abstract",
     })
 
-    response = await resilient_get(PUBMED_EFETCH_URL, params=params)
+    try:
+        response = await resilient_get(PUBMED_EFETCH_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return structured_error_response(exc, "pubmed", "get_article_abstract")
+
     if response.status_code != 200:
         return {"error": f"PubMed efetch returned {response.status_code}"}
 
-    return _parse_abstract(response.text)
+    return {**_parse_abstract(response.text), "success": True}
 
 
 @mcp.tool()
@@ -230,11 +239,15 @@ async def get_article_metadata(pmid: str) -> dict:
         "id": pmid.strip(),
     })
 
-    response = await resilient_get(PUBMED_ESUMMARY_URL, params=params)
+    try:
+        response = await resilient_get(PUBMED_ESUMMARY_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return structured_error_response(exc, "pubmed", "get_article_metadata")
+
     if response.status_code != 200:
         return {"error": f"PubMed esummary returned {response.status_code}"}
 
-    return _parse_esummary(response.text)
+    return {**_parse_esummary(response.text), "success": True}
 
 
 if __name__ == "__main__":

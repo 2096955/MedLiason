@@ -114,6 +114,10 @@ def reset_for_testing() -> None:
 class FirecrawlCircuitOpenError(Exception):
     """Raised when the Firecrawl circuit breaker is open."""
 
+    error_category = "circuit_open"
+    is_retryable = True
+    retry_after_seconds = 60
+
 
 async def firecrawl_search(
     query: str,
@@ -159,7 +163,13 @@ async def firecrawl_search(
             await asyncio.sleep(delay)
 
     log.error("Firecrawl search exhausted all retries: %s", last_exc)
-    return []
+    return {
+        "success": False,
+        "error": f"Firecrawl search failed after {_MAX_RETRIES + 1} attempts: {last_exc}",
+        "error_category": "retry_exhausted",
+        "is_retryable": True,
+        "results": [],
+    }
 
 
 async def firecrawl_scrape(
@@ -205,4 +215,9 @@ async def firecrawl_scrape(
             await asyncio.sleep(delay)
 
     log.error("Firecrawl scrape exhausted all retries: %s", last_exc)
-    return {"error": f"Firecrawl scrape failed after {_MAX_RETRIES + 1} attempts: {last_exc}"}
+    return {
+        "success": False,
+        "error": f"Firecrawl scrape failed after {_MAX_RETRIES + 1} attempts: {last_exc}",
+        "error_category": "retry_exhausted",
+        "is_retryable": True,
+    }

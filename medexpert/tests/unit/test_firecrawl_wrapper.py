@@ -152,7 +152,12 @@ class TestFirecrawlSearch:
             patch.object(mod, "_BASE_DELAY", 0.01),
         ):
             results = await mod.firecrawl_search("test")
-        assert results == []
+        # Now returns a structured error dict instead of []
+        assert isinstance(results, dict)
+        assert results["success"] is False
+        assert results["error_category"] == "retry_exhausted"
+        assert results["is_retryable"] is True
+        assert results["results"] == []
 
     async def test_search_handles_dict_response(self):
         import mcp_servers._firecrawl as mod

@@ -235,7 +235,14 @@ class ClaimVerifierTool(DynamicTool):
             "Analyzes a response text to verify that claims are properly supported "
             "by their cited sources. Extracts sentences with [[cite:...]] markers, "
             "uses LLM entailment analysis (or keyword fallback) to assess claim-source "
-            "alignment, and flags unsupported or misattributed claims."
+            "alignment, and flags unsupported or misattributed claims.\n\n"
+            "PREREQUISITE: publish_sources must have been called first to generate "
+            "citation IDs. Retrieve citation_map_json from "
+            "memory_plane(namespace='evidence', key='citation_map_json') and pass it "
+            "as the citations_json parameter.\n\n"
+            "Confidence threshold: Claims with alignment score >= 0.5 are considered "
+            "supported. An empty citation map returns a neutral 0.5 score (verification "
+            "skipped) rather than failing all claims at 0.0."
         )
 
     @property
@@ -307,6 +314,8 @@ class ClaimVerifierTool(DynamicTool):
                 "overall_score": 0.5,
                 "verified_claims": [],
                 "unsupported_claims": [],
+                "verification_status": "skipped",
+                "pipeline_error": "citation_map_empty",
                 "method": "skipped",
                 "reason": "Citation map was empty — verification could not be performed. "
                           "This is likely a pipeline issue, not evidence of fabrication.",

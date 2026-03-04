@@ -15,7 +15,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import sanitize_query, escape_soql
 from lifesci_common.constants import CDC_WONDER_BASE_URL
 
@@ -75,7 +75,11 @@ async def search_disease_data(disease: str, max_results: int = 20) -> dict:
     params["$where"] = f"upper(disease) like upper('%{escaped_disease}%')"
     params["$order"] = "mmwr_year DESC, mmwr_week DESC"
 
-    response = await resilient_get(url, params=params, headers=_base_headers())
+    try:
+        response = await resilient_get(url, params=params, headers=_base_headers())
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "cdc", "search_disease_data"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"CDC SODA API returned {response.status_code}",
@@ -95,6 +99,7 @@ async def search_disease_data(disease: str, max_results: int = 20) -> dict:
         })
 
     return {
+        "success": True,
         "disease": safe_disease,
         "returned_count": len(results),
         "results": results,
@@ -127,7 +132,11 @@ async def get_mortality_data(
     params["$where"] = where_clause
     params["$order"] = "year DESC"
 
-    response = await resilient_get(url, params=params, headers=_base_headers())
+    try:
+        response = await resilient_get(url, params=params, headers=_base_headers())
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "cdc", "get_mortality_data"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"CDC mortality API returned {response.status_code}",
@@ -146,6 +155,7 @@ async def get_mortality_data(
         })
 
     return {
+        "success": True,
         "cause": safe_cause,
         "year": year,
         "returned_count": len(results),
@@ -175,7 +185,11 @@ async def get_vaccination_data(
 
     params["$order"] = "year_season DESC"
 
-    response = await resilient_get(url, params=params, headers=_base_headers())
+    try:
+        response = await resilient_get(url, params=params, headers=_base_headers())
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "cdc", "get_vaccination_data"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"CDC vaccination API returned {response.status_code}",
@@ -197,6 +211,7 @@ async def get_vaccination_data(
         })
 
     return {
+        "success": True,
         "vaccine": vaccine,
         "returned_count": len(results),
         "results": results,
@@ -226,7 +241,11 @@ async def get_surveillance_data(condition: str, max_results: int = 20) -> dict:
         "current_week, previous_52_week_max, cumulative_ytd_current_mmwr_year"
     )
 
-    response = await resilient_get(url, params=params, headers=_base_headers())
+    try:
+        response = await resilient_get(url, params=params, headers=_base_headers())
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "cdc", "get_surveillance_data"), "results": []}
+
     if response.status_code != 200:
         return {
             "error": f"CDC surveillance API returned {response.status_code}",
@@ -247,6 +266,7 @@ async def get_surveillance_data(condition: str, max_results: int = 20) -> dict:
         })
 
     return {
+        "success": True,
         "condition": safe_condition,
         "returned_count": len(results),
         "results": results,

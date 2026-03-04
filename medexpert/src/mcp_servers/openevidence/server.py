@@ -22,7 +22,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import CircuitOpenError, resilient_get, resilient_post
+from mcp_servers._http import CircuitOpenError, RetryExhaustedError, resilient_get, resilient_post, structured_error_response
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -257,11 +257,8 @@ async def ask_openevidence(
             headers=headers,
             timeout=30.0,
         )
-    except CircuitOpenError:
-        return {
-            "error": "Circuit breaker open for OpenEvidence — too many recent failures",
-            "question": safe_question,
-        }
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openevidence", "ask_openevidence"), "question": safe_question}
     except Exception as exc:
         log.error("Failed to submit question to OpenEvidence: %s", exc)
         return {"error": f"Failed to submit question: {exc}", "question": safe_question}
@@ -303,9 +300,9 @@ async def ask_openevidence(
                     article_id,
                 )
                 break
-        except CircuitOpenError:
+        except (CircuitOpenError, RetryExhaustedError) as exc:
             return {
-                "error": "Circuit breaker open during polling",
+                **structured_error_response(exc, "openevidence", "ask_openevidence"),
                 "article_id": str(article_id),
                 "question": safe_question,
             }
@@ -322,7 +319,7 @@ async def ask_openevidence(
             "timeout_sec": timeout_sec,
         }
 
-    response = _build_article_response(article, question=safe_question)
+    response = {**_build_article_response(article, question=safe_question), "success": True}
 
     # Cache completed answers
     if status not in _PENDING_STATUSES and response.get("answer_text"):
@@ -369,11 +366,8 @@ async def get_openevidence_article(article_id: str) -> dict:
             headers=headers,
             timeout=15.0,
         )
-    except CircuitOpenError:
-        return {
-            "error": "Circuit breaker open for OpenEvidence",
-            "article_id": article_id,
-        }
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openevidence", "get_openevidence_article"), "article_id": article_id}
     except Exception as exc:
         log.error("Failed to fetch article %s: %s", article_id, exc)
         return {"error": f"Failed to fetch article: {exc}", "article_id": article_id}
@@ -392,7 +386,7 @@ async def get_openevidence_article(article_id: str) -> dict:
     except Exception:
         return {"error": "Failed to parse response", "article_id": article_id}
 
-    response = _build_article_response(article)
+    response = {**_build_article_response(article), "success": True}
 
     # Cache completed answers
     status = article.get("status", "")
@@ -440,12 +434,8 @@ async def search_openevidence_history(
             headers=headers,
             timeout=15.0,
         )
-    except CircuitOpenError:
-        return {
-            "error": "Circuit breaker open for OpenEvidence",
-            "query": safe_query,
-            "results": [],
-        }
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "openevidence", "search_openevidence_history"), "query": safe_query, "results": []}
     except Exception as exc:
         log.error("Failed to search OpenEvidence history: %s", exc)
         return {
@@ -492,6 +482,7 @@ async def search_openevidence_history(
         )
 
     return {
+        "success": True,
         "query": safe_query,
         "count": len(results),
         "results": results,

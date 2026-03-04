@@ -452,6 +452,15 @@ def _setup_routers() -> None:
     except ImportError:
         pass  # Not a MedExpert deployment — skip
 
+    # MedExpert knowledge graph router (optional)
+    try:
+        from graph_api.router import router as graph_router
+
+        app.include_router(graph_router, prefix=api_prefix, tags=["Knowledge Graph"])
+        log.info("Knowledge graph router mounted at %s/graph", api_prefix)
+    except ImportError:
+        pass  # Not a MedExpert deployment — skip
+
     log.info("Legacy routers mounted for endpoints not yet migrated")
 
     # Register shared exception handlers

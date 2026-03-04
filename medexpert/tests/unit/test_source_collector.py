@@ -8,7 +8,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from lifesci_tools.source_collector import SourceCollectorTool
+from lifesci_tools.source_collector import (
+    SourceCollectorTool,
+    cross_reference_findings,
+    _extract_inline_refs,
+)
 
 
 @pytest.fixture
@@ -187,3 +191,185 @@ async def test_provenance_metadata(tool, ctx):
     assert source_meta["agent_name"] == "DrugSpecialist"
     assert source_meta["mcp_server"] == "openfda"
     assert source_meta["api_endpoint"] == "/drug/event.json"
+
+
+# ── Inline source reference extraction ───────────────────────
+
+
+def test_extract_inline_refs_pmid():
+    """Extracts [[pmid:XXXX]] references from findings."""
+    refs = _extract_inline_refs([
+        "Metformin reduces HbA1c by 1.0-1.5% [[pmid:38901234]].",
+        "Second finding with another ref [[pmid:99999999]].",
+    ])
+    assert ("pmid", "38901234") in refs
+    assert ("pmid", "99999999") in refs
+    assert len(refs) == 2
+
+
+def test_extract_inline_refs_mixed_types():
+    """Extracts mixed reference types: pmid, nct, doi, url."""
+    refs = _extract_inline_refs([
+        "Finding A [[pmid:12345678]].",
+        "Finding B [[nct:NCT06123456]].",
+        "Finding C [[doi:10.1038/s41586-023]].",
+        "Finding D [[url:https://fda.gov/safety]].",
+    ])
+    assert ("pmid", "12345678") in refs
+    assert ("nct", "NCT06123456") in refs
+    assert ("doi", "10.1038/s41586-023") in refs
+    assert ("url", "https://fda.gov/safety") in refs
+    assert len(refs) == 4
+
+
+def test_extract_inline_refs_no_refs():
+    """Returns empty set when findings have no inline refs."""
+    refs = _extract_inline_refs(["Plain finding with no references."])
+    assert len(refs) == 0
+
+
+def test_extract_inline_refs_empty_list():
+    """Returns empty set for empty findings list."""
+    refs = _extract_inline_refs([])
+    assert len(refs) == 0
+
+
+def test_extract_inline_refs_non_string_items():
+    """Gracefully handles non-string items in findings list."""
+    refs = _extract_inline_refs([None, 42, "Valid finding [[pmid:111]].", {}])
+    assert ("pmid", "111") in refs
+    assert len(refs) == 1
+
+
+def test_extract_inline_refs_multiple_in_one_finding():
+    """Multiple refs in a single finding are all extracted."""
+    refs = _extract_inline_refs([
+        "Drug A [[pmid:111]] interacts with Drug B [[pmid:222]] per trial [[nct:NCT333]]."
+    ])
+    assert len(refs) == 3
+
+
+# ── Cross-reference validation ───────────────────────────────
+
+
+def test_cross_reference_all_matched():
+    """No warnings when all inline refs match sources."""
+    findings = [
+        "Metformin reduces HbA1c [[pmid:38901234]].",
+        "Trial showed improvement [[nct:NCT06123456]].",
+    ]
+    sources = [
+        {"title": "A", "snippet": "a", "pmid": "38901234"},
+        {"title": "B", "snippet": "b", "nct_id": "NCT06123456"},
+    ]
+    warnings = cross_reference_findings(findings, sources)
+    assert warnings == []
+
+
+def test_cross_reference_unmatched_pmid():
+    """Warning generated for pmid not in sources."""
+    findings = ["Finding [[pmid:99999999]]."]
+    sources = [{"title": "A", "snippet": "a", "pmid": "11111111"}]
+    warnings = cross_reference_findings(findings, sources)
+    assert len(warnings) == 1
+    assert "[[pmid:99999999]]" in warnings[0]
+    assert "no matching source" in warnings[0]
+
+
+def test_cross_reference_unmatched_nct():
+    """Warning generated for nct not in sources."""
+    findings = ["Trial finding [[nct:NCT00000001]]."]
+    sources = [{"title": "A", "snippet": "a", "pmid": "12345678"}]
+    warnings = cross_reference_findings(findings, sources)
+    assert len(warnings) == 1
+    assert "[[nct:NCT00000001]]" in warnings[0]
+
+
+def test_cross_reference_partial_match():
+    """Only unmatched refs generate warnings."""
+    findings = [
+        "Matched [[pmid:111]].",
+        "Unmatched [[pmid:999]].",
+    ]
+    sources = [{"title": "A", "snippet": "a", "pmid": "111"}]
+    warnings = cross_reference_findings(findings, sources)
+    assert len(warnings) == 1
+    assert "[[pmid:999]]" in warnings[0]
+
+
+def test_cross_reference_empty_findings():
+    """No warnings for empty findings list."""
+    warnings = cross_reference_findings([], [{"title": "A", "snippet": "a"}])
+    assert warnings == []
+
+
+def test_cross_reference_no_inline_refs():
+    """No warnings when findings have no inline refs."""
+    warnings = cross_reference_findings(
+        ["Plain finding."],
+        [{"title": "A", "snippet": "a", "pmid": "111"}],
+    )
+    assert warnings == []
+
+
+def test_cross_reference_url_type():
+    """URL refs are cross-referenced against source url field."""
+    findings = ["See report [[url:https://fda.gov/safety/123]]."]
+    sources = [
+        {"title": "A", "snippet": "a", "url": "https://fda.gov/safety/123"},
+    ]
+    warnings = cross_reference_findings(findings, sources)
+    assert warnings == []
+
+
+def test_cross_reference_doi_type():
+    """DOI refs are cross-referenced against source doi field."""
+    findings = ["Study showed [[doi:10.1038/abc]]."]
+    sources = [{"title": "A", "snippet": "a", "doi": "10.1038/abc"}]
+    warnings = cross_reference_findings(findings, sources)
+    assert warnings == []
+
+
+# ── Cross-reference in tool execution ────────────────────────
+
+
+async def test_tool_cross_reference_no_findings(tool, ctx):
+    """cross_reference_warnings is empty list when findings not provided."""
+    result = await tool._run_async_impl(
+        {
+            "query": "test",
+            "sources": [{"title": "A", "snippet": "a", "pmid": "111"}],
+        },
+        ctx,
+    )
+    assert result["cross_reference_warnings"] == []
+
+
+async def test_tool_cross_reference_matched(tool, ctx):
+    """cross_reference_warnings is empty when all refs match."""
+    result = await tool._run_async_impl(
+        {
+            "query": "test",
+            "sources": [{"title": "A", "snippet": "a", "pmid": "38901234"}],
+            "findings": ["Finding with ref [[pmid:38901234]]."],
+        },
+        ctx,
+    )
+    assert result["cross_reference_warnings"] == []
+
+
+async def test_tool_cross_reference_unmatched(tool, ctx):
+    """cross_reference_warnings lists unmatched refs."""
+    result = await tool._run_async_impl(
+        {
+            "query": "test",
+            "sources": [{"title": "A", "snippet": "a", "pmid": "111"}],
+            "findings": [
+                "Good ref [[pmid:111]].",
+                "Bad ref [[pmid:999]].",
+            ],
+        },
+        ctx,
+    )
+    assert len(result["cross_reference_warnings"]) == 1
+    assert "[[pmid:999]]" in result["cross_reference_warnings"][0]

@@ -1,6 +1,6 @@
 import React, { createContext, type FormEvent } from "react";
 
-import type { AgentCardInfo, ArtifactInfo, BackgroundTaskNotification, BackgroundTaskState, FileAttachment, MessageFE, Notification, Session, RAGSearchResult } from "@/lib/types";
+import type { AgentCardInfo, ArtifactInfo, BackgroundTaskNotification, BackgroundTaskState, FileAttachment, MessageFE, Notification, PipelineErrorData, Session, RAGSearchResult } from "@/lib/types";
 
 /** Pending prompt data for starting a new chat with a prompt template */
 export interface PendingPromptData {
@@ -86,6 +86,8 @@ export interface ChatState {
     highlightedSourceId: string | null;
     // Triage State
     triageProgress: TriageProgressData | null;
+    // Pipeline Error State
+    pipelineErrors: PipelineErrorData | null;
     // Side Panel Control State
     isSidePanelCollapsed: boolean;
     activeSidePanelTab: "files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage";
@@ -128,6 +130,8 @@ export interface ChatActions {
     uploadArtifactFile: (file: File, overrideSessionId?: string, description?: string, silent?: boolean) => Promise<{ uri: string; sessionId: string } | { error: string } | null>;
     /** Triage Actions */
     setTriageProgress: (progress: TriageProgressData | null) => void;
+    /** Pipeline Error Actions */
+    setPipelineErrors: (errors: PipelineErrorData | null) => void;
     /** Side Panel Control Actions */
     setIsSidePanelCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
     setActiveSidePanelTab: React.Dispatch<React.SetStateAction<"files" | "activity" | "rag" | "datasources" | "memory" | "performance" | "triage">>;

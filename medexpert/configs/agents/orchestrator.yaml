@@ -29,7 +29,7 @@ apps:
 
         CRITICAL RULES:
         1. NEVER call `web_search_google` — it requires an API key that is not
-           configured. Delegate ALL research to specialist agents.
+           configured. Use `web_search_duckduckgo` instead for any web searches.
         2. You MUST delegate to specialist agents and call `publish_sources`
            before answering ANY medical question. NEVER answer from memory
            alone — always cite with `[[cite:...]]` markers.
@@ -58,15 +58,19 @@ apps:
         Immediately proceed to STEP 2 — do NOT deliberate.
 
         **STEP 2 — DELEGATE (PARALLEL)**
-        Call ALL peer_<AgentName> tools in a SINGLE LLM turn. ADK executes
-        them in parallel. Do NOT make separate turns for each specialist.
+        After query_decomposer returns, look at the `all_agents` list in its output.
+        Call ONLY the peer tools listed in `all_agents` — do NOT call peer tools
+        not in that list. This typically means 3-5 specialists, not all 8.
+        Call ALL selected peer tools in a SINGLE LLM turn for parallel execution.
+        ADK executes them in parallel. Do NOT make separate turns for each specialist.
 
         For each sub-question, delegate to its target_agent AND all
-        secondary_agents. Use the all_agents list to determine which
-        peer tools to call. Each specialist returns structured JSON with
-        findings, sources, and confidence.
+        secondary_agents. The `all_agents` list is the definitive set of
+        specialists to call — ignore any specialist not in that list.
+        Each specialist returns structured JSON with findings, sources,
+        and confidence.
 
-        Available specialists:
+        Available specialists (call ONLY those in `all_agents`):
         - peer_LiteratureSpecialist — PubMed biomedical literature
         - peer_ClinicalTrialsSpecialist — ClinicalTrials.gov data
         - peer_DrugSpecialist — OpenFDA drug safety and labeling
@@ -78,11 +82,21 @@ apps:
 
         **STEP 3 — COLLECT + PUBLISH**
         After specialist responses arrive:
+        0. Check each specialist response for execution_status and
+           mcp_failures fields. If any specialist reports
+           execution_status="failed" or "partial":
+           - Note the failed MCP servers and their error_category
+           - Do NOT re-query servers with error_category="circuit_open"
+             (they need 60s recovery)
+           - Store error summary in memory_plane:
+             key="pipeline_errors", namespace="intermediate",
+             value=JSON summary of failures
         1. Store specialists_used and query_domain in memory_plane
            (namespace: "intermediate")
         2. Call `publish_sources` with ALL references from specialist
            responses (title, snippet, pmid/nct_id/doi/url, evidence_grade,
-           source_type, agent_name, mcp_server)
+           source_type, agent_name, mcp_server). If specialists reported
+           mcp_failures, pass them in the mcp_failures parameter.
         3. Store the citation_map_json from publish_sources verbatim:
            memory_plane(operation="store", key="citation_map_json",
            value=<exact string>, namespace="evidence")
@@ -90,6 +104,15 @@ apps:
         5. If coverage < 70%, send ONE targeted follow-up delegation,
            then proceed regardless
         Store coverage_pct in memory_plane (namespace: "intermediate").
+
+        When collecting specialist responses, focus on extracting:
+        - findings (key claims only)
+        - sources (identifiers + title + evidence_grade)
+        - confidence score
+        - execution_status
+        Discard verbose snippets from your working context — the full source
+        data is preserved in the RAG panel via publish_sources and accessible
+        to the user.
 
         **STEP 4 — SYNTHESIZE**
         Call `report_generator` with the collected evidence. Choose mode:
@@ -112,9 +135,12 @@ apps:
         GVR sequence: VERIFY → REVISE → RE-VERIFY (max 1 cycle).
 
         **STEP 6 — PERSIST**
-        Call `memory_plane` with operation="flush_cold",
-        query=<original question>, query_domain=<primary domain>.
-        The tool auto-collects session signals.
+        1. Call `memory_plane` with operation="flush_cold",
+           query=<original question>, query_domain=<primary domain>.
+           The tool auto-collects session signals.
+        2. Call `graph_writer` with session_id, query_text, domain,
+           specialists_used (JSON array), and sources (JSON array of
+           source objects). This persists entities to the knowledge graph.
 
         ═══════════════════════════════════════════════════════════════
         GENERAL GUIDELINES
@@ -139,6 +165,7 @@ apps:
       enable_embed_resolution: true
       enable_artifact_content_instruction: true
       max_llm_calls_per_task: 50
+      protocol_enforcement: true
 
       tools:
         # ── Step 1: PLAN ──
@@ -171,6 +198,11 @@ apps:
         # ── Pre-output safety ──
         - tool_type: python
           component_module: lifesci_tools.phi_redactor
+          component_base_path: src
+
+        # ── Step 6: PERSIST (knowledge graph) ──
+        - tool_type: python
+          component_module: lifesci_tools.graph_writer
           component_base_path: src
 
         # ── Artifact management ──

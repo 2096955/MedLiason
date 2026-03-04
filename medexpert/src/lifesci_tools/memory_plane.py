@@ -122,7 +122,18 @@ class MemoryPlaneTool(DynamicTool):
                 "specialist agents. Supports operations: retrieve, list_keys, "
                 "query_cold, get_strategy. "
                 "Keys are scoped by session ID and namespace (citations, evidence, "
-                "intermediate, learning, verification)."
+                "intermediate, learning, verification).\n\n"
+                "READ-ONLY operations available:\n"
+                "- retrieve: fetch a single value by namespace + key\n"
+                "- list_keys: list all keys in a namespace\n"
+                "- query_cold: look up historical intelligence from the cold store (requires query param)\n"
+                "- get_strategy: fetch a learned strategy by type (routing, source_ranking, agent_pairs) and key\n\n"
+                "Namespaces:\n"
+                "- citations: published source references with citation IDs (s0r0, s0r1, ...)\n"
+                "- evidence: graded evidence items and citation_map_json for the verifier\n"
+                "- intermediate: working data (specialists_used, coverage_pct, query_domain)\n"
+                "- learning: seeded strategies from cold store history\n"
+                "- verification: verification verdicts and scores from the GVR loop"
             )
         return (
             "Central memory plane for storing and retrieving shared state across "
@@ -131,7 +142,29 @@ class MemoryPlaneTool(DynamicTool):
             "flush_cold auto-collects session signals from the hot store — just "
             "pass query_domain and query_text. "
             "Keys are scoped by session ID and namespace (citations, evidence, "
-            "intermediate, learning, verification)."
+            "intermediate, learning, verification).\n\n"
+            "Operations (read-write):\n"
+            "- store: write a value to namespace + key (idempotent if value unchanged)\n"
+            "- retrieve: fetch a single value by namespace + key\n"
+            "- list_keys: list all keys in a namespace\n"
+            "- append: add an item to a JSON array at namespace + key\n"
+            "- clear_session: delete all keys for the current session\n\n"
+            "Operations (cold store):\n"
+            "- seed_session: load learned strategies from cold store into the learning namespace "
+            "(requires query param)\n"
+            "- flush_cold: auto-collect session signals and persist to cold store "
+            "(requires query and query_domain params)\n"
+            "- query_cold: look up historical intelligence from the cold store (requires query param)\n"
+            "- get_strategy: fetch a learned strategy by type (routing, source_ranking, agent_pairs) "
+            "and key\n\n"
+            "Namespaces:\n"
+            "- citations: published source references with citation IDs (s0r0, s0r1, ...)\n"
+            "- evidence: graded evidence items and citation_map_json for the verifier\n"
+            "- intermediate: working data (specialists_used, coverage_pct, query_domain)\n"
+            "- learning: seeded strategies from cold store history\n"
+            "- verification: verification verdicts and scores from the GVR loop\n\n"
+            "Workflow ordering: Call seed_session ONCE at protocol start (STEP 0). "
+            "Call flush_cold ONCE at protocol end (STEP 6)."
         )
 
     @property
@@ -486,6 +519,7 @@ class MemoryPlaneTool(DynamicTool):
         # ── Deterministic protocol progress emission ──────────────
         # Emit SSE progress signals based on which operation/key is being called.
         # This is tied to actual tool invocations, not LLM output parsing.
+        step_num = None
         if operation in _STEP_MAP:
             step_num, step_name, detail = _STEP_MAP[operation]
             await self._emit_protocol_progress(
@@ -496,6 +530,21 @@ class MemoryPlaneTool(DynamicTool):
             await self._emit_protocol_progress(
                 tool_context, step_num, step_name, detail, session_id
             )
+
+        # ── Reactive step advancement for protocol validator ──────
+        # Confirms the protocol step during tool execution by updating
+        # session.state.  This complements the predictive advancement
+        # performed by the protocol_step_validator callback.
+        if step_num is not None:
+            try:
+                inv = getattr(tool_context, "_invocation_context", None)
+                session_obj = getattr(inv, "session", None) if inv else None
+                if session_obj and hasattr(session_obj, "state"):
+                    current = session_obj.state.get("_protocol_current_step", 0)
+                    if step_num > current:
+                        session_obj.state["_protocol_current_step"] = step_num
+            except Exception:
+                pass  # Don't break memory_plane if session state is unavailable
 
         if operation == "store":
             if not key:

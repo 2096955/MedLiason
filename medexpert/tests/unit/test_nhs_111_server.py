@@ -80,7 +80,10 @@ class TestSearchNhsConditions:
             patch("mcp_servers.nhs_111.server.firecrawl_search", new_callable=AsyncMock, side_effect=FirecrawlCircuitOpenError("open")),
         ):
             resp = await search_nhs_conditions("test")
-        assert "circuit breaker" in resp["error"].lower()
+        assert resp["success"] is False
+        assert resp["error_category"] == "circuit_open"
+        assert resp["is_retryable"] is True
+        assert resp["results"] == []
 
     async def test_cache_hit(self):
         results = [{"title": "Cached", "url": "https://nhs.uk/c", "markdown": "x"}]

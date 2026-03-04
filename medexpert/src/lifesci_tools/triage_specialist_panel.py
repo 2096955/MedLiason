@@ -83,7 +83,15 @@ class TriageSpecialistPanelTool(DynamicTool):
             "loads their persona prompt + shared output instructions, calls the LLM "
             "in parallel, and parses JSON responses. Returns a list of specialist "
             "verdicts: [{specialist, diagnosis, confidence, thinking, tier}]. "
-            "Failed or timed-out calls are treated as 'Insufficient information'."
+            "Failed or timed-out calls are treated as 'Insufficient information'.\n\n"
+            "Valid specialists: emergency_physician, family_physician, internist, "
+            "paediatrician, pharmacist.\n\n"
+            "Confidence is an integer 0-100 where 100 = highest confidence in the "
+            "diagnosis. A confidence of 0 indicates insufficient information or a "
+            "failed/timed-out call.\n\n"
+            "tier1_specialists are consulted first and given priority in consensus "
+            "building; remaining specialists are tier2. Pass tier1_specialists as a "
+            "JSON array to control consultation priority."
         )
 
     @property

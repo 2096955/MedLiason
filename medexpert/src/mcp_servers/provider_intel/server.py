@@ -17,7 +17,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
 from mcp_servers._security import escape_sql_string, validate_numeric, sanitize_query
 from lifesci_common.constants import CMS_OPEN_PAYMENTS_URL, CMS_PROVIDER_URL
 
@@ -101,6 +101,7 @@ async def search_providers(
                     "gender": rec.get("provider_gender", ""),
                 })
             return {
+                "success": True,
                 "query": {"name": name, "state": state, "specialty": specialty},
                 "results": parsed,
                 "total_results": len(parsed),
@@ -111,6 +112,8 @@ async def search_providers(
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "provider_intel", "search_providers"), "results": []}
     except Exception as exc:
         log.error("Provider search failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -151,6 +154,7 @@ async def get_provider_quality(provider_id: str) -> dict:
 
             rec = records[0]
             return {
+                "success": True,
                 "provider_id": provider_id,
                 "npi": rec.get("npi", ""),
                 "name": f"{rec.get('provider_first_name', '')} {rec.get('provider_last_name', '')}".strip(),
@@ -165,6 +169,8 @@ async def get_provider_quality(provider_id: str) -> dict:
                 "error": f"CMS API returned status {resp.status_code}",
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return structured_error_response(exc, "provider_intel", "get_provider_quality")
     except Exception as exc:
         log.error("Provider quality lookup failed: %s", exc)
         return {"error": str(exc)}
@@ -264,6 +270,7 @@ async def search_open_payments(
                     ),
                 })
             return {
+                "success": True,
                 "query": {
                     "physician_name": physician_name,
                     "company": company,
@@ -279,6 +286,8 @@ async def search_open_payments(
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return {**structured_error_response(exc, "provider_intel", "search_open_payments"), "results": []}
     except Exception as exc:
         log.error("Open Payments search failed: %s", exc)
         return {"error": str(exc), "results": []}

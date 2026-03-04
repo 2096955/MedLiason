@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink } from "lucide-react";
+import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink, AlertTriangle } from "lucide-react";
 // Web-only version - enterprise icons removed
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/lib/components/ui/select";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RAGSearchResult, RAGSource } from "@/lib/types";
+import type { RAGSearchResult, RAGSource, PipelineErrorData } from "@/lib/types";
 
 interface TimelineEvent {
     type: "thinking" | "search" | "read";
@@ -21,6 +21,7 @@ interface RAGInfoPanelProps {
     enabled: boolean;
     highlightedSourceId?: string | null;
     onHighlightConsumed?: () => void;
+    pipelineErrors?: PipelineErrorData | null;
 }
 
 type SortMode = "grade" | "recent" | "relevance";
@@ -289,7 +290,7 @@ const VirtualizedSourceCardList: React.FC<{
     );
 };
 
-export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, highlightedSourceId, onHighlightConsumed }) => {
+export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, highlightedSourceId, onHighlightConsumed, pipelineErrors }) => {
     const [sortMode, setSortMode] = useState<SortMode>("grade");
 
     // Scroll to highlighted source when citation is clicked
@@ -727,6 +728,33 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                         </div>
                     </TabsContent>
                 </Tabs>
+            )}
+
+            {/* Sources Unavailable — shown when pipeline reports MCP failures */}
+            {pipelineErrors?.mcp_failures && pipelineErrors.mcp_failures.length > 0 && (
+                <div className="mt-4 border-t border-border/50 px-4 pt-3 pb-3 flex-shrink-0">
+                    <h3 className="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {pipelineErrors.mcp_failures.length} Source{pipelineErrors.mcp_failures.length !== 1 ? "s" : ""} Unavailable
+                    </h3>
+                    <div className="space-y-1.5">
+                        {pipelineErrors.mcp_failures.map((failure, idx) => (
+                            <div
+                                key={idx}
+                                className="flex items-start gap-2 rounded bg-amber-500/10 px-2 py-1.5 text-xs"
+                            >
+                                <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />
+                                <div className="min-w-0 flex-1">
+                                    <span className="block font-medium capitalize">{failure.server.replace(/_/g, " ")}</span>
+                                    <span className="text-muted-foreground block">
+                                        {failure.error_category.replace(/_/g, " ")}
+                                        {failure.is_retryable && " — retryable"}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
         </div>
     );

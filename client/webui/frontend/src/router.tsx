@@ -1,8 +1,11 @@
+import { lazy, Suspense } from "react";
 import { createHashRouter, Navigate } from "react-router-dom";
 
 import { AgentMeshPage, ChatPage, ProjectsPage, PromptsPage } from "./lib";
 import { WorkflowVisualizationPage } from "./lib/components/workflowVisualization";
 import AppLayout from "./AppLayout";
+
+const KnowledgeGraphPage = lazy(() => import("./lib/components/knowledgeGraph/KnowledgeGraphPage"));
 
 export const createRouter = () => {
     return createHashRouter([
@@ -78,6 +81,14 @@ export const createRouter = () => {
                             element: <WorkflowVisualizationPage />,
                         },
                     ],
+                },
+                {
+                    path: "knowledge-graph",
+                    element: (
+                        <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>}>
+                            <KnowledgeGraphPage />
+                        </Suspense>
+                    ),
                 },
                 {
                     path: "*",
