@@ -325,4 +325,8 @@ export interface PipelineErrorData {
     verification_status?: "skipped" | "completed";
     /** Pipeline error reason (e.g., "citation_map_empty") */
     pipeline_error?: string;
+    /** True when no progress has been received for 60 seconds */
+    stalled?: boolean;
+    /** ISO 8601 timestamp when the stall was detected */
+    stalledAt?: string;
 }

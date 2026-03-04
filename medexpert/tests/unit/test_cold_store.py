@@ -48,6 +48,7 @@ def test_schema_creates_all_tables(db):
             "prompt_promotions",
             "user_feedback",
             "triage_outcomes",
+            "pending_calibration",
         ]
     )
     assert tables == expected
@@ -62,7 +63,7 @@ def test_schema_idempotent(tmp_path):
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     )
     tables = [row["name"] for row in cursor if row["name"] != "sqlite_sequence"]
-    assert len(tables) == 11
+    assert len(tables) == 12
     conn2.close()
 
 
@@ -488,7 +489,7 @@ def test_ddl_cache_skips_second_init(tmp_path):
         ).fetchall()
         if r["name"] != "sqlite_sequence"
     ]
-    assert len(tables) == 11
+    assert len(tables) == 12
     conn2.close()
 
 

@@ -20,6 +20,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from lifesci_tools import cold_store
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,9 @@ class CalibrationConfig:
     )
     verification_weight: float = float(
         os.environ.get("CALIBRATION_VERIFICATION_WEIGHT", "0.4")
+    )
+    large_delta_threshold: float = float(
+        os.environ.get("CALIBRATION_LARGE_DELTA_THRESHOLD", "0.15")
     )
 
 
@@ -182,8 +187,60 @@ class SpecialistCalibrator:
             suggestions.append(entry)
             domain_weights.setdefault(domain, []).append(entry)
 
-        # 5. Write to learned_strategies
+        # 5. Write results — fork large-delta changes to pending_calibration
+        applied_entries: dict[str, list[dict[str, Any]]] = {}
+        pending_entries: list[dict[str, Any]] = []
+
         for domain, entries in domain_weights.items():
+            domain_applied: list[dict[str, Any]] = []
+            for entry in entries:
+                delta = abs(entry["weight"] - entry["current_weight"])
+                if (
+                    delta > self.cfg.large_delta_threshold
+                    and entry["action"] != "HOLD"
+                ):
+                    # Large delta → pending human review
+                    cold_store.write_pending_calibration(
+                        conn,
+                        agent_name=entry["agent"],
+                        domain=domain,
+                        current_weight=entry["current_weight"],
+                        suggested_weight=entry["weight"],
+                        delta=round(delta, 4),
+                        negative_rate=entry["negative_rate"],
+                        sample_count=entry["sample_count"],
+                        action=entry["action"],
+                        reason=entry["reason"],
+                    )
+                    pending_entries.append({**entry, "domain": domain})
+                    # Fire webhook notification
+                    try:
+                        from lifesci_tools.notification_webhook import fire_webhook
+
+                        fire_webhook(
+                            "calibration_pending",
+                            {
+                                "agent_name": entry["agent"],
+                                "domain": domain,
+                                "current_weight": entry["current_weight"],
+                                "suggested_weight": entry["weight"],
+                                "delta": round(delta, 4),
+                            },
+                        )
+                    except Exception:
+                        log.debug(
+                            "Webhook notification failed for calibration %s/%s",
+                            entry["agent"],
+                            domain,
+                        )
+                else:
+                    domain_applied.append(entry)
+
+            if domain_applied:
+                applied_entries[domain] = domain_applied
+
+        # Write auto-applied entries to learned_strategies
+        for domain, entries in applied_entries.items():
             sample_count = sum(e["sample_count"] for e in entries)
             confidence = min(1.0, sample_count / 20)
             conn.execute(
@@ -202,11 +259,21 @@ class SpecialistCalibrator:
 
         conn.commit()
         log.info(
-            "Specialist calibration: %d suggestions across %d domains",
+            "Specialist calibration: %d suggestions (%d applied, %d pending) "
+            "across %d domains",
             len(suggestions),
+            sum(len(v) for v in applied_entries.values()),
+            len(pending_entries),
             len(domain_weights),
         )
-        return {"suggestions": suggestions, "domains": list(domain_weights.keys())}
+        return {
+            "suggestions": suggestions,
+            "domains": list(domain_weights.keys()),
+            "applied": [
+                e for entries in applied_entries.values() for e in entries
+            ],
+            "pending": pending_entries,
+        }
 
     def calibrate_sources(
         self,

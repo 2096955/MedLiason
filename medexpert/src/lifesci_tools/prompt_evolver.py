@@ -338,6 +338,25 @@ class PromptEvolver:
                 underperf["avg_composite"],
                 regression.get("avg_score", 0.0),
             )
+            # Fire webhook notification for pending candidate
+            try:
+                from lifesci_tools.notification_webhook import fire_webhook
+
+                fire_webhook(
+                    "prompt_candidate_created",
+                    {
+                        "agent_name": agent_name,
+                        "version": new_version,
+                        "old_composite": underperf["avg_composite"],
+                        "regression_score": regression.get("avg_score", 0.0),
+                    },
+                )
+            except Exception:
+                log.debug(
+                    "Webhook notification failed for %s v%d",
+                    agent_name,
+                    new_version,
+                )
             return {
                 "agent": agent_name,
                 "action": "candidate_created",

@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Loader2,
   RefreshCw,
+  Clock,
 } from "lucide-react";
 import type { PipelineErrorData } from "@/lib/types";
 
@@ -267,6 +268,21 @@ export function ResearchProtocolStepper({
             <div className="flex items-center gap-1.5 pt-1 text-xs text-amber-600 dark:text-amber-400">
               <RefreshCw className="w-3 h-3" />
               <span>Revision cycle {progress.gvr_cycle}</span>
+            </div>
+          )}
+
+          {/* Stall warning banner */}
+          {pipelineErrors?.stalled && !isComplete && (
+            <div role="alert" className="flex items-center gap-2 px-2 py-1.5 mt-1 rounded-md bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
+              <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" aria-hidden="true" />
+              <div className="flex-1">
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Research may have stalled
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                  No progress received for 60 seconds. The agent may be processing a complex query.
+                </p>
+              </div>
             </div>
           )}
         </div>

@@ -183,6 +183,77 @@ def _worker_loop(db_path: str) -> None:
                     except Exception:
                         log.exception("Prompt evolution check failed")
 
+                    # Stale candidate/calibration sweep
+                    try:
+                        from datetime import datetime, timedelta, timezone
+
+                        stale_cutoff = (
+                            datetime.now(timezone.utc) - timedelta(hours=24)
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+
+                        stale_prompts = [
+                            c
+                            for c in cold_store.get_pending_candidates(conn)
+                            if c.get("created_at", "") < stale_cutoff
+                        ]
+                        stale_cals = [
+                            c
+                            for c in cold_store.get_pending_calibrations(
+                                conn, status="pending"
+                            )
+                            if c.get("created_at", "") < stale_cutoff
+                        ]
+
+                        if stale_prompts:
+                            log.warning(
+                                "STALE: %d prompt candidate(s) pending > 24h",
+                                len(stale_prompts),
+                            )
+                            try:
+                                from lifesci_tools.notification_webhook import (
+                                    fire_webhook,
+                                )
+
+                                fire_webhook(
+                                    "stale_candidates_detected",
+                                    {
+                                        "count": len(stale_prompts),
+                                        "agents": [
+                                            c["agent_name"]
+                                            for c in stale_prompts
+                                        ],
+                                    },
+                                )
+                            except Exception:
+                                pass
+
+                        if stale_cals:
+                            log.warning(
+                                "STALE: %d calibration(s) pending > 24h",
+                                len(stale_cals),
+                            )
+                            try:
+                                from lifesci_tools.notification_webhook import (
+                                    fire_webhook,
+                                )
+
+                                fire_webhook(
+                                    "stale_calibrations_detected",
+                                    {
+                                        "count": len(stale_cals),
+                                        "agents": list(
+                                            {
+                                                c["agent_name"]
+                                                for c in stale_cals
+                                            }
+                                        ),
+                                    },
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        log.exception("Stale item sweep failed")
+
                     # Specialist + source calibration
                     try:
                         from lifesci_tools.specialist_calibrator import (

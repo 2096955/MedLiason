@@ -106,6 +106,44 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         };
     }, [triageProgress]);
 
+    // Research pipeline stall detection (60s timeout)
+    const researchStallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Mirror isResponding in a ref so the SSE handler closure always sees the current value
+    const isRespondingRef = useRef(isResponding);
+    useEffect(() => { isRespondingRef.current = isResponding; }, [isResponding]);
+
+    useEffect(() => {
+        // Clear any existing stall timeout
+        if (researchStallTimeoutRef.current) {
+            clearTimeout(researchStallTimeoutRef.current);
+            researchStallTimeoutRef.current = null;
+        }
+
+        if (isResponding) {
+            researchStallTimeoutRef.current = setTimeout(() => {
+                setPipelineErrors(prev => ({
+                    ...prev || { mcp_failures: [], cross_reference_warnings: [] },
+                    stalled: true,
+                    stalledAt: new Date().toISOString(),
+                }));
+            }, 60_000);
+        } else {
+            // Clear stall flag when no longer responding
+            setPipelineErrors(prev => {
+                if (prev?.stalled) {
+                    return { ...prev, stalled: false, stalledAt: undefined };
+                }
+                return prev;
+            });
+        }
+
+        return () => {
+            if (researchStallTimeoutRef.current) {
+                clearTimeout(researchStallTimeoutRef.current);
+            }
+        };
+    }, [isResponding]);
+
     // Wrapper to keep ref in sync with state
     const setRagData = useCallback((data: RAGSearchResult[] | ((prev: RAGSearchResult[]) => RAGSearchResult[])) => {
         _setRagData(prev => {
@@ -1388,6 +1426,28 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                     // MedExpert 7-step research protocol progress tracking
                                     // Clear latestStatusText so LoadingMessageRow doesn't show duplicate status
                                     latestStatusText.current = null;
+                                    // Reset stall timer — we received progress
+                                    if (researchStallTimeoutRef.current) {
+                                        clearTimeout(researchStallTimeoutRef.current);
+                                        researchStallTimeoutRef.current = null;
+                                    }
+                                    // Clear stall flag since we have fresh progress
+                                    setPipelineErrors(prev => {
+                                        if (prev?.stalled) {
+                                            return { ...prev, stalled: false, stalledAt: undefined };
+                                        }
+                                        return prev;
+                                    });
+                                    // Restart the timer if still responding (use ref to avoid stale closure)
+                                    if (isRespondingRef.current) {
+                                        researchStallTimeoutRef.current = setTimeout(() => {
+                                            setPipelineErrors(prev => ({
+                                                ...prev || { mcp_failures: [], cross_reference_warnings: [] },
+                                                stalled: true,
+                                                stalledAt: new Date().toISOString(),
+                                            }));
+                                        }, 60_000);
+                                    }
                                     // Don't return early - let the data part flow through to ChatMessage for rendering
                                     break;
                                 }
@@ -1933,8 +1993,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             setTriageProgress(null);
             triageAutoOpenedRef.current = false;
             sessionStorage.removeItem("triageProgress");
-            // Clear pipeline errors on new session
+            // Clear pipeline errors and stall timer on new session
             setPipelineErrors(null);
+            if (researchStallTimeoutRef.current) {
+                clearTimeout(researchStallTimeoutRef.current);
+                researchStallTimeoutRef.current = null;
+            }
             // Clear deep research query history
             deepResearchQueryHistoryRef.current.clear();
             // Artifacts will be automatically refreshed by useArtifacts hook when sessionId changes
@@ -2079,8 +2143,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 setTriageProgress(null);
                 triageAutoOpenedRef.current = false;
                 sessionStorage.removeItem("triageProgress");
-                // Clear pipeline errors when switching sessions
+                // Clear pipeline errors and stall timer when switching sessions
                 setPipelineErrors(null);
+                if (researchStallTimeoutRef.current) {
+                    clearTimeout(researchStallTimeoutRef.current);
+                    researchStallTimeoutRef.current = null;
+                }
                 // Clear deep research query history when switching sessions
                 deepResearchQueryHistoryRef.current.clear();
 
