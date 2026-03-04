@@ -181,6 +181,8 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.triage_evaluation
           component_base_path: src
+          tool_config:
+            model: *specialist_model
 
         # -- Stage 5: NBA --
         - tool_type: python
