@@ -298,6 +298,7 @@ async def get_data_sources_health(
         {"name": "Environmental", "url": "http://localhost:9008/sse", "type": "mcp", "description": "Environmental health"},
         {"name": "SEER Cancer", "url": "http://localhost:9009/sse", "type": "mcp", "description": "Cancer statistics"},
         {"name": "Provider Intel", "url": "http://localhost:9010/sse", "type": "mcp", "description": "Provider/NPI data"},
+        {"name": "Knowledge Graph", "url": "http://localhost:9011/sse", "type": "mcp", "description": "Memgraph knowledge graph"},
         {"name": "NHS 111", "url": "http://localhost:9016/sse", "type": "mcp", "description": "NHS clinical guidance"},
         {"name": "BMA Library", "url": "http://localhost:9017/sse", "type": "mcp", "description": "UK clinical guidelines"},
         {"name": "OpenEvidence", "url": "http://localhost:9018/sse", "type": "mcp", "description": "AI-synthesised clinical evidence"},
