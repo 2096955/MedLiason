@@ -421,6 +421,22 @@ class SourceCollectorTool(DynamicTool):
             for warning in cross_ref_warnings:
                 logger.warning("%s %s", log_id, warning)
 
+        # Auto-store citation_map_json in session state so the verifier
+        # can retrieve it even if the LLM fails to pass it explicitly.
+        # This removes the LLM from a critical data-passing step.
+        try:
+            if hasattr(tool_context, "state") and tool_context.state is not None:
+                tool_context.state["_citation_map_json"] = citation_map_json
+                logger.info(
+                    "%s Auto-stored citation_map_json in session state (%d entries)",
+                    log_id,
+                    len(citation_map),
+                )
+        except Exception as exc:
+            logger.warning(
+                "%s Failed to auto-store citation_map_json: %s", log_id, exc
+            )
+
         return {
             "status": "published",
             "formatted_results": "\n".join(lines),

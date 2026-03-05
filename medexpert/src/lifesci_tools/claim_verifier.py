@@ -297,6 +297,35 @@ class ClaimVerifierTool(DynamicTool):
                 ),
             }
 
+        # Fallback: if LLM didn't pass citations, try session state
+        # (auto-stored by publish_sources)
+        if not citation_map:
+            try:
+                stored = (
+                    tool_context.state.get("_citation_map_json")
+                    if hasattr(tool_context, "state") and tool_context.state
+                    else None
+                )
+                if stored:
+                    fallback_citations = json.loads(stored)
+                    for c in fallback_citations:
+                        cid = c.get("id", "")
+                        citation_map[cid] = {
+                            "title": c.get("title", ""),
+                            "snippet": c.get("snippet", ""),
+                            "keywords": _extract_keywords(
+                                f"{c.get('title', '')} {c.get('snippet', '')}"
+                            ),
+                        }
+                    logger.info(
+                        "[claim_verifier] Recovered %d citations from session state fallback",
+                        len(citation_map),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[claim_verifier] Session state citation fallback failed: %s", exc
+                )
+
         # Extract claims
         extracted_claims = _extract_claims_with_citations(response_text)
 
