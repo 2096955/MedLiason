@@ -297,33 +297,47 @@ class ClaimVerifierTool(DynamicTool):
                 ),
             }
 
-        # Fallback: if LLM didn't pass citations, try session state
-        # (auto-stored by publish_sources)
+        # Fallback: if LLM didn't pass citations, try Redis memory_plane
+        # (auto-stored by publish_sources at the evidence:citation_map_json key)
         if not citation_map:
             try:
-                stored = (
-                    tool_context.state.get("_citation_map_json")
-                    if hasattr(tool_context, "state") and tool_context.state
-                    else None
-                )
-                if stored:
-                    fallback_citations = json.loads(stored)
-                    for c in fallback_citations:
-                        cid = c.get("id", "")
-                        citation_map[cid] = {
-                            "title": c.get("title", ""),
-                            "snippet": c.get("snippet", ""),
-                            "keywords": _extract_keywords(
-                                f"{c.get('title', '')} {c.get('snippet', '')}"
-                            ),
-                        }
-                    logger.info(
-                        "[claim_verifier] Recovered %d citations from session state fallback",
-                        len(citation_map),
-                    )
+                import os
+                redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                # Get session_id from tool_context
+                fallback_session_id = ""
+                if hasattr(tool_context, "state") and tool_context.state:
+                    a2a_ctx = tool_context.state.get("a2a_context", {})
+                    fallback_session_id = a2a_ctx.get("session_id", "")
+                if not fallback_session_id and hasattr(tool_context, "session"):
+                    fallback_session_id = getattr(tool_context.session, "id", "")
+
+                if fallback_session_id:
+                    import redis as _redis
+                    r = _redis.from_url(redis_url, decode_responses=True)
+                    redis_key = f"medexpert:{fallback_session_id}:evidence:citation_map_json"
+                    stored = r.get(redis_key)
+                    r.close()
+                    if stored:
+                        fallback_citations = json.loads(stored)
+                        for c in fallback_citations:
+                            cid = c.get("id", "")
+                            citation_map[cid] = {
+                                "title": c.get("title", ""),
+                                "snippet": c.get("snippet", ""),
+                                "keywords": _extract_keywords(
+                                    f"{c.get('title', '')} {c.get('snippet', '')}"
+                                ),
+                            }
+                        logger.info(
+                            "[claim_verifier] Recovered %d citations from Redis fallback (key=%s)",
+                            len(citation_map),
+                            redis_key,
+                        )
+            except ImportError:
+                logger.warning("[claim_verifier] Redis not available for citation fallback")
             except Exception as exc:
                 logger.warning(
-                    "[claim_verifier] Session state citation fallback failed: %s", exc
+                    "[claim_verifier] Redis citation fallback failed: %s", exc
                 )
 
         # Extract claims

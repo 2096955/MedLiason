@@ -421,20 +421,38 @@ class SourceCollectorTool(DynamicTool):
             for warning in cross_ref_warnings:
                 logger.warning("%s %s", log_id, warning)
 
-        # Auto-store citation_map_json in session state so the verifier
-        # can retrieve it even if the LLM fails to pass it explicitly.
-        # This removes the LLM from a critical data-passing step.
+        # Auto-store citation_map_json directly in Redis memory_plane so the
+        # verifier can retrieve it even if the orchestrator LLM fails to store it.
+        # Peer agents have isolated sessions, so session state won't work --
+        # Redis is the shared data plane accessible to all agents.
         try:
-            if hasattr(tool_context, "state") and tool_context.state is not None:
-                tool_context.state["_citation_map_json"] = citation_map_json
-                logger.info(
-                    "%s Auto-stored citation_map_json in session state (%d entries)",
-                    log_id,
-                    len(citation_map),
-                )
+            session_id = ""
+            if hasattr(tool_context, "state") and tool_context.state:
+                a2a_ctx = tool_context.state.get("a2a_context", {})
+                session_id = a2a_ctx.get("session_id", "")
+            if not session_id and hasattr(tool_context, "session"):
+                session_id = getattr(tool_context.session, "id", "")
+
+            if session_id and citation_map_json:
+                import os
+                redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                try:
+                    import redis as _redis
+                    r = _redis.from_url(redis_url, decode_responses=False)
+                    redis_key = f"medexpert:{session_id}:evidence:citation_map_json"
+                    r.set(redis_key, citation_map_json.encode("utf-8"), ex=3600)
+                    r.close()
+                    logger.info(
+                        "%s Auto-stored citation_map_json in Redis (%d entries, key=%s)",
+                        log_id,
+                        len(citation_map),
+                        redis_key,
+                    )
+                except ImportError:
+                    logger.warning("%s Redis not available for citation_map auto-store", log_id)
         except Exception as exc:
             logger.warning(
-                "%s Failed to auto-store citation_map_json: %s", log_id, exc
+                "%s Failed to auto-store citation_map_json in Redis: %s", log_id, exc
             )
 
         return {
