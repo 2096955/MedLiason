@@ -29,7 +29,7 @@ spec:
         # Main container: MedExpert-v2 Multi-Model
         # 39 agents (3 stacks x 13) + 10 MCP servers + Redis + gateway
         - name: medexpert-v2
-          image: gcr.io/gbg-neuro/medexpert-v2:e35b6644
+          image: gcr.io/gbg-neuro/medexpert-v2:1d3c61b7
           ports:
             - name: http1
               containerPort: 8080
