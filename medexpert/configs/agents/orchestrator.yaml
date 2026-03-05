@@ -209,6 +209,10 @@ apps:
           component_module: lifesci_tools.graph_writer
           component_base_path: src
 
+
+        # -- Web Search (DuckDuckGo) for pre-search identification --
+        - tool_type: builtin-group
+          group_name: "web_search"
         # ── Artifact management ──
         - tool_type: builtin-group
           group_name: "artifact_management"
