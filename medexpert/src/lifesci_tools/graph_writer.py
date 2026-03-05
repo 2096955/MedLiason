@@ -374,6 +374,7 @@ class GraphWriterTool(DynamicTool):
         self,
         args: dict,
         tool_context: ToolContext,
+        credential: str | None = None,
     ) -> dict:
         """Execute the graph write operation. Never raises."""
         try:

@@ -196,8 +196,8 @@ function AppLayoutContent() {
                 />
             )}
 
-            {/* PWA Install Prompt — always mounted for event listener, visibility gated */}
-            <PWAInstallPrompt visible={activeBanner === "install" || activeBanner === null} onBannerStateChange={setCanInstall} />
+            {/* PWA Install Prompt — disabled (users access via browser URL, not PWA) */}
+            {/* <PWAInstallPrompt visible={activeBanner === "install" || activeBanner === null} onBannerStateChange={setCanInstall} /> */}
 
             {/* Offline Indicator — self-hides when online */}
             <OfflineIndicator />
