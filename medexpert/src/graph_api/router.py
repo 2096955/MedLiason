@@ -172,11 +172,33 @@ async def explore_graph(
     labels: str | None = Query(None, description="Comma-separated entity types to browse"),
     limit: int = Query(100, ge=1, le=500),
 ):
-    """Browse the persistent knowledge base with optional type filters."""
+    """Browse the persistent knowledge base with optional type filters.
+
+    Reshapes the MCP result into {nodes, edges} format expected by the
+    frontend's useGraphData hook.
+    """
     entity_types = [t.strip() for t in labels.split(",")] if labels else None
     result = await _call_tool(
         "query_knowledge_graph",
         {"query": "*", "entity_types": entity_types, "limit": limit},
     )
-    status = 200 if result.get("success", False) else 503
-    return JSONResponse(content=result, status_code=status)
+    if not result.get("success", False):
+        return JSONResponse(content=result, status_code=503)
+
+    # Reshape: convert flat results list into {nodes, edges} for frontend
+    raw_results = result.get("results", [])
+    nodes = []
+    for item in raw_results:
+        if isinstance(item, dict):
+            nodes.append({
+                "id": item.get("id") or item.get("name", ""),
+                "label": item.get("name", ""),
+                "type": item.get("type") or item.get("label", "Entity"),
+                "properties": item,
+            })
+    return JSONResponse(content={
+        "success": True,
+        "nodes": nodes,
+        "edges": [],
+        "total_results": result.get("total_results", len(nodes)),
+    })
