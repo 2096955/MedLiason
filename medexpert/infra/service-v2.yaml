@@ -63,6 +63,8 @@ spec:
               value: "medexpert-demo"
             - name: SESSION_SECRET_KEY
               value: "medliaison-multimodel-demo-key"
+            - name: FIRECRAWL_API_KEY
+              value: "fc-2146c607264b4ea899e16c2a7bc951ec"
           startupProbe:
             httpGet:
               path: /health

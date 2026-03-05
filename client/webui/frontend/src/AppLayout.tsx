@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { NavigationSidebar, ToastContainer, bottomNavigationItems, getTopNavigationItems, EmptyState } from "@/lib/components";
 import { MobileBottomNav, type MobileTabId } from "@/lib/components/navigation";
-import { PWAUpdateBanner, PWAInstallPrompt, OfflineIndicator } from "@/lib/components/pwa";
+import { PWAUpdateBanner, OfflineIndicator } from "@/lib/components/pwa";
 import { TriageFloatingBanner } from "@/lib/components/chat/triage";
 import { SelectionContextMenu, useTextSelection } from "@/lib/components/chat/selection";
 import { ChatProvider } from "@/lib/providers";
@@ -23,17 +23,15 @@ function AppLayoutContent() {
     const isMobile = useIsMobile();
     const isOnline = useOnlineStatus();
     const { needRefresh, offlineReady, acceptUpdate, dismissUpdate, dismissOfflineReady } = usePWA();
-    const [canInstall, setCanInstall] = useState(false);
-
     // Triage state from ChatContext (AppLayoutContent is inside ChatProvider)
     const { selectedAgentName, isResponding, triageProgress, openSidePanelTab } = useChatContext();
     const triageActive = (selectedAgentName?.includes("Triage") ?? false) && isResponding && triageProgress !== null;
 
-    // Banner mutual exclusion — one banner at a time
+    // Banner mutual exclusion — one banner at a time (PWA install prompt disabled)
     const activeBanner = useBannerPriority({
         isOffline: !isOnline,
         needsUpdate: needRefresh,
-        canInstall,
+        canInstall: false,
         triageActive,
     });
 
