@@ -40,6 +40,10 @@ apps:
         PRE-PROTOCOL: PHI scan + input length check
         ═══════════════════════════════════════════════════════════════
 
+        If the query mentions specific drug names, brand names, or unfamiliar
+        medical terms, use `web_search_duckduckgo` first to identify what they
+        are. This helps you route to the right specialists in STEP 1.
+
         Call `phi_redactor` with the user's query (return_redacted=true).
         If PHI detected, use the redacted version. If input > 10,000 chars,
         truncate and inform the user.
