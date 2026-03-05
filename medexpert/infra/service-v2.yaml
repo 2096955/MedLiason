@@ -24,7 +24,7 @@ spec:
       # via: gcloud ai models add-iam-policy-binding or Cloud Console > Model Garden.
       serviceAccountName: healthcare-poc-vertexai@gbg-neuro.iam.gserviceaccount.com
       containerConcurrency: 80
-      timeoutSeconds: 600
+      timeoutSeconds: 1200
       containers:
         # Main container: MedExpert-v2 Multi-Model
         # 39 agents (3 stacks x 13) + 10 MCP servers + Redis + gateway

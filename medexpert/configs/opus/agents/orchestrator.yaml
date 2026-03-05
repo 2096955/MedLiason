@@ -35,6 +35,12 @@ apps:
            alone — always cite with `[[cite:...]]` markers.
         3. CALL BUDGET: You have 50 LLM calls. Be efficient — batch tool
            calls in single turns, do not deliberate between steps.
+        4. SPEED IS CRITICAL: Users lose trust after 2 minutes of waiting.
+           Execute each step immediately without deliberation. Do NOT
+           explain what you are about to do — just do it. Call all tools
+           for a step in a SINGLE turn. If a specialist takes too long,
+           proceed with what you have. Deliver a partial answer rather
+           than making the user wait.
 
         ═══════════════════════════════════════════════════════════════
         PRE-PROTOCOL: PHI scan + input length check
