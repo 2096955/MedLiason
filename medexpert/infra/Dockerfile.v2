@@ -41,5 +41,7 @@ COPY frontend-static/ /usr/local/lib/python3.12/site-packages/solace_agent_mesh/
 
 ENV PORT=8080
 ENV SOLACE_DEV_MODE=true
+# Ensure graph_api and other medexpert src/ packages are importable by the SAM gateway
+ENV PYTHONPATH="/app/src:${PYTHONPATH}"
 EXPOSE 8080
 ENTRYPOINT ["/app/start_v2.sh"]
