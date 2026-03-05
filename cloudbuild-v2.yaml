@@ -13,6 +13,16 @@ steps:
       - "-c"
       - "rm -rf medexpert/frontend-static && cp -r client/webui/frontend/static medexpert/frontend-static"
 
+  # Copy gateway overrides into medexpert build context
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        mkdir -p medexpert/gateway-overrides/routers
+        cp src/solace_agent_mesh/gateway/http_sse/main.py medexpert/gateway-overrides/main.py
+        cp src/solace_agent_mesh/gateway/http_sse/routers/agent_cards.py medexpert/gateway-overrides/routers/agent_cards.py
+
   # Docker build (uses Dockerfile.v2 with litellm override)
   - name: "gcr.io/cloud-builders/docker"
     args:

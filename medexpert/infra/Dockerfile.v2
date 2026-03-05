@@ -39,6 +39,11 @@ RUN chmod +x /app/start_v2.sh
 RUN rm -rf /usr/local/lib/python3.12/site-packages/solace_agent_mesh/client/webui/frontend/static/
 COPY frontend-static/ /usr/local/lib/python3.12/site-packages/solace_agent_mesh/client/webui/frontend/static/
 
+# Override SAM gateway files with MedExpert customizations (graph_api router, evolution router, datasources health)
+# These files are copied from our local repo by Cloud Build (not in SAM 1.16.4 pip package)
+COPY gateway-overrides/main.py     /usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/main.py
+COPY gateway-overrides/routers/agent_cards.py     /usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/routers/agent_cards.py
+
 ENV PORT=8080
 ENV SOLACE_DEV_MODE=true
 # Ensure graph_api and other medexpert src/ packages are importable by the SAM gateway
