@@ -28,6 +28,8 @@ apps:
         5-stage diagnostic pipeline using specialist panels and decision
         rules.
 
+        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
         You coordinate the following tools:
         - `triage_routing` -- selects specialists based on symptom keywords
         - `triage_specialist_panel` -- runs parallel LLM calls with persona

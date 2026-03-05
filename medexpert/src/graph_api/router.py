@@ -78,6 +78,10 @@ async def _call_tool(tool_name: str, arguments: dict) -> dict:
                 "is_retryable": False,
             }
 
+        # FastMCP @mcp.tool() wraps functions in FunctionTool objects.
+        # Unwrap to get the underlying async callable.
+        if hasattr(fn, "fn"):
+            fn = fn.fn
         return await fn(**arguments)
 
     except ImportError:
