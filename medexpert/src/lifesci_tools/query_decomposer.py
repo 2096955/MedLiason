@@ -80,6 +80,22 @@ def _route_question(question: str) -> list[dict]:
             "role": "secondary",
         })
 
+    # Heuristic: if query contains capitalized words that look like drug
+    # brand names (not common English words), include DrugSpecialist
+    import re
+    words = re.findall(r"[A-Z][a-z]{2,}", question)
+    # Filter out common non-drug words
+    common = {"What", "When", "How", "Can", "Are", "The", "This", "That",
+              "Which", "Where", "Why", "Who", "Please", "Tell", "Not"}
+    potential_brands = [w for w in words if w not in common]
+    if potential_brands and not any(r["agent"] == "DrugSpecialist" for r in results):
+        results.append({
+            "domain": "drugs",
+            "agent": "DrugSpecialist",
+            "confidence": 0.4,
+            "role": "secondary",
+        })
+
     return results
 
 
