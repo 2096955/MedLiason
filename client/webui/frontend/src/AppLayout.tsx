@@ -183,16 +183,7 @@ function AppLayoutContent() {
                 />
             )}
 
-            {/* Offline-ready one-shot notification — show when no higher-priority banner */}
-            {activeBanner === null && offlineReady && (
-                <PWAUpdateBanner
-                    needRefresh={false}
-                    offlineReady={true}
-                    onAcceptUpdate={safeAcceptUpdate}
-                    onDismissUpdate={dismissUpdate}
-                    onDismissOfflineReady={dismissOfflineReady}
-                />
-            )}
+            {/* Offline-ready banner disabled — misleading for web app */}
 
             {/* PWA Install Prompt — disabled (users access via browser URL, not PWA) */}
             {/* <PWAInstallPrompt visible={activeBanner === "install" || activeBanner === null} onBannerStateChange={setCanInstall} /> */}

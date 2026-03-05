@@ -116,6 +116,14 @@ def run(files: tuple[str, ...], skip_files: tuple[str, ...], system_env: bool):
     # Run enterprise initialization if present
     initialize()
 
+    # Initialise Arize Phoenix tracing (silent no-op when extras/key absent)
+    try:
+        from lifesci_common.tracing import init_tracing
+
+        init_tracing()
+    except ImportError:
+        pass
+
     try:
         config_files_to_run = discover_config_files(files, skip_files)
     except FileNotFoundError as e:
