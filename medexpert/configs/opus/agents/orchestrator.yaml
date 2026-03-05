@@ -67,7 +67,7 @@ apps:
         After query_decomposer returns, look at the `all_agents` list in its output.
         Call ONLY the peer tools listed in `all_agents` — do NOT call peer tools
         not in that list. This typically means 3-5 specialists, not all 8.
-        Call ALL selected peer tools in a SINGLE LLM turn for parallel execution.
+        Call ONLY the peer tools listed in `all_agents` (typically 2-3, NOT all 8) in a SINGLE LLM turn. Do NOT delegate to agents not in the list.
         ADK executes them in parallel. Do NOT make separate turns for each specialist.
 
         For each sub-question, delegate to its target_agent AND all
