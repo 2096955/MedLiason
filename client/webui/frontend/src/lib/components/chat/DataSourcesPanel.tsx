@@ -62,7 +62,7 @@ export const DataSourcesPanel: React.FC<DataSourcesPanelProps> = ({ isActive = f
             hasFetchedRef.current = true;
         } catch {
             setHealth(null);
-            setError("Could not reach data sources endpoint. Showing known sources.");
+            setError("Showing known sources.");
         } finally {
             setIsLoading(false);
         }
