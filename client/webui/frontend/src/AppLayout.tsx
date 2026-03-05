@@ -22,7 +22,7 @@ function AppLayoutContent() {
     // Mobile & PWA hooks
     const isMobile = useIsMobile();
     const isOnline = useOnlineStatus();
-    const { needRefresh, offlineReady, acceptUpdate, dismissUpdate, dismissOfflineReady } = usePWA();
+    const { needRefresh, acceptUpdate, dismissUpdate, dismissOfflineReady } = usePWA();
     // Triage state from ChatContext (AppLayoutContent is inside ChatProvider)
     const { selectedAgentName, isResponding, triageProgress, openSidePanelTab } = useChatContext();
     const triageActive = (selectedAgentName?.includes("Triage") ?? false) && isResponding && triageProgress !== null;
