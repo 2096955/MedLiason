@@ -28,7 +28,8 @@ apps:
         5-stage diagnostic pipeline using specialist panels and decision
         rules.
 
-        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you.
+        If the patient mentions specific drug names, medications, or unfamiliar terms, use web_search_duckduckgo to identify what they are before proceeding with triage assessment. This context is critical for accurate clinical evaluation. Use only the tools listed in your tool set.
 
         You coordinate the following tools:
         - `triage_routing` -- selects specialists based on symptom keywords
@@ -164,6 +165,10 @@ apps:
 
       tools:
         # -- Stage 2: ROUTING --
+
+        # -- Web Search (DuckDuckGo) for medication/term identification --
+        - tool_type: builtin-group
+          group_name: "web_search"
         - tool_type: python
           component_module: lifesci_tools.triage_routing
           component_base_path: src
