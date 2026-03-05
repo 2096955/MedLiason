@@ -28,6 +28,8 @@ apps:
 
         IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
 
+        If your primary MCP data sources return errors or no results, use web_search_duckduckgo as a fallback to find relevant medical literature and guidelines. Do NOT use web_search_google (requires API key).
+
         **DATA SOURCES:**
         - CMS Provider Data: quality ratings, specialties
         - CMS Open Payments: financial relationships with industry
@@ -96,6 +98,10 @@ apps:
             url: "http://localhost:9010/sse"
             timeout: 30
 
+
+        # -- Web Search Fallback (DuckDuckGo) --
+        - tool_type: builtin-group
+          group_name: "web_search"
         - tool_type: python
           component_module: lifesci_tools.evidence_grader
           component_base_path: src
