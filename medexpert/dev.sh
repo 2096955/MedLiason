@@ -157,9 +157,8 @@ ok "MedExpert dependencies installed"
 
 # Install tracing extras (Arize Phoenix — optional, silent skip on failure)
 info "Installing tracing dependencies (Arize Phoenix)..."
-uv pip install arize-phoenix-otel "openinference-instrumentation-litellm>=0.1.28" \
-  "opentelemetry-api>=1.20" "opentelemetry-sdk>=1.20" "opentelemetry-exporter-otlp>=1.20" \
-  2>/dev/null && ok "Tracing dependencies installed" \
+uv pip install -e "$MEDEXPERT_DIR[tracing]" --no-deps 2>/dev/null \
+  && ok "Tracing dependencies installed" \
   || warn "Tracing dependencies failed to install — Phoenix observability will be disabled"
 
 ###########################################################################

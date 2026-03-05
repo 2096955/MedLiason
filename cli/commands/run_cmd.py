@@ -116,13 +116,18 @@ def run(files: tuple[str, ...], skip_files: tuple[str, ...], system_env: bool):
     # Run enterprise initialization if present
     initialize()
 
-    # Initialise Arize Phoenix tracing (silent no-op when extras/key absent)
-    try:
-        from lifesci_common.tracing import init_tracing
+    # Generic pre-run hook: SAM_PRE_RUN_HOOK=module.path:function_name
+    # Applications (e.g. MedExpert) set this to bootstrap tracing, etc.
+    pre_run_hook = os.getenv("SAM_PRE_RUN_HOOK")
+    if pre_run_hook:
+        try:
+            module_path, func_name = pre_run_hook.rsplit(":", 1)
+            import importlib
 
-        init_tracing()
-    except ImportError:
-        pass
+            mod = importlib.import_module(module_path)
+            getattr(mod, func_name)()
+        except Exception as exc:
+            log.warning("SAM_PRE_RUN_HOOK '%s' failed: %s", pre_run_hook, exc)
 
     try:
         config_files_to_run = discover_config_files(files, skip_files)
