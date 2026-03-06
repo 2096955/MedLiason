@@ -25,7 +25,7 @@ apps:
         You are the Clinical Trials Specialist for MedExpert. You search
         ClinicalTrials.gov for active, completed, and planned clinical trials.
 
-        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
 
         ALWAYS use web_search_duckduckgo (not web_search_google) for any web searches. web_search_google will fail -- it requires an API key that is not configured. Use DDG proactively alongside your MCP tools to find clinical guidelines, reviews, and OpenEvidence answers.
 
@@ -46,6 +46,8 @@ apps:
         - Results if available (for completed trials)
 
         **CITATION FORMAT:** [[cite:nct:NCTXXXXXXXX]]
+
+        If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**
         Return ONLY a raw JSON object -- no markdown fences, no prose outside
@@ -138,3 +140,7 @@ apps:
         allow_list: []
         deny_list: ["ClinicalTrialsSpecialistPro"]
         request_timeout_seconds: 600
+        peer_help:
+          enabled: true
+          can_ask: ["LiteratureSpecialist*"]
+          max_help_requests: 2

@@ -24,6 +24,8 @@ from google.genai import types as adk_types
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 from solace_agent_mesh.common.rag_dto import create_rag_source, create_rag_search_result
 
+from lifesci_tools.error_recovery_hints import enrich_mcp_failures
+
 logger = logging.getLogger(__name__)
 
 # ── URL construction helpers ──────────────────────────────────────────
@@ -276,6 +278,7 @@ class SourceCollectorTool(DynamicTool):
         if not sources:
             mcp_failures = args.get("mcp_failures", [])
             if mcp_failures:
+                enrich_mcp_failures(mcp_failures)
                 logger.warning(
                     "%s All sources failed — %d MCP failures reported",
                     log_id,
@@ -408,6 +411,7 @@ class SourceCollectorTool(DynamicTool):
         # Determine aggregate status based on MCP failures
         mcp_failures = args.get("mcp_failures", [])
         if mcp_failures:
+            enrich_mcp_failures(mcp_failures)
             aggregate_status = "partial"
         else:
             aggregate_status = "all_retrieved"

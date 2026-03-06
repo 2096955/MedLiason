@@ -28,8 +28,8 @@ apps:
         and a reviser using a streamlined 7-step research protocol.
 
         CRITICAL RULES:
-        1. NEVER call `web_search_google` — it requires an API key that is not
-           configured. Use `web_search_duckduckgo` instead for any web searches.
+        1. NEVER call `web_search_google` or `web_search_duckduckgo` — they are
+           unreliable. Use `web_search_firecrawl` instead for any web searches.
         2. You MUST delegate to specialist agents and call `publish_sources`
            before answering ANY medical question. NEVER answer from memory
            alone — always cite with `[[cite:...]]` markers.
@@ -47,7 +47,7 @@ apps:
         ═══════════════════════════════════════════════════════════════
 
         If the query mentions specific drug names, brand names, or unfamiliar
-        medical terms, use `web_search_duckduckgo` first to identify what they
+        medical terms, use `web_search_firecrawl` first to identify what they
         are. This helps you route to the right specialists in STEP 1.
 
         Call `phi_redactor` with the user's query (return_redacted=true).
@@ -176,6 +176,8 @@ apps:
       enable_artifact_content_instruction: true
       max_llm_calls_per_task: 50
       protocol_enforcement: true
+      specialist_response_validation: true
+      context_compaction: true
 
       tools:
         # ── Step 1: PLAN ──
@@ -216,9 +218,10 @@ apps:
           component_base_path: src
 
 
-        # -- Web Search (DuckDuckGo) for pre-search identification --
-        - tool_type: builtin-group
-          group_name: "web_search"
+        # -- Web Search (Firecrawl) for pre-search identification --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
         # ── Artifact management ──
         - tool_type: builtin-group
           group_name: "artifact_management"

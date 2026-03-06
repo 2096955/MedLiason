@@ -750,6 +750,11 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                                         {failure.error_category.replace(/_/g, " ")}
                                         {failure.is_retryable && " — retryable"}
                                     </span>
+                                    {failure.recovery_hint && (
+                                        <span className="text-muted-foreground/80 block mt-0.5 italic">
+                                            {failure.recovery_hint}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         ))}

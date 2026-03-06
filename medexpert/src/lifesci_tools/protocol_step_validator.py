@@ -40,13 +40,13 @@ STEP_LABELS: Dict[int, str] = {
 }
 
 ALLOWED_TOOLS_PER_STEP: Dict[int, Set[str]] = {
-    0: {"memory_plane", "phi_redactor"},
-    1: {"query_decomposer", "memory_plane"},
-    2: {"peer_*"},
-    3: {"publish_sources", "completeness_checker", "memory_plane", "peer_*"},
-    4: {"report_generator", "phi_redactor", "memory_plane"},
-    5: {"peer_Verifier*", "peer_Reviser*", "memory_plane"},
-    6: {"memory_plane", "graph_writer"},
+    0: {"memory_plane", "phi_redactor", "session_state", "cold_query"},
+    1: {"query_decomposer", "memory_plane", "session_state"},
+    2: {"peer_*", "session_state"},
+    3: {"publish_sources", "completeness_checker", "memory_plane", "peer_*", "session_state", "evidence_store"},
+    4: {"report_generator", "phi_redactor", "memory_plane", "session_state", "evidence_store"},
+    5: {"peer_Verifier*", "peer_Reviser*", "memory_plane", "session_state", "evidence_store"},
+    6: {"memory_plane", "graph_writer", "session_state", "cold_query"},
 }
 
 # Tools that, when successfully validated, advance the step counter.
@@ -55,6 +55,7 @@ ALLOWED_TOOLS_PER_STEP: Dict[int, Set[str]] = {
 # For memory_plane, we further inspect the `operation` argument.
 STEP_ADVANCEMENT_TRIGGERS: Dict[str, int] = {
     "memory_plane:seed_session": 1,   # seed done -> ready for PLAN
+    "cold_query:seed_session": 1,     # cold_query variant of seed
     "query_decomposer": 2,            # plan done -> ready for DELEGATE
     # peer_* tools at step 2 keep us at step 2 (multiple peers in one turn)
     "publish_sources": 3,             # starts COLLECT (valid at step 3)
@@ -63,6 +64,7 @@ STEP_ADVANCEMENT_TRIGGERS: Dict[str, int] = {
     "peer_VerifierAgent": 5,          # stays in VERIFY+REVISE
     "peer_ReviserAgent": 5,           # stays in VERIFY+REVISE
     "memory_plane:flush_cold": 6,     # PERSIST (terminal)
+    "cold_query:flush_cold": 6,       # cold_query variant of flush
 }
 
 # Session state key for tracking protocol step
@@ -146,15 +148,15 @@ def _detect_step_advancement(
     """
     tool_args = tool_args or {}
 
-    # Special handling for memory_plane — check the `operation` argument
-    if tool_name == "memory_plane":
+    # Special handling for memory_plane and cold_query — check the `operation` argument
+    if tool_name in ("memory_plane", "cold_query"):
         operation = tool_args.get("operation", "").lower()
-        composite_key = f"memory_plane:{operation}"
+        composite_key = f"{tool_name}:{operation}"
         if composite_key in STEP_ADVANCEMENT_TRIGGERS:
             new_step = STEP_ADVANCEMENT_TRIGGERS[composite_key]
             if new_step >= current_step:
                 return new_step
-        # memory_plane without a triggering operation doesn't advance
+        # Without a triggering operation, don't advance
         return current_step
 
     # Direct match in triggers

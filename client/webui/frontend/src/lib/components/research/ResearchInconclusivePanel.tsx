@@ -75,16 +75,23 @@ function parseFailedClaims(text: string): string[] {
 const MCPFailureRow: React.FC<{ failure: MCPFailure }> = ({ failure }) => {
     const categoryLabel = ERROR_CATEGORY_LABELS[failure.error_category] || failure.error_category;
     return (
-        <li className="flex items-center justify-between gap-2 text-sm">
-            <span className="font-medium text-amber-800 dark:text-amber-200">{failure.server}</span>
-            <span className="flex items-center gap-1.5">
-                <span className="text-amber-700 dark:text-amber-300">{categoryLabel}</span>
-                {failure.is_retryable && (
-                    <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800 dark:text-amber-200">
-                        Retryable
-                    </span>
-                )}
-            </span>
+        <li className="space-y-0.5">
+            <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="font-medium text-amber-800 dark:text-amber-200">{failure.server}</span>
+                <span className="flex items-center gap-1.5">
+                    <span className="text-amber-700 dark:text-amber-300">{categoryLabel}</span>
+                    {failure.is_retryable && (
+                        <span className="rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-800 dark:text-amber-200">
+                            Retryable
+                        </span>
+                    )}
+                </span>
+            </div>
+            {failure.recovery_hint && (
+                <p className="text-xs italic text-amber-600/80 dark:text-amber-400/80 pl-1">
+                    {failure.recovery_hint}
+                </p>
+            )}
         </li>
     );
 };

@@ -311,6 +311,8 @@ export interface MCPFailure {
     server: string;
     error_category: string;
     is_retryable: boolean;
+    /** User-actionable recovery suggestion (e.g., "Set NCBI_API_KEY for higher rate limit") */
+    recovery_hint?: string;
 }
 
 /** Pipeline error metadata extracted from tool_result events */

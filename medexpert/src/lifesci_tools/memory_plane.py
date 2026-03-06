@@ -1,5 +1,13 @@
 """Central Memory Plane — shared state for orchestrator, verifier, reviser.
 
+.. deprecated::
+    This monolithic tool is retained for backward compatibility.
+    Prefer using the focused tools directly:
+
+    - ``session_state`` — hot-path store/retrieve/append/clear (intermediate, verification)
+    - ``evidence_store`` — citation and evidence management (citations, evidence)
+    - ``cold_query`` — cold store operations (seed_session, flush_cold, query_cold, get_strategy)
+
 Provides session-scoped key-value storage with namespace separation.
 Uses Redis in production, falls back to an in-memory dict for dev/test.
 

@@ -24,30 +24,46 @@ shared_config:
       max_tokens: 16000
       parallel_tool_calls: true
       cache_strategy: "none"
+      num_retries: 2
+      fallbacks:
+        - "vertex_ai/gemini-2.5-pro"
 
     specialist: &specialist_model
       model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.3
       max_tokens: 12000
       cache_strategy: "none"
+      num_retries: 2
+      fallbacks:
+        - "vertex_ai/gemini-2.5-pro"
 
     advisory: &advisory_model
       model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.7
       max_tokens: 12000
       cache_strategy: "none"
+      num_retries: 2
+      fallbacks:
+        - "vertex_ai/gemini-2.5-pro"
 
+    # Verifier intentionally has NO fallback — verification must use the
+    # stronger model for factual accuracy. On failure, the GVR loop treats
+    # verification_status: "skipped" as MINOR_ISSUES (safe degradation).
     verifier: &verifier_model
       model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, vertex_ai/gemini-2.5-pro}
       temperature: 0.1
       max_tokens: 8000
       cache_strategy: "none"
+      num_retries: 3
 
     reviser: &reviser_model
       model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.3
       max_tokens: 12000
       cache_strategy: "none"
+      num_retries: 2
+      fallbacks:
+        - "vertex_ai/gemini-2.5-pro"
 
     # Backward-compatible aliases for gateway and legacy configs
     general: &general_model

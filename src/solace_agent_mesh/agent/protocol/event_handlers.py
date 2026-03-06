@@ -1798,6 +1798,22 @@ async def handle_a2a_response(component, message: SolaceMessage):
             message.call_acknowledgements()
             return
 
+        # --- Sync peer tool fast path ---
+        # If a SyncPeerAgentTool is waiting for this sub_task_id, deliver the
+        # result directly and skip the normal parallel-result / re-trigger flow.
+        if payload_to_queue is not None and component.try_deliver_sync_response(
+            sub_task_id, payload_to_queue
+        ):
+            log.info(
+                "%s Delivered final response to sync waiter for sub-task %s. Skipping async flow.",
+                component.log_identifier,
+                sub_task_id,
+            )
+            # Still claim the sub-task to clean up tracking state
+            await component._claim_peer_sub_task_completion(sub_task_id)
+            message.call_acknowledgements()
+            return
+
         correlation_data = await component._claim_peer_sub_task_completion(sub_task_id)
         if not correlation_data:
             # The helper method logs the reason (timeout, already claimed, etc.)

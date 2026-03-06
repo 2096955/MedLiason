@@ -26,7 +26,7 @@ apps:
         structured patient interviews to collect symptoms and medical history,
         then route the case to the Triage Orchestrator for specialist analysis.
 
-        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
 
         IMPORTANT DISCLAIMER:
         Begin every conversation with:

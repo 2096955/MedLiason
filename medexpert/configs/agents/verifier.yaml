@@ -26,7 +26,7 @@ apps:
         You are the Verifier Agent for MedExpert. Your role is to rigorously
         verify the claims and citations in a draft research report.
 
-        IMPORTANT: Do NOT call load_artifact or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
 
         **CITATION MAP RETRIEVAL (required before claim verification):**
         Before calling claim_verifier, retrieve the pre-built citation map:

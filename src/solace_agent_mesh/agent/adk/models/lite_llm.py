@@ -765,6 +765,8 @@ class LiteLlm(BaseLlm):
     _additional_args: Dict[str, Any] = None
     _oauth_token_manager: Optional[OAuth2ClientCredentialsTokenManager] = None
     _cache_strategy: str = "5m"  # Default to 5-minute ephemeral cache
+    _fallback_models: List[str] = []
+    _num_retries: int = 3
 
     def __init__(self, model: str, cache_strategy: str = "5m", **kwargs):
         """Initializes the LiteLlm class.
@@ -804,6 +806,16 @@ class LiteLlm(BaseLlm):
         else:
             self._oauth_token_manager = None
 
+        # Extract fallback/retry configuration before passing to acompletion
+        self._fallback_models = self._additional_args.pop("fallbacks", []) or []
+        self._num_retries = self._additional_args.pop("num_retries", 3)
+        if self._fallback_models:
+            logger.info(
+                "LiteLlm model failover configured: %s -> %s",
+                model,
+                self._fallback_models,
+            )
+
         # preventing generation call with llm_client
         # and overriding messages, tools and stream which are managed internally
         self._additional_args.pop("llm_client", None)
@@ -811,6 +823,76 @@ class LiteLlm(BaseLlm):
         self._additional_args.pop("tools", None)
         # public api called from runner determines to stream or not
         self._additional_args.pop("stream", None)
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        """Classify an LLM exception as transient (retryable) or permanent."""
+        status = getattr(exc, "status_code", None)
+        if status in (429, 500, 502, 503, 504, 529):
+            return True
+        error_str = str(exc).lower()
+        return any(
+            pattern in error_str
+            for pattern in (
+                "rate limit",
+                "overloaded",
+                "timeout",
+                "quota",
+                "service unavailable",
+                "bad gateway",
+                "internal server error",
+                "connection reset",
+                "connection error",
+            )
+        )
+
+    async def _acompletion_with_fallback(self, **completion_args):
+        """Call acompletion with retry and model fallback on transient errors.
+
+        Tries the primary model first with num_retries attempts (exponential
+        backoff between same-model retries), then each fallback model in order.
+        Returns the first successful response.
+        Raises the last exception if all models fail.
+
+        Note: For streaming calls, this guards the initial connection only.
+        Mid-stream failures (after chunks have been yielded) are not retried
+        here because partial content has already been sent to the client.
+        """
+        import asyncio
+        import random
+
+        models_to_try = [completion_args["model"]] + list(self._fallback_models)
+        last_error = None
+
+        for model_name in models_to_try:
+            args = {**completion_args, "model": model_name}
+            for attempt in range(self._num_retries + 1):
+                try:
+                    return await self.llm_client.acompletion(**args)
+                except Exception as e:
+                    last_error = e
+                    if not self._is_transient_error(e):
+                        raise
+                    backoff = min(2 ** attempt, 16) + random.uniform(0, 1)
+                    logger.warning(
+                        "LiteLlm transient error (model=%s, attempt=%d/%d, "
+                        "retrying in %.1fs): %s",
+                        model_name,
+                        attempt + 1,
+                        self._num_retries + 1,
+                        backoff,
+                        str(e)[:200],
+                    )
+                    if attempt < self._num_retries:
+                        await asyncio.sleep(backoff)
+            # All retries exhausted for this model, try next fallback
+            if model_name != models_to_try[-1]:
+                logger.warning(
+                    "LiteLlm failing over from %s to next fallback model",
+                    model_name,
+                )
+
+        raise last_error
 
     def _extract_oauth_config(self, kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Extract OAuth configuration from kwargs.
@@ -923,7 +1005,7 @@ class LiteLlm(BaseLlm):
             aggregated_llm_response_with_tool_call = None
             usage_metadata = None
             fallback_index = 0
-            async for part in await self.llm_client.acompletion(**completion_args):
+            async for part in await self._acompletion_with_fallback(**completion_args):
                 for chunk, finish_reason in _model_response_to_chunk(part):
                     if isinstance(chunk, FunctionChunk):
                         index = chunk.index or fallback_index
@@ -1059,7 +1141,7 @@ class LiteLlm(BaseLlm):
                 yield aggregated_llm_response_with_tool_call
 
         else:
-            response = await self.llm_client.acompletion(**completion_args)
+            response = await self._acompletion_with_fallback(**completion_args)
             yield _model_response_to_generate_content_response(response)
 
     @staticmethod

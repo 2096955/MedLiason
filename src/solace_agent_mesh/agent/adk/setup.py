@@ -1225,6 +1225,28 @@ def initialize_adk_agent(
             component.log_identifier,
         )
 
+        # Context compaction (MedExpert orchestrator only)
+        # Injects summarization hints at context-heavy protocol steps.
+        if component.get_config("app_config", {}).get("context_compaction"):
+            try:
+                from lifesci_tools.context_compactor import (
+                    context_compactor_callback,
+                )
+
+                context_compactor_cb = functools.partial(
+                    context_compactor_callback, host_component=component
+                )
+                callbacks_in_order_for_before_model.append(context_compactor_cb)
+                log.debug(
+                    "%s Added context_compactor_callback to before_model chain.",
+                    component.log_identifier,
+                )
+            except ImportError:
+                log.warning(
+                    "%s context_compaction enabled but lifesci_tools not found.",
+                    component.log_identifier,
+                )
+
         solace_llm_trigger_callback_with_component = functools.partial(
             adk_callbacks.solace_llm_invocation_callback, host_component=component
         )
@@ -1370,7 +1392,50 @@ def initialize_adk_agent(
                 )
                 return tool_response
 
-        agent.after_tool_callback = chained_after_tool_callback
+        # Optional: specialist response validation (MedExpert orchestrator only)
+        specialist_validator_cb = None
+        if component.get_config("app_config", {}).get("specialist_response_validation"):
+            try:
+                from lifesci_tools.specialist_response_validator import (
+                    specialist_response_validator_callback,
+                )
+                specialist_validator_cb = specialist_response_validator_callback
+                log.debug(
+                    "%s Specialist response validator enabled.",
+                    component.log_identifier,
+                )
+            except ImportError:
+                log.warning(
+                    "%s specialist_response_validation enabled but lifesci_tools not found.",
+                    component.log_identifier,
+                )
+
+        # Wrap the chain to include the optional validator
+        _base_after_tool_callback = chained_after_tool_callback
+        _specialist_validator = specialist_validator_cb
+
+        async def _after_tool_callback_with_validation(
+            tool: BaseTool,
+            args: Dict,
+            tool_context: ToolContext,
+            tool_response: Dict,
+        ) -> Optional[Dict]:
+            result = await _base_after_tool_callback(tool, args, tool_context, tool_response)
+            if _specialist_validator is not None:
+                try:
+                    result = await _specialist_validator(
+                        tool, args, tool_context, result if result is not None else tool_response
+                    )
+                except Exception as e:
+                    log.warning(
+                        "%s Specialist validator error for %s: %s",
+                        component.log_identifier,
+                        getattr(tool, "name", "unknown"),
+                        e,
+                    )
+            return result
+
+        agent.after_tool_callback = _after_tool_callback_with_validation
         log.debug(
             "%s Chained 'manage_large_mcp_tool_responses_callback' and 'after_tool_callback_inject_metadata' as after_tool_callback.",
             component.log_identifier,

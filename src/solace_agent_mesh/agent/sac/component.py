@@ -262,6 +262,8 @@ class SamAgentComponent(SamComponentBase):
         self._async_init_future = None
         self.peer_response_queues: Dict[str, asyncio.Queue] = {}
         self.peer_response_queue_lock = threading.Lock()
+        # Sync peer tool waiters: {sub_task_id: {"event": asyncio.Event, "result": Any}}
+        self._pending_sync_responses: Dict[str, Dict[str, Any]] = {}
         self.agent_specific_state: Dict[str, Any] = {}
         self.active_tasks: Dict[str, "TaskExecutionContext"] = {}
         self.active_tasks_lock = threading.Lock()
@@ -703,6 +705,43 @@ class SamAgentComponent(SamComponentBase):
             log.warning("%s Failed to claim; it was already completed.", log_id)
             return None
 
+    def try_deliver_sync_response(
+        self, sub_task_id: str, payload: Any
+    ) -> bool:
+        """
+        Attempt to deliver a response to a waiting SyncPeerAgentTool.
+
+        If ``sub_task_id`` has a pending sync waiter in
+        ``_pending_sync_responses``, stores the payload and sets the event
+        so the blocked tool can return.
+
+        Args:
+            sub_task_id: The correlation sub-task ID (with CORRELATION_DATA_PREFIX).
+            payload: The parsed response payload to deliver.
+
+        Returns:
+            True if a sync waiter was found and signaled, False otherwise
+            (meaning the normal async flow should handle it).
+        """
+        with self.peer_response_queue_lock:
+            waiter = self._pending_sync_responses.get(sub_task_id)
+            if waiter is None:
+                return False
+            waiter["result"] = payload
+            # Thread-safe event signaling: use call_soon_threadsafe to
+            # ensure the Event.set() runs on the owning event loop.
+            loop = getattr(self, "_async_loop", None)
+            if loop and loop.is_running():
+                loop.call_soon_threadsafe(waiter["event"].set)
+            else:
+                waiter["event"].set()  # fallback for tests / shutdown
+            log.info(
+                "%s Delivered sync response for sub-task %s.",
+                self.log_identifier,
+                sub_task_id,
+            )
+            return True
+
     async def reset_peer_timeout(self, sub_task_id: str):
         """
         Resets the timeout for a given peer sub-task.
@@ -963,6 +1002,54 @@ class SamAgentComponent(SamComponentBase):
         deny_list = set(self.get_config("deny_list", []))
         self_name = self.get_config("agent_name")
 
+        # Peer help: specialist-to-specialist delegation (opt-in via config).
+        # Suppressed when this task was itself invoked via peer_help (loop prevention).
+        peer_help_config = inter_agent_config.get("peer_help", {})
+        peer_help_enabled = peer_help_config.get("enabled", False)
+        peer_help_can_ask = peer_help_config.get("can_ask", [])
+        peer_help_max_requests = peer_help_config.get("max_help_requests", 2)
+
+        # Loop prevention: if this task was delegated via peer_help, suppress
+        # peer_help on this agent to prevent A → B → A ping-pong loops.
+        if peer_help_enabled and a2a_context.get("_peer_help_origin"):
+            log.info(
+                "%s Suppressing peer_help: this task was delegated by %s",
+                self.log_identifier,
+                a2a_context.get("_peer_help_origin"),
+            )
+            peer_help_enabled = False
+            peer_help_can_ask = []
+
+        # Enforce help request budget via session state.
+        # Count peer_help calls by scanning conversation for tool calls
+        # matching the can_ask patterns.
+        if peer_help_enabled and peer_help_can_ask:
+            help_count = 0
+            peer_help_tool_names = set()
+            for p in peer_help_can_ask:
+                for pn in self.peer_agents:
+                    if fnmatch.fnmatch(pn, p):
+                        peer_help_tool_names.add(f"peer_{pn}")
+            # Count tool calls in conversation history
+            if llm_request.contents:
+                for content in llm_request.contents:
+                    if hasattr(content, "parts") and content.parts:
+                        for part in content.parts:
+                            fc = getattr(part, "function_call", None)
+                            if fc and getattr(fc, "name", "") in peer_help_tool_names:
+                                help_count += 1
+            callback_context.state["_peer_help_requests_count"] = help_count
+
+            if help_count >= peer_help_max_requests:
+                log.info(
+                    "%s Peer help budget exhausted (%d/%d). "
+                    "Skipping peer_help tool injection.",
+                    self.log_identifier,
+                    help_count,
+                    peer_help_max_requests,
+                )
+                peer_help_can_ask = []  # Disable for this turn
+
         peer_tools_to_add = []
         allowed_peer_descriptions = []
 
@@ -971,9 +1058,15 @@ class SamAgentComponent(SamComponentBase):
             if not isinstance(agent_card, AgentCard) or peer_name == self_name:
                 continue
 
-            is_allowed = any(
+            is_in_allow_list = any(
                 fnmatch.fnmatch(peer_name, p) for p in allow_list
-            ) and not any(fnmatch.fnmatch(peer_name, p) for p in deny_list)
+            )
+            is_in_peer_help = peer_help_enabled and any(
+                fnmatch.fnmatch(peer_name, p) for p in peer_help_can_ask
+            )
+            is_allowed = (is_in_allow_list or is_in_peer_help) and not any(
+                fnmatch.fnmatch(peer_name, p) for p in deny_list
+            )
 
             if is_allowed:
                 config_resolver = MiddlewareRegistry.get_config_resolver()

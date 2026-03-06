@@ -319,6 +319,16 @@ class PeerAgentTool(BaseTool):
             a2a_metadata["function_call_id"] = tool_context.function_call_id
             a2a_metadata["agent_name"] = self.target_agent_name
 
+            # Propagate peer_help origin for loop prevention.
+            # If the calling agent has peer_help configured, mark this
+            # delegation so the receiving agent suppresses its own peer_help.
+            caller_name = self.host_component.get_config("agent_name", "")
+            caller_iac = self.host_component.get_config(
+                "inter_agent_communication", {}
+            )
+            if caller_iac.get("peer_help", {}).get("enabled"):
+                a2a_metadata["_peer_help_origin"] = caller_name
+
             a2a_message = a2a.create_user_message(
                 parts=a2a_message_parts,
                 metadata=a2a_metadata,
