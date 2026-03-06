@@ -104,13 +104,16 @@ class WebSearchFirecrawlTool(DynamicTool):
 
     async def _run_async_impl(
         self,
+        args: dict,
         tool_context: ToolContext,
-        query: str,
-        max_results: int = 5,
-        **kwargs,
+        credential: str | None = None,
     ) -> dict:
-        max_results = min(max(int(max_results or 5), 1), 10)
+        query = args.get("query", "")
+        max_results = min(max(int(args.get("max_results", 5) or 5), 1), 10)
         log.info("[web_search_firecrawl] query=%r max_results=%d", query, max_results)
+
+        if not query:
+            return {"success": False, "error": "No query provided"}
 
         # --- Primary: Firecrawl ---
         try:
