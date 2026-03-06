@@ -40,7 +40,7 @@ STEP_LABELS: Dict[int, str] = {
 }
 
 ALLOWED_TOOLS_PER_STEP: Dict[int, Set[str]] = {
-    0: {"memory_plane", "phi_redactor", "session_state", "cold_query"},
+    0: {"memory_plane", "phi_redactor", "session_state", "cold_query", "web_search_firecrawl"},
     1: {"query_decomposer", "memory_plane", "session_state"},
     2: {"peer_*", "session_state"},
     3: {"publish_sources", "completeness_checker", "memory_plane", "peer_*", "session_state", "evidence_store"},
@@ -69,6 +69,17 @@ STEP_ADVANCEMENT_TRIGGERS: Dict[str, int] = {
 
 # Session state key for tracking protocol step
 _SESSION_STATE_KEY = "_protocol_current_step"
+
+# Session state key to track PERSIST enforcement attempts (prevents infinite loops)
+_PERSIST_REJECTIONS_KEY = "_protocol_persist_rejections"
+_MAX_PERSIST_REJECTIONS = 2  # Allow LLM to skip after 2 failed attempts
+
+# PERSIST enforcement only activates when the LLM reaches VERIFY+REVISE
+# (step 5+) and tries to skip PERSIST (step 6). Earlier steps pass through
+# — non-medical queries can short-circuit, intermediate text at steps 0-4
+# is not blocked.
+_PERSIST_ENFORCEMENT_THRESHOLD = 5
+_REQUIRED_FINAL_STEP = 6
 
 # Session state key set by query_decomposer with the selected agent list.
 # When present, peer_* tools at DELEGATE (step 2) and COLLECT (step 3) are
@@ -184,6 +195,7 @@ def cleanup_step_state(session_state: dict) -> None:
     run bleeding into a new one.
     """
     session_state[_SESSION_STATE_KEY] = 0
+    session_state[_PERSIST_REJECTIONS_KEY] = 0
 
 
 # ── Main callback ─────────────────────────────────────────────────────
@@ -249,6 +261,48 @@ def protocol_step_validator_callback(
     parts = llm_response.content.parts
     has_function_calls = any(p.function_call for p in parts)
     if not has_function_calls:
+        # ── PERSIST enforcement: reject final text if STEP 6 not reached ──
+        # Only enforce at step 5+ (VERIFY+REVISE). Steps 0-4 pass through
+        # to allow non-medical short-circuit and intermediate text.
+        if _PERSIST_ENFORCEMENT_THRESHOLD <= current_step < _REQUIRED_FINAL_STEP:
+            persist_rejections = session_state.get(_PERSIST_REJECTIONS_KEY, 0)
+            if persist_rejections < _MAX_PERSIST_REJECTIONS:
+                session_state[_PERSIST_REJECTIONS_KEY] = persist_rejections + 1
+                log.warning(
+                    "%s Final text response at step %d (%s) — STEP 6 (PERSIST) "
+                    "not reached. Rejecting (attempt %d/%d).",
+                    log_identifier,
+                    current_step,
+                    STEP_LABELS.get(current_step, "?"),
+                    persist_rejections + 1,
+                    _MAX_PERSIST_REJECTIONS,
+                )
+                # Advance to step 6 so the LLM can call PERSIST tools
+                session_state[_SESSION_STATE_KEY] = 6
+                return LlmResponse(
+                    content=adk_types.Content(
+                        role="model",
+                        parts=[adk_types.Part(text=(
+                            "[Protocol Error] You MUST complete STEP 6 (PERSIST) "
+                            "before delivering the final answer.\n"
+                            "1. Call `memory_plane` with operation='flush_cold' to "
+                            "save session signals to cold store.\n"
+                            "2. If knowledge graph is available, call `graph_writer` "
+                            "with session_id, query_text, domain, specialists_used.\n"
+                            "Then deliver your final answer."
+                        ))],
+                    ),
+                    partial=False,
+                    turn_complete=False,
+                )
+            else:
+                log.warning(
+                    "%s PERSIST enforcement exhausted (%d attempts). "
+                    "Allowing final response at step %d.",
+                    log_identifier,
+                    _MAX_PERSIST_REJECTIONS,
+                    current_step,
+                )
         return None
 
     # ── Validate each function call ─────────────────────────────
