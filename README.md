@@ -2,7 +2,7 @@
 <h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
-  <a href="https://medliaison-534348290993.us-central1.run.app"><strong>Live Demo</strong></a> &middot;
+  <a href="https://medexpert-v2-534348290993.us-central1.run.app"><strong>Live Demo</strong></a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
@@ -48,9 +48,9 @@ The right-side panel provides five tabs for inspecting research activity in real
   </tr>
 </table>
 
-### Agent Mesh
+### Agent Configs
 
-View discovered agents and experimental workflow definitions.
+View discovered agents and their configuration.
 
 <p align="center">
   <img src="docs/screenshots/07-agent-mesh.png" alt="Agent Mesh page" width="720" />
@@ -100,8 +100,8 @@ User Query
             +---> 8 Specialist Agents (literature, clinical trials, drug,
             |     regulatory, epidemiology, genomics, environmental, provider intel)
             |
-            +---> 15 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
-            |     SEER, EPA, ClinVar, Census SDOH, ...)
+            +---> 18 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
+            |     SEER, EPA, ClinVar, Census SDOH, NHS 111, BMA Library, ...)
             |
             v
         GVR Loop: Generate --> Verify --> Revise
@@ -165,9 +165,9 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 | **Triage Intake** | Symptom collection, specialist panel consultation, care routing | gemini-2.5-flash (temp 0.3) |
 | **Triage Orchestrator** | Coordinates triage evaluation, consensus building, next-best-action | gemini-2.5-flash (temp 0.2) |
 
-### Data Sources (15 MCP Servers)
+### Data Sources (18 MCP Servers)
 
-PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease surveillance, SEER cancer statistics, Census ACS (social determinants), EPA air quality, ClinVar/dbSNP genomics, CMS provider/payment data, FDA regulatory pathways, medical imaging archives, pharmacovigilance, medical society guidelines, VigiBase (WHO), knowledge graph (Neo4j).
+PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease surveillance, SEER cancer statistics, Census ACS (social determinants), EPA air quality, ClinVar/dbSNP genomics, CMS provider/payment data, FDA regulatory pathways, medical imaging archives, pharmacovigilance, medical society guidelines, VigiBase (WHO), knowledge graph (Memgraph), NHS 111 clinical pathways (Firecrawl), BMA Library guidelines (Firecrawl), OpenEvidence AI-synthesised Q&A.
 
 ### Key Components
 
@@ -179,6 +179,9 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 | MCP servers | FastMCP 2.x (SSE transport) | External API integration |
 | Memory plane | Redis | Shared state across agents per session |
 | Cold store | SQLite | Learning from past research sessions |
+| Knowledge graph | Memgraph (bolt protocol) | Biomedical entity persistence + NLQ queries |
+| Web search | Firecrawl + Brave (fallback) | Orchestrator pre-search for unknown drug/brand names |
+| LLM failover | Exponential backoff + model chains | Auto-retry on 429/5xx, flash→pro fallback |
 | Learning loops | Specialist calibrator + feedback bridge | Per-domain weight adjustment, user feedback integration |
 | Prompt evolution | Human approval gate + auto-rollback | Safe prompt improvement with regression testing |
 | LLM abstraction | LiteLLM | Provider-agnostic model access |
@@ -245,6 +248,19 @@ MedExpert improves over time through three learning loops:
 | **Prompt Evolution** | Rolling composite score < 0.55 | Generates improved specialist prompts via LLM metaprompt, runs regression against golden dataset. Candidates require human approval before activation. |
 | **Feedback Bridge** | Each user thumbs up/down | SAM broker flow captures gateway feedback, enriches with session context from cold store, persists for calibration and evolution signals. |
 
+### Agent Resilience (OpenClaw-inspired)
+
+MedExpert incorporates agentic resilience patterns from the OpenClaw architecture:
+
+| Feature | What It Does |
+|---------|-------------|
+| **LLM failover chains** | Auto-retry with exponential backoff on transient errors (429/500/503). Flash agents fail over to Pro; verifier has NO fallback (medical accuracy preserved). |
+| **Error recovery hints** | User-actionable hints on MCP failures ("Set NCBI_API_KEY for higher rate limits") instead of raw error codes. |
+| **Specialist-to-specialist help** | When a specialist's data source fails, it can ask a peer for help (e.g., DrugSpecialist → LiteratureSpecialist). Budget-capped (2 requests), loop-prevented. |
+| **Context compaction** | Summarization hints injected at heavy protocol steps to reduce context overflow on long research sessions. |
+| **Sync peer tool** | Blocking agent-to-agent conversations (vs fire-and-forget) for specialist help requests. |
+| **Health check CLI** | `python scripts/doctor.py` checks Redis, 18 MCP servers, cold store, env vars, Memgraph. |
+
 Manage prompt candidates via CLI:
 ```bash
 python scripts/manage_prompts.py list                          # View pending candidates
@@ -274,7 +290,7 @@ This single command handles everything:
 1. Creates Python venv and installs all dependencies
 2. Generates `.env` from `.env.example` (prompts for API key if missing)
 3. Starts Redis container
-4. Starts 15 MCP servers on ports 9001-9015
+4. Starts 18 MCP servers on ports 9001-9018
 5. Starts 13 agents + gateway on http://localhost:8000
 6. Starts frontend dev server on http://localhost:3000
 
@@ -407,9 +423,9 @@ medexpert/                      # Life sciences research application
     feedback_bridge.yaml        # Feedback→cold store broker subscriber
     shared_config.yaml          # Model anchors, broker, services
   src/
-    lifesci_tools/              # 27 custom tool/module implementations
+    lifesci_tools/              # 38 custom tool/module implementations
     lifesci_common/             # Constants, config validator, utilities
-    mcp_servers/                # 15 FastMCP SSE servers
+    mcp_servers/                # 18 FastMCP SSE servers
   tests/                        # Unit, contract, integration, eval runner
   scripts/                      # Startup + management scripts
   infra/                        # Terraform, K8s, Docker
@@ -432,7 +448,9 @@ Copy `medexpert/.env.example` and fill in:
 | `NCBI_API_KEY` | Recommended | PubMed rate limit (3 -> 10 req/s) |
 | `CENSUS_API_KEY` | Optional | Census ACS SDOH data |
 | `EPA_AQS_EMAIL` / `EPA_AQS_KEY` | Optional | EPA air quality data |
-| `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Optional | Knowledge graph |
+| `FIRECRAWL_API_KEY` | Recommended | Web search (orchestrator) + NHS/BMA MCP servers |
+| `BRAVE_SEARCH_API_KEY` | Optional | Web search fallback (if Firecrawl unavailable) |
+| `MEMGRAPH_URL` | Optional | Knowledge graph (bolt://localhost:7687) |
 
 ---
 
