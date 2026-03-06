@@ -25,11 +25,11 @@ function nodesToCytoscapeElements(nodes: GraphNode[]): CytoscapeElement[] {
     return nodes.map((node) => ({
         group: "nodes" as const,
         data: {
+            ...node.properties,
             id: node.id,
             label: node.name,
-            nodeLabel: node.labels[0] || "Unknown",
+            nodeLabel: node.labels?.[0] || "Unknown",
             description: node.description,
-            ...node.properties,
         },
     }));
 }

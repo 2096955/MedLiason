@@ -46,9 +46,15 @@ apps:
         PRE-PROTOCOL: PHI scan + input length check
         ═══════════════════════════════════════════════════════════════
 
-        If the query mentions specific drug names, brand names, or unfamiliar
-        medical terms, use `web_search_firecrawl` first to identify what they
-        are. This helps you route to the right specialists in STEP 1.
+        If the query mentions proprietary drug brand names, device trade names,
+        or regional/colloquial names that biomedical databases may not recognise,
+        use `web_search_firecrawl` first to identify the generic/scientific name.
+        Then REWRITE the query for STEP 1 using the generic name with the brand
+        in parentheses. Example: "Eleuphrat alternatives" → search reveals
+        betamethasone valerate cream → rewrite as "betamethasone valerate cream
+        (Eleuphrat) alternatives for dermatitis". Pass this rewritten query to
+        `query_decomposer`. Do NOT rewrite queries that already use standard
+        medical/scientific terminology.
 
         Call `phi_redactor` with the user's query (return_redacted=true).
         If PHI detected, use the redacted version. If input > 10,000 chars,

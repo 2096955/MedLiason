@@ -190,14 +190,17 @@ async def explore_graph(
         return JSONResponse(content=result, status_code=503)
 
     # Reshape: convert flat results list into {nodes, edges} for frontend
+    # Must match the GraphNode interface: {id, name, labels, description, properties}
     raw_results = result.get("results", [])
     nodes = []
     for item in raw_results:
         if isinstance(item, dict):
+            node_type = item.get("type") or item.get("label", "Entity")
             nodes.append({
                 "id": item.get("id") or item.get("name", ""),
-                "label": item.get("name", ""),
-                "type": item.get("type") or item.get("label", "Entity"),
+                "name": item.get("name", ""),
+                "labels": item.get("labels", [node_type]),
+                "description": item.get("description", ""),
                 "properties": item,
             })
     return JSONResponse(content={
