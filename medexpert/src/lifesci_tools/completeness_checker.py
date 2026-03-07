@@ -1,19 +1,35 @@
 """Completeness Checker — validates evidence coverage against decomposition plan.
 
 Matches collected evidence items to sub-questions from the query
-decomposition plan using keyword overlap to identify gaps.
+decomposition plan.  When an LLM model is configured (via ``tool_config``),
+uses semantic matching to determine whether evidence *meaningfully answers*
+each sub-question.  Falls back to keyword overlap when the LLM call fails
+or when no model is configured.
 
 Extended metrics: structural_coverage, quality_coverage, domain matching,
 and a ``proceed`` flag.
 """
 
+import json as _json
+import logging
 import re
 from typing import Optional
 
 from google.adk.tools import ToolContext
 from google.genai import types as adk_types
+from litellm import acompletion as _litellm_acompletion
 
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
+
+from lifesci_common.observability import log_tokens
+from lifesci_common.llm_utils import json_mode_kwargs
+from lifesci_common.triage_utils import extract_json_from_text
+
+logger = logging.getLogger("medexpert.completeness_checker")
+
+# ---------------------------------------------------------------------------
+# Keyword helpers (retained as fallback)
+# ---------------------------------------------------------------------------
 
 
 def _extract_keywords(text: str) -> set[str]:
@@ -40,8 +56,117 @@ def _compute_overlap(keywords_a: set[str], keywords_b: set[str]) -> float:
     return len(intersection) / len(union) if union else 0.0
 
 
+# ---------------------------------------------------------------------------
+# LLM semantic coverage check
+# ---------------------------------------------------------------------------
+
+_COVERAGE_PROMPT_TEMPLATE = (
+    "You are evaluating research coverage. For each sub-question, determine\n"
+    "if the evidence MEANINGFULLY answers it (not just mentions related keywords).\n\n"
+    "SUB-QUESTIONS:\n{questions}\n\n"
+    "EVIDENCE SUMMARIES:\n{evidence}\n\n"
+    "Return ONLY a JSON object (no markdown fences):\n"
+    '{{"coverage": [\n'
+    '  {{"question": "<exact sub-question text>",\n'
+    '    "answered": true | false,\n'
+    '    "confidence": <0.0-1.0>,\n'
+    '    "matching_evidence_title": "<title of best-matching evidence or null>",\n'
+    '    "gap_reason": "<why not answered, or null>"}}\n'
+    "]}}"
+)
+
+
+async def _llm_coverage_check(
+    sub_questions: list[dict],
+    evidence: list[dict],
+    model: str,
+    temperature: float,
+    session_id: str,
+    vertex_kwargs: dict | None = None,
+) -> list[dict] | None:
+    """Use LLM to semantically assess which sub-questions are answered.
+
+    Returns a list of per-question dicts on success, or ``None`` on failure
+    (so the caller can fall back to keyword matching).
+    """
+    # Build compact representations for the prompt
+    q_lines = []
+    for i, sq in enumerate(sub_questions):
+        q_lines.append(f"{i + 1}. [{sq.get('domain', '?')}] {sq.get('question', '')}")
+
+    ev_lines = []
+    for i, ev in enumerate(evidence[:15]):
+        title = ev.get("title", "Untitled")[:120]
+        snippet = (ev.get("snippet", "") or "")[:200]
+        ev_lines.append(f"{i + 1}. {title}: {snippet}")
+
+    prompt = (
+        _COVERAGE_PROMPT_TEMPLATE
+        .replace("{questions}", "\n".join(q_lines))
+        .replace("{evidence}", "\n".join(ev_lines))
+    )
+
+    try:
+        response = await _litellm_acompletion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=8192,
+            **json_mode_kwargs(model),
+            **(vertex_kwargs or {}),
+        )
+        content = response.choices[0].message.content.strip()
+
+        # Token logging
+        usage = getattr(response, "usage", None)
+        if usage:
+            log_tokens(
+                session_id=session_id,
+                model=model,
+                prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                completion_tokens=getattr(usage, "completion_tokens", 0),
+            )
+
+        # Lenient JSON extraction (handles fences, trailing commas, truncation)
+        parsed = extract_json_from_text(content)
+        if not parsed:
+            return None
+        coverage = parsed.get("coverage", [])
+        if not isinstance(coverage, list):
+            return None
+        return coverage
+
+    except Exception as exc:
+        logger.warning(
+            "[completeness_checker] LLM coverage check failed, falling back "
+            "to keyword matching: %s",
+            exc,
+        )
+        return None
+
+
 class CompletenessCheckerTool(DynamicTool):
     """Validates evidence coverage against a query decomposition plan."""
+
+    def __init__(self, tool_config: Optional[dict] = None, **kwargs):
+        super().__init__(tool_config=tool_config, **kwargs)
+        cfg = tool_config or {}
+        raw_model = cfg.get("model")
+        if isinstance(raw_model, dict):
+            self.model: str = raw_model.get("model", "")
+            self._vertex_kwargs: dict = {
+                k: raw_model[k]
+                for k in ("vertex_project", "vertex_location")
+                if k in raw_model
+            }
+        elif raw_model:
+            self.model = raw_model
+            self._vertex_kwargs = {}
+        else:
+            # No model configured — will use keyword fallback only
+            self.model = ""
+            self._vertex_kwargs = {}
+        self.temperature: float = float(cfg.get("temperature", 0.2))
 
     @property
     def tool_name(self) -> str:
@@ -87,23 +212,42 @@ class CompletenessCheckerTool(DynamicTool):
         tool_context: ToolContext,
         credential: Optional[str] = None,
     ) -> dict:
-        import json
-
         try:
-            plan = json.loads(args.get("decomposition_plan_json", "{}"))
-        except json.JSONDecodeError:
+            plan = _json.loads(args.get("decomposition_plan_json", "{}"))
+        except _json.JSONDecodeError:
             return {"error": "Invalid JSON in decomposition_plan_json"}
 
         try:
-            evidence = json.loads(args.get("collected_evidence_json", "[]"))
-        except json.JSONDecodeError:
+            evidence = _json.loads(args.get("collected_evidence_json", "[]"))
+        except _json.JSONDecodeError:
             return {"error": "Invalid JSON in collected_evidence_json"}
 
         sub_questions = plan.get("sub_questions", [])
         if not sub_questions:
             return {"error": "No sub_questions found in decomposition plan"}
 
-        # Build evidence keyword index
+        # ------------------------------------------------------------------
+        # Try LLM semantic coverage first (if model configured)
+        # ------------------------------------------------------------------
+        llm_coverage: list[dict] | None = None
+        if self.model and evidence:
+            session_id = ""
+            if hasattr(tool_context, "session") and tool_context.session:
+                session_id = getattr(tool_context.session, "id", "")
+            llm_coverage = await _llm_coverage_check(
+                sub_questions=sub_questions,
+                evidence=evidence,
+                model=self.model,
+                temperature=self.temperature,
+                session_id=session_id,
+                vertex_kwargs=self._vertex_kwargs,
+            )
+
+        # ------------------------------------------------------------------
+        # Build results — use LLM signal when available, keyword fallback otherwise
+        # ------------------------------------------------------------------
+
+        # Build evidence keyword index (needed for fallback and grade lookup)
         evidence_keywords = []
         for item in evidence:
             text = f"{item.get('title', '')} {item.get('snippet', '')}"
@@ -112,29 +256,85 @@ class CompletenessCheckerTool(DynamicTool):
                 "item": item,
             })
 
+        # Index LLM results by question text for O(1) lookup
+        llm_by_question: dict[str, dict] = {}
+        if llm_coverage:
+            for entry in llm_coverage:
+                q = entry.get("question", "")
+                if q:
+                    llm_by_question[q] = entry
+
         answered = []
         gaps = []
-        threshold = 0.1  # Minimum overlap to consider "covered"
+        threshold = 0.1  # Minimum keyword overlap to consider "covered"
         domain_match_count = 0
+        used_keyword_fallback = False
 
         for sq in sub_questions:
             sq_text = sq.get("question", "")
-            sq_keywords = _extract_keywords(sq_text)
             sq_domain = sq.get("domain", "unknown")
+
+            # --- Check LLM result first ---
+            llm_entry = llm_by_question.get(sq_text)
+            if llm_entry and llm_entry.get("answered"):
+                # LLM says answered — find matching evidence for grade check
+                matched_title = llm_entry.get("matching_evidence_title", "")
+                matched_item = None
+                domain_matched = False
+                for ev in evidence_keywords:
+                    if ev["item"].get("title", "") == matched_title:
+                        matched_item = ev["item"]
+                        break
+                if not matched_item and evidence_keywords:
+                    matched_item = evidence_keywords[0]["item"]
+                if matched_item:
+                    ev_domain = matched_item.get("domain", "")
+                    domain_matched = bool(
+                        ev_domain and sq_domain and ev_domain.lower() == sq_domain.lower()
+                    )
+
+                has_quality_grade = bool(matched_item.get("grade")) if matched_item else False
+                answered.append({
+                    "question": sq_text,
+                    "domain": sq_domain,
+                    "coverage_score": round(float(llm_entry.get("confidence", 0.8)), 3),
+                    "matched_evidence": matched_title or (matched_item.get("title", "") if matched_item else ""),
+                    "has_quality_grade": has_quality_grade,
+                    "domain_matched": domain_matched,
+                    "method": "llm",
+                })
+                if domain_matched:
+                    domain_match_count += 1
+                continue
+
+            if llm_entry and not llm_entry.get("answered"):
+                # LLM explicitly says NOT answered — record as gap
+                failure_type = self._detect_failure_type(evidence, sq_domain)
+                gaps.append({
+                    "question": sq_text,
+                    "domain": sq_domain,
+                    "target_agent": sq.get("target_agent", ""),
+                    "priority": sq.get("priority", 99),
+                    "failure_type": failure_type,
+                    "gap_reason": llm_entry.get("gap_reason"),
+                    "method": "llm",
+                })
+                continue
+
+            # --- Keyword fallback ---
+            used_keyword_fallback = True
+            sq_keywords = _extract_keywords(sq_text)
             best_overlap = 0.0
             best_match = None
             best_domain_matched = False
 
             for ev in evidence_keywords:
                 overlap = _compute_overlap(sq_keywords, ev["keywords"])
-                # Fallback: if keyword extraction yielded too few terms,
-                # check if any evidence keywords appear as substrings in the question
                 if not sq_keywords:
                     sq_lower = sq_text.lower()
                     matched = sum(1 for kw in ev["keywords"] if kw in sq_lower)
                     overlap = matched / max(len(ev["keywords"]), 1) if matched else 0.0
 
-                # Domain boost: if sub-question domain matches evidence domain
                 ev_domain = ev["item"].get("domain", "")
                 domain_matched = bool(
                     ev_domain and sq_domain and ev_domain.lower() == sq_domain.lower()
@@ -148,53 +348,40 @@ class CompletenessCheckerTool(DynamicTool):
 
             if best_overlap >= threshold and best_match:
                 has_quality_grade = bool(best_match.get("grade"))
-                entry = {
-                    "question": sq["question"],
+                answered.append({
+                    "question": sq_text,
                     "domain": sq_domain,
                     "coverage_score": round(best_overlap, 3),
                     "matched_evidence": best_match.get("title", ""),
                     "has_quality_grade": has_quality_grade,
                     "domain_matched": best_domain_matched,
-                }
-                answered.append(entry)
+                    "method": "keyword",
+                })
                 if best_domain_matched:
                     domain_match_count += 1
             else:
-                # Determine failure type from evidence metadata.
-                # If collected evidence for this sub-question's domain contains
-                # execution_status="failed" or mcp_failures, it's an MCP error,
-                # not a lack of evidence.
-                failure_type = "no_evidence"  # default
-                for ev in evidence:
-                    ev_domain = ev.get("domain", "")
-                    if ev_domain and sq_domain and ev_domain.lower() == sq_domain.lower():
-                        exec_status = ev.get("execution_status", "success")
-                        ev_failures = ev.get("mcp_failures", [])
-                        if exec_status in ("failed", "partial") or ev_failures:
-                            failure_type = "mcp_error"
-                            break
-
+                failure_type = self._detect_failure_type(evidence, sq_domain)
                 gaps.append({
-                    "question": sq["question"],
+                    "question": sq_text,
                     "domain": sq_domain,
                     "target_agent": sq.get("target_agent", ""),
                     "priority": sq.get("priority", 99),
                     "failure_type": failure_type,
                 })
 
+        # Determine overall method used
+        if llm_by_question and used_keyword_fallback:
+            method = "mixed"
+        elif llm_by_question:
+            method = "llm"
+        else:
+            method = "keyword"
+
         total = len(sub_questions)
         coverage_pct = round(len(answered) / total * 100, 1) if total > 0 else 0.0
-
-        # Structural coverage: fraction of sub-questions with any evidence match
         structural_coverage = round(len(answered) / total, 3) if total > 0 else 0.0
-
-        # Quality coverage: fraction of answered questions that have a quality grade
         graded_count = sum(1 for a in answered if a.get("has_quality_grade"))
-        quality_coverage = (
-            round(graded_count / total, 3) if total > 0 else 0.0
-        )
-
-        # Proceed flag: structural >= 0.70 AND quality >= 0.40
+        quality_coverage = round(graded_count / total, 3) if total > 0 else 0.0
         proceed = structural_coverage >= 0.70 and quality_coverage >= 0.40
 
         suggestions = []
@@ -214,4 +401,17 @@ class CompletenessCheckerTool(DynamicTool):
             "quality_coverage": quality_coverage,
             "proceed": proceed,
             "domain_match_count": domain_match_count,
+            "method": method,
         }
+
+    @staticmethod
+    def _detect_failure_type(evidence: list[dict], sq_domain: str) -> str:
+        """Determine whether a gap is due to MCP error or missing evidence."""
+        for ev in evidence:
+            ev_domain = ev.get("domain", "")
+            if ev_domain and sq_domain and ev_domain.lower() == sq_domain.lower():
+                exec_status = ev.get("execution_status", "success")
+                ev_failures = ev.get("mcp_failures", [])
+                if exec_status in ("failed", "partial") or ev_failures:
+                    return "mcp_error"
+        return "no_evidence"

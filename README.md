@@ -126,12 +126,12 @@ Key reasoning mechanisms:
 
 **Specialists: Evidence-First Retrieval**
 
-Each specialist follows a strict evidence-first workflow: search external sources via MCP tools, grade the evidence using GRADE methodology, store graded evidence in the shared memory plane, then synthesize. Specialists never answer from LLM memory alone — every claim must trace to a retrieved source.
+Each specialist follows a strict evidence-first workflow: search external sources via MCP tools, grade the evidence using LLM-augmented GRADE methodology, store graded evidence in the shared memory plane, then synthesize. Specialists never answer from LLM memory alone — every claim must trace to a retrieved source.
 
 The Literature Specialist, for example:
 1. Searches PubMed for peer-reviewed articles
 2. Retrieves full abstracts for top results
-3. Grades each using evidence_grader (meta-analysis > RCT > cohort > case-control > case report)
+3. Grades each using evidence_grader — LLM contextual assessment (blinding, sample size, funding bias) with heuristic fallback
 4. Stores graded evidence in Redis memory plane
 5. Returns structured summary with PMIDs
 
@@ -184,6 +184,7 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 | LLM failover | Exponential backoff + model chains | Auto-retry on 429/5xx, flash→pro fallback |
 | Learning loops | Specialist calibrator + feedback bridge | Per-domain weight adjustment, user feedback integration |
 | Prompt evolution | Human approval gate + auto-rollback | Safe prompt improvement with regression testing |
+| LLM reasoning | 6 LLM-augmented tools | Evidence grading, coverage, synthesis, contradiction detection, narrative, uncertainty |
 | LLM abstraction | LiteLLM | Provider-agnostic model access |
 
 ---
@@ -260,6 +261,21 @@ MedExpert incorporates agentic resilience patterns from the OpenClaw architectur
 | **Context compaction** | Summarization hints injected at heavy protocol steps to reduce context overflow on long research sessions. |
 | **Sync peer tool** | Blocking agent-to-agent conversations (vs fire-and-forget) for specialist help requests. |
 | **Health check CLI** | `python scripts/doctor.py` checks Redis, 18 MCP servers, cold store, env vars, Memgraph. |
+
+### LLM-Augmented Reasoning (Phase 5)
+
+Six of the seven core research tools now use LLM reasoning instead of pure heuristics. Each tool falls back to its original heuristic when the LLM call fails — never worse than before.
+
+| Tool | Before | After | LLM calls |
+|------|--------|-------|-----------|
+| **evidence_grader** | Lookup table (meta-analysis=4.5, RCT=4.0...) | LLM contextual quality assessment (blinding, sample size, funding bias) + heuristic fallback | 1 |
+| **completeness_checker** | Jaccard keyword overlap at 10% | LLM semantic coverage check — understands "drug X side effects" ≠ "Is drug X effective?" | 1 |
+| **deliberation_synthesizer** | Keyword consensus counting | LLM multi-perspective synthesis with contested points, blind spots, and resolution notes | 1 |
+| **reflection_analyzer** | 9 hardcoded antonym pairs | LLM contradiction/gap detection — finds magnitude differences, population differences, temporal changes | 1 |
+| **report_generator** | Template fill | LLM narrative synthesis — reasons about evidence, addresses contradictions, quantifies uncertainty | 1 |
+| **uncertainty_quantifier** | *(new)* | Per-claim confidence profiling with basis classification and caveats | 1 |
+
+Total additional LLM calls per session: ~6 (~8% increase over the ~50-call baseline). All use `response_mime_type="application/json"` for structured output with `extract_json_from_text` as defense-in-depth. `max_tokens` set to 8192 to accommodate Gemini Flash thinking tokens.
 
 Manage prompt candidates via CLI:
 ```bash
@@ -423,7 +439,7 @@ medexpert/                      # Life sciences research application
     feedback_bridge.yaml        # Feedback→cold store broker subscriber
     shared_config.yaml          # Model anchors, broker, services
   src/
-    lifesci_tools/              # 38 custom tool/module implementations
+    lifesci_tools/              # 39 custom tool/module implementations
     lifesci_common/             # Constants, config validator, utilities
     mcp_servers/                # 18 FastMCP SSE servers
   tests/                        # Unit, contract, integration, eval runner

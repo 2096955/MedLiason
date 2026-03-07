@@ -1,7 +1,7 @@
 """Tests for ReflectionAnalyzerTool — multi-hop gap analysis."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,12 +15,36 @@ from lifesci_tools.reflection_analyzer import (
 
 @pytest.fixture
 def tool():
+    """Tool without model config — keyword heuristics only."""
     return ReflectionAnalyzerTool()
 
 
 @pytest.fixture
+def llm_tool():
+    """Tool with model config — LLM reflection enabled."""
+    return ReflectionAnalyzerTool(tool_config={
+        "model": "openai/gemini-2.5-flash-001",
+        "temperature": 0.2,
+    })
+
+
+@pytest.fixture
 def ctx():
-    return MagicMock()
+    mock = MagicMock()
+    mock.session = MagicMock()
+    mock.session.id = "test-session-456"
+    return mock
+
+
+def _mock_llm_response(result_dict: dict):
+    """Build a mock litellm acompletion response."""
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock()]
+    mock_resp.choices[0].message.content = json.dumps(result_dict)
+    mock_resp.usage = MagicMock()
+    mock_resp.usage.prompt_tokens = 200
+    mock_resp.usage.completion_tokens = 150
+    return mock_resp
 
 
 # ── _find_contradictions ──────────────────────────────────────
@@ -200,3 +224,194 @@ async def test_empty_evidence_identifies_gaps(tool, ctx):
     )
     assert result["evidence_count"] == 0
     assert len(result["missing_perspectives"]) >= 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# LLM reflection tests
+# ═══════════════════════════════════════════════════════════════
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_llm_detects_nuanced_contradiction(mock_llm, llm_tool, ctx):
+    """LLM detects magnitude difference that keyword matching cannot."""
+    mock_llm.return_value = _mock_llm_response({
+        "contradictions": [
+            {
+                "claim_a": "Drug X shows 30% efficacy",
+                "source_a": "Study A",
+                "claim_b": "Drug X shows 80% efficacy",
+                "source_b": "Study B",
+                "nature": "magnitude_difference",
+                "significance": "high",
+                "explanation": "Same endpoint, vastly different efficacy rates",
+            }
+        ],
+        "gaps": [
+            {"description": "No long-term safety data", "importance": "critical", "what_would_fill_it": "5-year follow-up study"}
+        ],
+        "limitations": ["Both studies had small sample sizes"],
+        "confidence_statement": "Low confidence due to conflicting results",
+        "strongest_evidence": "Both studies agree Drug X has some effect",
+        "weakest_evidence": "Magnitude of effect is highly uncertain",
+    })
+    evidence = [
+        {"title": "Study A", "snippet": "Drug X shows 30% efficacy in 50 patients."},
+        {"title": "Study B", "snippet": "Drug X shows 80% efficacy in 45 patients."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {"question": "How effective is Drug X?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    assert result["method"] == "llm"
+    assert len(result["contradictions"]) == 1
+    assert result["contradictions"][0]["nature"] == "magnitude_difference"
+    assert result["confidence_statement"] == "Low confidence due to conflicting results"
+    assert result["strongest_evidence"] != ""
+    assert result["weakest_evidence"] != ""
+    assert len(result["limitations"]) >= 1
+    mock_llm.assert_called_once()
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_llm_gaps_merged_with_keyword_gaps(mock_llm, llm_tool, ctx):
+    """LLM gaps are merged with keyword-detected gaps (e.g., 'fewer than 3')."""
+    mock_llm.return_value = _mock_llm_response({
+        "contradictions": [],
+        "gaps": [
+            {"description": "No cost-effectiveness analysis", "importance": "important", "what_would_fill_it": "Economic study"}
+        ],
+        "limitations": [],
+        "confidence_statement": "Moderate confidence",
+        "strongest_evidence": "Treatment works",
+        "weakest_evidence": "Unknown cost",
+    })
+    evidence = [
+        {"title": "Study A", "snippet": "Treatment is effective."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {"question": "What is the full profile of treatment Y?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    # LLM gap + keyword "fewer than 3" gap should both be present
+    gap_text = " ".join(result["gaps"]).lower()
+    assert "cost" in gap_text
+    assert "fewer than 3" in gap_text
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_llm_failure_falls_back_to_keyword(mock_llm, llm_tool, ctx):
+    """When LLM fails, tool falls back to keyword heuristics."""
+    mock_llm.side_effect = Exception("LLM timeout")
+    evidence = [
+        {"title": "Study A", "snippet": "Treatment is effective."},
+        {"title": "Study B", "snippet": "Treatment is ineffective."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {"question": "Is treatment effective?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    assert result["method"] == "keyword"
+    assert len(result["contradictions"]) >= 1  # Keyword still detects effective/ineffective
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_llm_markdown_fence_stripping(mock_llm, llm_tool, ctx):
+    """LLM response wrapped in markdown fences is parsed correctly."""
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock()]
+    mock_resp.choices[0].message.content = (
+        "```json\n"
+        '{"contradictions": [], "gaps": [], "limitations": [], '
+        '"confidence_statement": "High", "strongest_evidence": "X", "weakest_evidence": "Y"}'
+        "\n```"
+    )
+    mock_resp.usage = MagicMock()
+    mock_resp.usage.prompt_tokens = 100
+    mock_resp.usage.completion_tokens = 50
+    mock_llm.return_value = mock_resp
+
+    evidence = [
+        {"title": "Study", "snippet": "Good results."},
+        {"title": "Study 2", "snippet": "Also good."},
+        {"title": "Study 3", "snippet": "Confirmed."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {"question": "Is it effective?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    assert result["method"] == "llm"
+    assert result["confidence_statement"] == "High"
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_llm_malformed_json_falls_back(mock_llm, llm_tool, ctx):
+    """Malformed JSON from LLM triggers keyword fallback."""
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock()]
+    mock_resp.choices[0].message.content = "This is not JSON"
+    mock_resp.usage = MagicMock()
+    mock_resp.usage.prompt_tokens = 50
+    mock_resp.usage.completion_tokens = 10
+    mock_llm.return_value = mock_resp
+
+    evidence = [
+        {"title": "Study", "snippet": "Results here."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {"question": "Test question?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    assert result["method"] == "keyword"
+
+
+@patch("lifesci_tools.reflection_analyzer._litellm_acompletion")
+async def test_shallow_analysis_skips_llm(mock_llm, llm_tool, ctx):
+    """Shallow analysis does not call LLM even when model is configured."""
+    evidence = [
+        {"title": "Study A", "snippet": "Treatment is effective."},
+        {"title": "Study B", "snippet": "Treatment is ineffective."},
+    ]
+    result = await llm_tool._run_async_impl(
+        {
+            "question": "Is treatment effective?",
+            "evidence_json": json.dumps(evidence),
+            "analysis_depth": "shallow",
+        },
+        ctx,
+    )
+    assert result["contradictions"] == []  # shallow skips contradictions
+    assert result["method"] == "keyword"
+    mock_llm.assert_not_called()
+
+
+async def test_no_model_config_uses_keyword(tool, ctx):
+    """Tool without model config uses keyword heuristics."""
+    evidence = [
+        {"title": "Study A", "snippet": "Treatment is effective."},
+        {"title": "Study B", "snippet": "Treatment is ineffective."},
+    ]
+    result = await tool._run_async_impl(
+        {"question": "Is treatment effective?", "evidence_json": json.dumps(evidence)},
+        ctx,
+    )
+    assert result["method"] == "keyword"
+    assert len(result["contradictions"]) >= 1
+
+
+def test_init_with_dict_model():
+    """YAML anchor expansion: model config as dict."""
+    tool = ReflectionAnalyzerTool(tool_config={
+        "model": {
+            "model": "vertex_ai/gemini-2.5-flash",
+            "vertex_project": "my-project",
+            "vertex_location": "us-central1",
+        }
+    })
+    assert tool.model == "vertex_ai/gemini-2.5-flash"
+    assert tool._vertex_kwargs == {"vertex_project": "my-project", "vertex_location": "us-central1"}
+
+
+def test_init_without_model():
+    """No model config → empty model string."""
+    tool = ReflectionAnalyzerTool()
+    assert tool.model == ""
