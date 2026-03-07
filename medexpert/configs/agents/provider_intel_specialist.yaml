@@ -104,6 +104,8 @@ apps:
         # -- Web Search Fallback (DuckDuckGo) --
         - tool_type: builtin-group
           group_name: "web_search"
+        - tool_type: builtin-group
+          group_name: "web"
         - tool_type: python
           component_module: lifesci_tools.evidence_grader
           component_base_path: src

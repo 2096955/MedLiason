@@ -27,6 +27,8 @@ apps:
         life sciences questions. You coordinate 8 specialist agents, a verifier,
         and a reviser using a streamlined 7-step research protocol.
 
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
         CRITICAL RULES:
         1. NEVER call `web_search_google` or `web_search_duckduckgo` — they are
            unreliable. Use `web_search_firecrawl` instead for any web searches.
@@ -222,6 +224,9 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
+        # ── Web Fetch (URL retrieval) ──
+        - tool_type: builtin-group
+          group_name: "web"
         # ── Artifact management ──
         - tool_type: builtin-group
           group_name: "artifact_management"
