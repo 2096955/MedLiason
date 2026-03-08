@@ -87,7 +87,7 @@ const CytoscapeGraph: React.FC<CytoscapeGraphProps> = ({ elements, onNodeClick, 
                         "text-valign": "bottom",
                         "text-halign": "center",
                         "font-size": "10px",
-                        "font-weight": 500,
+                        "font-weight": "normal",
                         "text-margin-y": 8,
                         color: "#f1f5f9",
                         // Dark pill behind label for readability
@@ -95,7 +95,7 @@ const CytoscapeGraph: React.FC<CytoscapeGraphProps> = ({ elements, onNodeClick, 
                         "text-background-opacity": 1,
                         "text-background-color": "rgba(15,23,42,0.85)",
                         "text-background-shape": "roundrectangle",
-                        "text-background-padding": 3,
+                        "text-background-padding": "3px",
                         "text-max-width": "80px",
                         "text-wrap": "ellipsis",
                         // Degree-scaled sizing
@@ -103,7 +103,7 @@ const CytoscapeGraph: React.FC<CytoscapeGraphProps> = ({ elements, onNodeClick, 
                         height: (ele: cytoscape.NodeSingular) => getNodeSize((ele.data("degree") as number) ?? 0),
                         // Color and shape by type
                         "background-color": (ele: cytoscape.NodeSingular) => getNodeColor(ele.data("nodeLabel") as string),
-                        shape: (ele: cytoscape.NodeSingular) => getNodeShape(ele.data("nodeLabel") as string),
+                        shape: (ele: cytoscape.NodeSingular) => getNodeShape(ele.data("nodeLabel") as string) as cytoscape.Css.NodeShape,
                         // Type-matched border
                         "border-width": 2,
                         "border-color": (ele: cytoscape.NodeSingular) => getNodeColor(ele.data("nodeLabel") as string),
@@ -138,12 +138,12 @@ const CytoscapeGraph: React.FC<CytoscapeGraphProps> = ({ elements, onNodeClick, 
                     style: {
                         label: "data(label)",
                         "font-size": "10px",
-                        "font-weight": 600,
+                        "font-weight": "bold",
                         color: "#94a3b8",
                         "text-background-opacity": 1,
                         "text-background-color": "rgba(15,23,42,0.9)",
                         "text-background-shape": "roundrectangle",
-                        "text-background-padding": 3,
+                        "text-background-padding": "3px",
                         "text-rotation": "autorotate",
                         "line-color": "#64748b",
                         "target-arrow-color": "#64748b",
@@ -195,10 +195,10 @@ const CytoscapeGraph: React.FC<CytoscapeGraphProps> = ({ elements, onNodeClick, 
         const CLUSTER_COLORS = ["#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"];
         if (eleCount > 4 && eleCount < 300) {
             try {
-                const clusters = cy.elements().markovClustering({});
-                clusters.forEach((cluster: cytoscape.Collection, i: number) => {
+                const clusters = cy.elements().markovClustering({}) as unknown as cytoscape.Collection[];
+                clusters.forEach((cluster, i) => {
                     const color = CLUSTER_COLORS[i % CLUSTER_COLORS.length];
-                    cluster.nodes().forEach((node: cytoscape.NodeSingular) => {
+                    (cluster as cytoscape.Collection).nodes().forEach((node) => {
                         node.style("border-color", color);
                         node.style("border-width", 3);
                         node.style("border-opacity", 0.7);
