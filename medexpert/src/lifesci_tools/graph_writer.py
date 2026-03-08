@@ -71,6 +71,71 @@ _DRUG_INLINE_RE = re.compile(r"\[\[drug:([^\]]+)\]\]")
 _DISEASE_INLINE_RE = re.compile(r"\[\[disease:([^\]]+)\]\]")
 _GENE_INLINE_RE = re.compile(r"\[\[gene:([^\]]+)\]\]")
 
+def extract_entities_from_source_metadata(sources: list[dict], query_text: str) -> dict[str, list[str]]:
+    """Extract drug/disease/gene names from source metadata fields.
+
+    Specialists populate ``agent_name``, ``source_type``, and ``title`` on
+    every source.  This function uses those structured fields — plus the
+    user query — to find entity names that inline tags miss.
+
+    Strategy:
+    - Drug sources (source_type contains 'drug'/'fda') → extract drug names
+      from title using known pharmaceutical suffixes
+    - Disease entities → extracted from query text using common patterns
+    - Gene entities → extracted from genomic sources using gene name patterns
+    """
+    drugs: set[str] = set()
+    diseases: set[str] = set()
+    genes: set[str] = set()
+
+    # Pharmaceutical name suffixes (INN stems)
+    _DRUG_SUFFIXES = (
+        "mab", "nib", "vir", "statin", "pril", "sartan", "olol", "oxacin",
+        "cillin", "mycin", "cycline", "azole", "prazole", "gliptin", "tide",
+        "glutide", "gliflozin", "fenac", "profen", "coxib", "setron",
+    )
+    # Gene name pattern: 2-5 uppercase letters optionally followed by digits
+    _GENE_RE = re.compile(r"\b([A-Z]{2,5}\d{0,2})\b")
+
+    # Extract from source titles based on source_type/agent_name
+    for src in sources:
+        title = (src.get("title") or "").strip()
+        agent = (src.get("agent_name") or "").lower()
+        stype = (src.get("source_type") or "").lower()
+        snippet = (src.get("snippet") or "")
+
+        # Drug extraction from drug/FDA sources
+        if "drug" in agent or "drug" in stype or "fda" in stype:
+            # Look for words ending in pharmaceutical suffixes
+            for word in re.findall(r"\b[A-Za-z]{4,}\b", title + " " + snippet):
+                lower = word.lower()
+                if any(lower.endswith(sfx) for sfx in _DRUG_SUFFIXES):
+                    drugs.add(word.capitalize())
+
+        # Gene extraction from genomic sources
+        if "genom" in agent or "genom" in stype or "gene" in stype:
+            for match in _GENE_RE.findall(title + " " + snippet):
+                if len(match) >= 2 and match not in {"PMID", "NCT", "DOI", "FDA", "CDC", "WHO", "NHS", "URL", "THE", "AND"}:
+                    genes.add(match)
+
+    # Extract disease from query text — look for "of X", "for X", "in X" patterns
+    # where X is a capitalized term or common disease name
+    _DISEASE_PATTERNS = [
+        re.compile(r"(?:for|of|in|treat(?:ment)?|with)\s+([A-Z][a-z]+(?:\s+[a-z]+){0,3}(?:\s+(?:disease|syndrome|cancer|disorder|infection))?)", re.IGNORECASE),
+    ]
+    for pat in _DISEASE_PATTERNS:
+        for match in pat.findall(query_text):
+            cleaned = match.strip().rstrip("?.,!").strip()
+            if len(cleaned) > 3 and cleaned.lower() not in {"the", "this", "that", "what", "which"}:
+                diseases.add(cleaned)
+
+    # Also extract from domain field if provided
+    return {
+        "drugs": list(drugs),
+        "diseases": list(diseases),
+        "genes": list(genes),
+    }
+
 
 def extract_pmids(text: str) -> list[str]:
     """Extract PubMed IDs from text."""
@@ -275,13 +340,22 @@ async def _read_session_data(session_id: str) -> dict[str, Any]:
             if query:
                 data["query_text"] = query
 
-            # Scan for source data across namespaces
-            sources_raw = await client.get(f"{pfx}:citations:published_sources")
-            if sources_raw:
+            # Read citation map (written by source_collector to evidence namespace)
+            citation_map_raw = await client.get(f"{pfx}:evidence:citation_map_json")
+            if citation_map_raw:
                 try:
-                    data["sources"] = json.loads(sources_raw)
+                    data["sources"] = json.loads(citation_map_raw)
                 except (json.JSONDecodeError, TypeError):
                     pass
+
+            # Fallback: try the old key path
+            if not data["sources"]:
+                sources_raw = await client.get(f"{pfx}:citations:published_sources")
+                if sources_raw:
+                    try:
+                        data["sources"] = json.loads(sources_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
             # Collect all findings text for entity extraction
             findings_parts = []
@@ -479,6 +553,29 @@ class GraphWriterTool(DynamicTool):
         diseases = inline.get("diseases", [])
         drugs = inline.get("drugs", [])
         genes = inline.get("genes", [])
+
+        # Supplement with metadata-based extraction (catches entities that
+        # inline tags miss — which is most of them in practice)
+        meta_entities = extract_entities_from_source_metadata(sources, query_text)
+        for d in meta_entities.get("diseases", []):
+            if d not in diseases:
+                diseases.append(d)
+        for dr in meta_entities.get("drugs", []):
+            if dr not in drugs:
+                drugs.append(dr)
+        for g in meta_entities.get("genes", []):
+            if g not in genes:
+                genes.append(g)
+
+        log.info(
+            "graph_writer: session=%s entities: %d specialists, %d studies, "
+            "%d diseases, %d drugs, %d genes (inline: %d/%d/%d, meta: %d/%d/%d)",
+            session_id[:12],
+            len(specialists_used), len(studies),
+            len(diseases), len(drugs), len(genes),
+            len(inline.get("diseases", [])), len(inline.get("drugs", [])), len(inline.get("genes", [])),
+            len(meta_entities.get("diseases", [])), len(meta_entities.get("drugs", [])), len(meta_entities.get("genes", [])),
+        )
 
         # Build and execute Cypher statements
         statements = build_session_cypher(
