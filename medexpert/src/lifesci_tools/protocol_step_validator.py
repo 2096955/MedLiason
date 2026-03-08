@@ -43,8 +43,8 @@ ALLOWED_TOOLS_PER_STEP: Dict[int, Set[str]] = {
     0: {"memory_plane", "phi_redactor", "session_state", "cold_query", "web_search_firecrawl", "web_request"},
     1: {"query_decomposer", "memory_plane", "session_state", "web_request"},
     2: {"peer_*", "session_state"},
-    3: {"publish_sources", "completeness_checker", "memory_plane", "peer_*", "session_state", "evidence_store", "web_request"},
-    4: {"report_generator", "phi_redactor", "memory_plane", "session_state", "evidence_store", "web_request"},
+    3: {"publish_sources", "completeness_checker", "reflection_analyzer", "memory_plane", "peer_*", "session_state", "evidence_store", "web_request"},
+    4: {"report_generator", "deliberation_synthesizer", "uncertainty_quantifier", "phi_redactor", "memory_plane", "session_state", "evidence_store", "web_request"},
     5: {"peer_Verifier*", "peer_Reviser*", "memory_plane", "session_state", "evidence_store"},
     6: {"memory_plane", "graph_writer", "session_state", "cold_query"},
 }

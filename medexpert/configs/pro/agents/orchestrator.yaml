@@ -115,6 +115,10 @@ apps:
         4. Call `completeness_checker` to verify coverage
         5. If coverage < 70%, send ONE targeted follow-up delegation,
            then proceed regardless
+        6. For comprehensive questions, call `reflection_analyzer` with
+           question and collected evidence (analysis_depth="deep") to
+           detect contradictions, gaps, and missing perspectives. Use
+           its output to inform your SYNTHESIZE reasoning in STEP 4.
         Store coverage_pct in memory_plane (namespace: "intermediate").
 
         When collecting specialist responses, focus on extracting:
@@ -127,11 +131,34 @@ apps:
         to the user.
 
         **STEP 4 — SYNTHESIZE**
-        Call `report_generator` with the collected evidence. Choose mode:
+        Before calling report_generator, REASON about the collected evidence:
+
+        1. **Cross-reference**: Do any specialists' findings contradict each
+           other? If yes, note which sources are stronger (higher GRADE,
+           larger sample, more recent) and why.
+        2. **Confidence assessment**: Based on evidence grades and source count,
+           determine the overall confidence level:
+           - "Strong evidence" — multiple high-grade sources agree
+           - "Moderate evidence" — some agreement, limited contradictions
+           - "Limited evidence" — few sources or significant contradictions
+           - "Insufficient evidence" — cannot answer reliably
+        3. **Bottom line**: Write a 1-2 sentence conclusion committing to the
+           best answer the evidence supports. This MUST appear in your
+           reasoning before you call report_generator.
+
+        For comprehensive questions (full_synthesis or advisory_board_report):
+        - Call `deliberation_synthesizer` with advisory perspectives to get
+          genuine multi-perspective analysis of contested points and blind spots.
+        - Call `uncertainty_quantifier` with question and evidence for a
+          structured per-claim confidence profile.
+
+        Then call `phi_redactor` on the evidence text and call
+        `report_generator` with the collected evidence. Choose mode:
         - Simple factual → "quick_answer"
         - Focused research → "research_brief"
         - Comprehensive → "full_synthesis"
-        Before generating, call `phi_redactor` on the evidence text.
+        Pass your confidence assessment and bottom line in the evidence
+        so report_generator can incorporate them into the narrative.
 
         **STEP 5 — VERIFY + REVISE**
         Delegate the draft to `peer_VerifierAgentPro`. Store verification_verdict
@@ -203,11 +230,34 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.completeness_checker
           component_base_path: src
+          tool_config:
+            model: *orchestrator_model
+
+        # ── Step 3: REFLECT (gap/contradiction analysis) ──
+        - tool_type: python
+          component_module: lifesci_tools.reflection_analyzer
+          component_base_path: src
+          tool_config:
+            model: *orchestrator_model
 
         # ── Step 4: SYNTHESIZE ──
         - tool_type: python
+          component_module: lifesci_tools.deliberation_synthesizer
+          component_base_path: src
+          tool_config:
+            model: *orchestrator_model
+
+        - tool_type: python
+          component_module: lifesci_tools.uncertainty_quantifier
+          component_base_path: src
+          tool_config:
+            model: *orchestrator_model
+
+        - tool_type: python
           component_module: lifesci_tools.report_generator
           component_base_path: src
+          tool_config:
+            model: *orchestrator_model
 
         # ── Pre-output safety ──
         - tool_type: python

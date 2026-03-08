@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useGraphData } from "@/lib/hooks/useGraphData";
 import CytoscapeGraph from "./CytoscapeGraph";
 import EntityDetailPanel from "./EntityDetailPanel";
+import GraphLegend from "./GraphLegend";
 import GraphQueryBar from "./GraphQueryBar";
 import type { GraphStats } from "@/lib/types";
 
@@ -206,11 +207,14 @@ const KnowledgeGraphPage: React.FC = () => {
                     )}
 
                     {!isLoading && !error && !isEmpty && (
-                        <CytoscapeGraph
-                            elements={elements}
-                            onNodeClick={handleNodeClick}
-                            highlightedNodes={highlightedNodes}
-                        />
+                        <>
+                            <CytoscapeGraph
+                                elements={elements}
+                                onNodeClick={handleNodeClick}
+                                highlightedNodes={highlightedNodes}
+                            />
+                            <GraphLegend />
+                        </>
                     )}
                 </div>
 

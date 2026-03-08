@@ -22,8 +22,21 @@ _root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_root))
 sys.path.insert(0, str(_root / "src"))
 
+# Load .env for GEMINI_API_KEY
+_env_path = _root / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 # Tool configs matching shared_config.yaml / shared_config_pro.yaml / shared_config_opus.yaml
 MODEL_CONFIGS = {
+    "gemini-api": {
+        "model": "gemini/gemini-2.5-flash-preview-05-20",
+        "temperature": 0.2,
+    },
     "flash": {
         "model": {
             "model": "vertex_ai/gemini-2.5-flash",
@@ -205,7 +218,8 @@ async def run_suite(model_name: str):
     """Run all smoke tests for a given model config."""
     global TOOL_CONFIG
     TOOL_CONFIG = MODEL_CONFIGS[model_name]
-    model_id = TOOL_CONFIG["model"]["model"]
+    raw = TOOL_CONFIG["model"]
+    model_id = raw["model"] if isinstance(raw, dict) else raw
 
     print(f"\n{'=' * 60}")
     print(f"  Model: {model_name} ({model_id})")

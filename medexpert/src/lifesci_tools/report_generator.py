@@ -250,7 +250,7 @@ async def _llm_synthesize_narrative(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
-            max_tokens=2048,
+            max_tokens=4096,
             **(vertex_kwargs or {}),
         )
         content = response.choices[0].message.content.strip()

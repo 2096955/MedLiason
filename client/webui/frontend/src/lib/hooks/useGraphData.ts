@@ -21,7 +21,14 @@ interface UseGraphDataReturn {
     refetch: () => void;
 }
 
-function nodesToCytoscapeElements(nodes: GraphNode[]): CytoscapeElement[] {
+function nodesToCytoscapeElements(nodes: GraphNode[], edges: GraphEdge[]): CytoscapeElement[] {
+    // Compute degree for each node from edge list
+    const degreeMap: Record<string, number> = {};
+    for (const edge of edges) {
+        degreeMap[edge.source] = (degreeMap[edge.source] ?? 0) + 1;
+        degreeMap[edge.target] = (degreeMap[edge.target] ?? 0) + 1;
+    }
+
     return nodes.map((node) => ({
         group: "nodes" as const,
         data: {
@@ -30,6 +37,7 @@ function nodesToCytoscapeElements(nodes: GraphNode[]): CytoscapeElement[] {
             label: node.name,
             nodeLabel: node.labels?.[0] || "Unknown",
             description: node.description,
+            degree: degreeMap[node.id] ?? 0,
         },
     }));
 }
@@ -106,7 +114,7 @@ export function useGraphData({ mode, sessionId, entityTypes }: UseGraphDataParam
     }, [fetchData]);
 
     const elements = useMemo(() => {
-        return [...nodesToCytoscapeElements(nodes), ...edgesToCytoscapeElements(edges)];
+        return [...nodesToCytoscapeElements(nodes, edges), ...edgesToCytoscapeElements(edges)];
     }, [nodes, edges]);
 
     const isEmpty = nodes.length === 0 && edges.length === 0;
