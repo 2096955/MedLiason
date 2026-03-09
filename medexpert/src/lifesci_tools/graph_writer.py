@@ -315,13 +315,28 @@ def build_session_cypher(
     diseases: list[str],
     drugs: list[str],
     genes: list[str],
+    *,
+    specialist_entities: dict[str, dict[str, list[str]]] | None = None,
+    entity_studies: dict[str, list[str]] | None = None,
+    cross_references: list[tuple[str, str]] | None = None,
 ) -> list[tuple[str, dict]]:
     """Build a list of (cypher, params) tuples for the session graph.
 
     Uses MERGE for idempotent writes.
+
+    New DAG edge model (when attribution maps are provided):
+        Session ──QUERIED──► Specialist ──FOUND──► Entity ──EVIDENCED_BY──► Study
+                                                            Study ──CITED──► Study
+
+    When ``specialist_entities`` is None the function falls back to the legacy
+    star topology (Session ──ABOUT──► Entity) so callers that have not been
+    updated continue to produce a reasonable graph.
     """
     statements = []
     now = datetime.now(timezone.utc).isoformat()
+
+    # Determine whether we have DAG attribution data
+    _has_dag_data = bool(specialist_entities)
 
     # 1. Session node
     statements.append((
@@ -331,7 +346,7 @@ def build_session_cypher(
         {"sid": session_id, "query": query_text[:1000], "domain": domain[:200], "now": now},
     ))
 
-    # 2. Specialist nodes + QUERIED edges
+    # 2. Specialist nodes + Session-QUERIED->Specialist edges
     for spec in specialists_used:
         statements.append((
             "MERGE (sp:Specialist {name: $name}) "
@@ -341,7 +356,7 @@ def build_session_cypher(
             {"name": spec, "sid": session_id},
         ))
 
-    # 3. Study nodes + CITED edges
+    # 3. Study nodes (no Session→Study edges — studies are reached via entities)
     # Use the correct identifier type as the MERGE key to avoid duplicates
     for study in studies:
         if study.get("pmid"):
@@ -355,13 +370,11 @@ def build_session_cypher(
             merge_val = study["doi"]
         else:
             continue
+        partial = study.get("partial", False)
         statements.append((
             f"MERGE (st:Study {{{merge_prop}: $primary_id}}) "
             "ON CREATE SET st.pmid = $pmid, st.nct_id = $nct_id, st.doi = $doi, "
-            "st.title = $title, st.year = $year, st.created_at = $now "
-            "WITH st "
-            "MATCH (s:Session {session_id: $sid}) "
-            "MERGE (s)-[:CITED]->(st)",
+            "st.title = $title, st.year = $year, st.partial = $partial, st.created_at = $now",
             {
                 "primary_id": merge_val,
                 "pmid": study.get("pmid", ""),
@@ -369,45 +382,312 @@ def build_session_cypher(
                 "doi": study.get("doi", ""),
                 "title": study.get("title", ""),
                 "year": study.get("year", ""),
+                "partial": partial,
                 "now": now,
-                "sid": session_id,
             },
         ))
 
-    # 4. Disease nodes + ABOUT edges
+    # 4. Entity nodes (Disease, Drug, Gene)
+    # When DAG data is available → create nodes only (edges via Specialist-FOUND->Entity)
+    # When DAG data is missing  → fallback to legacy Session-ABOUT->Entity edges
     for disease in diseases:
-        statements.append((
-            "MERGE (d:Disease {name: $name}) "
-            "ON CREATE SET d.created_at = $now "
-            "WITH d "
-            "MATCH (s:Session {session_id: $sid}) "
-            "MERGE (s)-[:ABOUT]->(d)",
-            {"name": disease[:200], "now": now, "sid": session_id},
-        ))
+        if _has_dag_data:
+            statements.append((
+                "MERGE (d:Disease {name: $name}) "
+                "ON CREATE SET d.created_at = $now",
+                {"name": disease[:200], "now": now},
+            ))
+        else:
+            statements.append((
+                "MERGE (d:Disease {name: $name}) "
+                "ON CREATE SET d.created_at = $now "
+                "WITH d "
+                "MATCH (s:Session {session_id: $sid}) "
+                "MERGE (s)-[:ABOUT]->(d)",
+                {"name": disease[:200], "now": now, "sid": session_id},
+            ))
 
-    # 5. Drug nodes + ABOUT edges
     for drug in drugs:
-        statements.append((
-            "MERGE (dr:Drug {name: $name}) "
-            "ON CREATE SET dr.created_at = $now "
-            "WITH dr "
-            "MATCH (s:Session {session_id: $sid}) "
-            "MERGE (s)-[:ABOUT]->(dr)",
-            {"name": drug[:200], "now": now, "sid": session_id},
-        ))
+        if _has_dag_data:
+            statements.append((
+                "MERGE (dr:Drug {name: $name}) "
+                "ON CREATE SET dr.created_at = $now",
+                {"name": drug[:200], "now": now},
+            ))
+        else:
+            statements.append((
+                "MERGE (dr:Drug {name: $name}) "
+                "ON CREATE SET dr.created_at = $now "
+                "WITH dr "
+                "MATCH (s:Session {session_id: $sid}) "
+                "MERGE (s)-[:ABOUT]->(dr)",
+                {"name": drug[:200], "now": now, "sid": session_id},
+            ))
 
-    # 6. Gene nodes + ABOUT edges
     for gene in genes:
-        statements.append((
-            "MERGE (g:Gene {name: $name}) "
-            "ON CREATE SET g.created_at = $now "
-            "WITH g "
-            "MATCH (s:Session {session_id: $sid}) "
-            "MERGE (s)-[:ABOUT]->(g)",
-            {"name": gene[:100], "now": now, "sid": session_id},
-        ))
+        if _has_dag_data:
+            statements.append((
+                "MERGE (g:Gene {name: $name}) "
+                "ON CREATE SET g.created_at = $now",
+                {"name": gene[:100], "now": now},
+            ))
+        else:
+            statements.append((
+                "MERGE (g:Gene {name: $name}) "
+                "ON CREATE SET g.created_at = $now "
+                "WITH g "
+                "MATCH (s:Session {session_id: $sid}) "
+                "MERGE (s)-[:ABOUT]->(g)",
+                {"name": gene[:100], "now": now, "sid": session_id},
+            ))
+
+    # 5. Specialist -[:FOUND]-> Entity edges (DAG model only)
+    if specialist_entities:
+        for spec_name, ent_map in specialist_entities.items():
+            for disease in ent_map.get("diseases", []):
+                statements.append((
+                    "MATCH (sp:Specialist {name: $spec}) "
+                    "MATCH (d:Disease {name: $name}) "
+                    "MERGE (sp)-[:FOUND]->(d)",
+                    {"spec": spec_name, "name": disease[:200]},
+                ))
+            for drug in ent_map.get("drugs", []):
+                statements.append((
+                    "MATCH (sp:Specialist {name: $spec}) "
+                    "MATCH (dr:Drug {name: $name}) "
+                    "MERGE (sp)-[:FOUND]->(dr)",
+                    {"spec": spec_name, "name": drug[:200]},
+                ))
+            for gene in ent_map.get("genes", []):
+                statements.append((
+                    "MATCH (sp:Specialist {name: $spec}) "
+                    "MATCH (g:Gene {name: $name}) "
+                    "MERGE (sp)-[:FOUND]->(g)",
+                    {"spec": spec_name, "name": gene[:100]},
+                ))
+
+    # 6. Entity -[:EVIDENCED_BY]-> Study edges
+    if entity_studies:
+        for entity_name, study_ids in entity_studies.items():
+            for sid in study_ids:
+                # Determine merge property from the study ID format
+                if sid.upper().startswith("NCT"):
+                    match_prop = "nct_id"
+                    match_val = sid.upper()
+                elif sid.startswith("10."):
+                    match_prop = "doi"
+                    match_val = sid
+                else:
+                    match_prop = "pmid"
+                    match_val = sid
+
+                # Try Disease, then Drug, then Gene — entity_name could be any
+                # We use a union-style approach: try each label with OPTIONAL MATCH
+                # Simpler: emit one statement per label. Only one will actually match.
+                for label, alias in [("Disease", "d"), ("Drug", "dr"), ("Gene", "g")]:
+                    statements.append((
+                        f"MATCH (e:{label} {{name: $ename}}) "
+                        f"MATCH (st:Study {{{match_prop}: $study_id}}) "
+                        "MERGE (e)-[:EVIDENCED_BY]->(st)",
+                        {"ename": entity_name[:200], "study_id": match_val},
+                    ))
+
+    # 7. Study -[:CITED]-> Study cross-reference edges
+    if cross_references:
+        for src_id, tgt_id in cross_references:
+            # Determine merge property for source study
+            if src_id.upper().startswith("NCT"):
+                src_prop, src_val = "nct_id", src_id.upper()
+            elif src_id.startswith("10."):
+                src_prop, src_val = "doi", src_id
+            else:
+                src_prop, src_val = "pmid", src_id
+
+            # Determine merge property for target study
+            if tgt_id.upper().startswith("NCT"):
+                tgt_prop, tgt_val = "nct_id", tgt_id.upper()
+            elif tgt_id.startswith("10."):
+                tgt_prop, tgt_val = "doi", tgt_id
+            else:
+                tgt_prop, tgt_val = "pmid", tgt_id
+
+            statements.append((
+                f"MATCH (s1:Study {{{src_prop}: $src_id}}) "
+                f"MATCH (s2:Study {{{tgt_prop}: $tgt_id}}) "
+                "WHERE s1 <> s2 "
+                "MERGE (s1)-[:CITED]->(s2)",
+                {"src_id": src_val, "tgt_id": tgt_val},
+            ))
 
     return statements
+
+
+# ── DAG attribution map builders ─────────────────────────────────────
+
+# Regex to find all [[pmid:XXXX]] references in text
+_INLINE_PMID_REF_RE = re.compile(r"\[\[pmid:(\d{6,9})\]\]")
+
+
+def _build_specialist_entities(
+    sources: list[dict],
+    specialists_used: list[str],
+    diseases: list[str],
+    drugs: list[str],
+    genes: list[str],
+) -> dict[str, dict[str, list[str]]]:
+    """Map specialist name → {diseases: [...], drugs: [...], genes: [...]}.
+
+    Attribution strategy:
+    - For each source with an ``agent_name``, extract entities from that
+      source's title + snippet and attribute them to the named specialist.
+    - Entities that cannot be attributed to any specific specialist are
+      distributed across ALL specialists used in the session (fallback).
+    """
+    spec_ents: dict[str, dict[str, list[str]]] = {}
+
+    # Initialise buckets for known specialists
+    for spec in specialists_used:
+        spec_ents[spec] = {"diseases": [], "drugs": [], "genes": []}
+
+    attributed_diseases: set[str] = set()
+    attributed_drugs: set[str] = set()
+    attributed_genes: set[str] = set()
+
+    diseases_lower = {d.lower(): d for d in diseases}
+    drugs_lower = {d.lower(): d for d in drugs}
+    # Genes are case-sensitive (uppercase)
+    genes_set = set(genes)
+
+    for src in sources:
+        agent = (src.get("agent_name") or "").strip()
+        if not agent:
+            continue
+        if agent not in spec_ents:
+            spec_ents[agent] = {"diseases": [], "drugs": [], "genes": []}
+
+        text_block = (
+            (src.get("title") or "") + " " + (src.get("snippet") or "")
+        )
+        text_lower = text_block.lower()
+
+        # Attribute diseases
+        for d_lower, d_orig in diseases_lower.items():
+            if d_lower in text_lower:
+                if d_orig not in spec_ents[agent]["diseases"]:
+                    spec_ents[agent]["diseases"].append(d_orig)
+                attributed_diseases.add(d_orig)
+
+        # Attribute drugs
+        for dr_lower, dr_orig in drugs_lower.items():
+            if dr_lower in text_lower:
+                if dr_orig not in spec_ents[agent]["drugs"]:
+                    spec_ents[agent]["drugs"].append(dr_orig)
+                attributed_drugs.add(dr_orig)
+
+        # Attribute genes (case-sensitive match in original text)
+        for g in genes_set:
+            if g in text_block:
+                if g not in spec_ents[agent]["genes"]:
+                    spec_ents[agent]["genes"].append(g)
+                attributed_genes.add(g)
+
+    # Fallback: distribute unattributed entities across all specialists
+    unattr_diseases = [d for d in diseases if d not in attributed_diseases]
+    unattr_drugs = [d for d in drugs if d not in attributed_drugs]
+    unattr_genes = [g for g in genes if g not in attributed_genes]
+
+    if unattr_diseases or unattr_drugs or unattr_genes:
+        for spec in specialists_used:
+            if spec not in spec_ents:
+                spec_ents[spec] = {"diseases": [], "drugs": [], "genes": []}
+            for d in unattr_diseases:
+                if d not in spec_ents[spec]["diseases"]:
+                    spec_ents[spec]["diseases"].append(d)
+            for dr in unattr_drugs:
+                if dr not in spec_ents[spec]["drugs"]:
+                    spec_ents[spec]["drugs"].append(dr)
+            for g in unattr_genes:
+                if g not in spec_ents[spec]["genes"]:
+                    spec_ents[spec]["genes"].append(g)
+
+    # Prune empty specialist entries
+    return {k: v for k, v in spec_ents.items() if v["diseases"] or v["drugs"] or v["genes"]}
+
+
+def _build_entity_studies(
+    sources: list[dict],
+    diseases: list[str],
+    drugs: list[str],
+    genes: list[str],
+) -> dict[str, list[str]]:
+    """Map entity name → [study primary IDs] based on text co-occurrence.
+
+    For each source with a primary ID (pmid/nct_id/doi), checks whether
+    entity names appear in the source's title + snippet.
+    """
+    entity_studies: dict[str, list[str]] = {}
+
+    for src in sources:
+        primary_id = src.get("pmid") or src.get("nct_id") or src.get("doi") or ""
+        if not primary_id:
+            continue
+        primary_id = str(primary_id)
+
+        title_and_snippet = (
+            (src.get("title") or "") + " " + (src.get("snippet") or "")
+        )
+        title_and_snippet_lower = title_and_snippet.lower()
+
+        for d in diseases:
+            if d.lower() in title_and_snippet_lower:
+                entity_studies.setdefault(d, [])
+                if primary_id not in entity_studies[d]:
+                    entity_studies[d].append(primary_id)
+
+        for dr in drugs:
+            if dr.lower() in title_and_snippet_lower:
+                entity_studies.setdefault(dr, [])
+                if primary_id not in entity_studies[dr]:
+                    entity_studies[dr].append(primary_id)
+
+        # Genes: case-sensitive match in original text
+        for g in genes:
+            if g in title_and_snippet:
+                entity_studies.setdefault(g, [])
+                if primary_id not in entity_studies[g]:
+                    entity_studies[g].append(primary_id)
+
+    return entity_studies
+
+
+def _build_cross_references(findings_text: str) -> list[tuple[str, str]]:
+    """Extract PMID cross-references from findings text.
+
+    Finds paragraphs (or lines) that mention multiple ``[[pmid:X]]`` inline
+    references and creates CITED edges between each pair.  This captures
+    the notion that two studies are co-cited in support of the same claim.
+    """
+    cross_refs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    # Split by double-newline (paragraph) or single newline
+    paragraphs = re.split(r"\n\n+", findings_text) if findings_text else []
+    if not paragraphs or (len(paragraphs) == 1 and "\n" in paragraphs[0]):
+        paragraphs = findings_text.split("\n") if findings_text else []
+
+    for para in paragraphs:
+        pmids = list(set(_INLINE_PMID_REF_RE.findall(para)))
+        if len(pmids) < 2:
+            continue
+        # Create pairs (undirected — use sorted order for dedup)
+        for i in range(len(pmids)):
+            for j in range(i + 1, len(pmids)):
+                pair = (min(pmids[i], pmids[j]), max(pmids[i], pmids[j]))
+                if pair not in seen:
+                    seen.add(pair)
+                    cross_refs.append(pair)
+
+    return cross_refs
 
 
 # ── Redis data reader ─────────────────────────────────────────────────
@@ -720,6 +1000,25 @@ class GraphWriterTool(DynamicTool):
             len(meta_entities.get("diseases", [])), len(meta_entities.get("drugs", [])), len(meta_entities.get("genes", [])),
         )
 
+        # ── Build DAG attribution maps ───────────────────────────────
+        specialist_entities = _build_specialist_entities(
+            sources, specialists_used, diseases, drugs, genes,
+        )
+        entity_studies = _build_entity_studies(sources, diseases, drugs, genes)
+        cross_references = _build_cross_references(findings_text)
+
+        log.info(
+            "graph_writer: session=%s DAG maps: %d specialist_entity edges, "
+            "%d entity_study edges, %d cross_refs",
+            session_id[:12],
+            sum(
+                len(v.get("diseases", [])) + len(v.get("drugs", [])) + len(v.get("genes", []))
+                for v in specialist_entities.values()
+            ),
+            sum(len(ids) for ids in entity_studies.values()),
+            len(cross_references),
+        )
+
         # Build and execute Cypher statements
         statements = build_session_cypher(
             session_id=session_id,
@@ -730,6 +1029,9 @@ class GraphWriterTool(DynamicTool):
             diseases=diseases,
             drugs=drugs,
             genes=genes,
+            specialist_entities=specialist_entities if specialist_entities else None,
+            entity_studies=entity_studies if entity_studies else None,
+            cross_references=cross_references if cross_references else None,
         )
 
         nodes_created = 0

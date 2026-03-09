@@ -11,6 +11,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from lifesci_tools.graph_writer import (
     GraphWriterTool,
+    _build_cross_references,
+    _build_entity_studies,
+    _build_specialist_entities,
     _is_drug_suffix_match,
     build_session_cypher,
     extract_entities_from_source_metadata,
@@ -622,3 +625,382 @@ class TestSessionIdOverride:
                 {"session_id": "some-other-value"}, tool_context=ctx
             )
         assert result["error_category"] == "graph_unavailable"
+
+
+# ── DAG edge model tests ─────────────────────────────────────
+
+
+class TestBuildSessionCypherNewEdgeModel:
+    """Tests for the new pipeline DAG edge model (FOUND, EVIDENCED_BY, CITED)."""
+
+    def test_found_edges_when_specialist_entities_provided(self):
+        """Specialist-FOUND->Entity edges are generated from specialist_entities map."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="breast cancer treatment",
+            domain="oncology",
+            specialists_used=["LiteratureSpecialist", "DrugSpecialist"],
+            studies=[{"pmid": "12345678", "nct_id": "", "doi": "", "title": "Study", "year": "2024"}],
+            diseases=["breast cancer"],
+            drugs=["tamoxifen"],
+            genes=["BRCA1"],
+            specialist_entities={
+                "LiteratureSpecialist": {"diseases": ["breast cancer"], "drugs": [], "genes": ["BRCA1"]},
+                "DrugSpecialist": {"diseases": [], "drugs": ["tamoxifen"], "genes": []},
+            },
+        )
+        # Check that FOUND edges are present
+        found_stmts = [(c, p) for c, p in statements if "FOUND" in c]
+        assert len(found_stmts) == 3  # breast cancer, tamoxifen, BRCA1
+
+        # Check that ABOUT edges are NOT present (DAG mode)
+        about_stmts = [(c, p) for c, p in statements if "ABOUT" in c]
+        assert len(about_stmts) == 0
+
+    def test_evidenced_by_edges_from_entity_studies(self):
+        """Entity-EVIDENCED_BY->Study edges are generated from entity_studies map."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="oncology",
+            specialists_used=["LiteratureSpecialist"],
+            studies=[
+                {"pmid": "11111111", "nct_id": "", "doi": "", "title": "Study A", "year": "2024"},
+                {"pmid": "22222222", "nct_id": "", "doi": "", "title": "Study B", "year": "2024"},
+            ],
+            diseases=["breast cancer"],
+            drugs=[],
+            genes=[],
+            specialist_entities={
+                "LiteratureSpecialist": {"diseases": ["breast cancer"], "drugs": [], "genes": []},
+            },
+            entity_studies={
+                "breast cancer": ["11111111", "22222222"],
+            },
+        )
+        ev_stmts = [(c, p) for c, p in statements if "EVIDENCED_BY" in c]
+        # 1 entity × 2 studies × 3 labels (Disease, Drug, Gene) = 6 statements
+        # But only Disease label will match at runtime — all 6 are emitted
+        assert len(ev_stmts) == 6
+
+    def test_cited_cross_ref_edges(self):
+        """Study-CITED->Study edges are generated from cross_references."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=[],
+            studies=[
+                {"pmid": "11111111", "nct_id": "", "doi": "", "title": "A", "year": "2024"},
+                {"pmid": "22222222", "nct_id": "", "doi": "", "title": "B", "year": "2024"},
+            ],
+            diseases=[],
+            drugs=[],
+            genes=[],
+            cross_references=[("11111111", "22222222")],
+        )
+        cited_stmts = [(c, p) for c, p in statements if "[:CITED]" in c]
+        assert len(cited_stmts) == 1
+        cypher, params = cited_stmts[0]
+        assert "s1 <> s2" in cypher  # prevent self-loops
+        assert params["src_id"] == "11111111"
+        assert params["tgt_id"] == "22222222"
+
+    def test_partial_flag_on_study_nodes(self):
+        """Studies with partial=True should have st.partial = true in Cypher."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=[],
+            studies=[
+                {"pmid": "11111111", "nct_id": "", "doi": "", "title": "Complete", "year": "2024"},
+                {"pmid": "22222222", "nct_id": "", "doi": "", "title": "Partial", "year": "2024", "partial": True},
+            ],
+            diseases=[],
+            drugs=[],
+            genes=[],
+        )
+        # Session + 2 studies = 3 statements
+        assert len(statements) == 3
+        # First study: partial=False
+        _, params1 = statements[1]
+        assert params1["partial"] is False
+        # Second study: partial=True
+        _, params2 = statements[2]
+        assert params2["partial"] is True
+
+    def test_fallback_about_edges_without_specialist_entities(self):
+        """When specialist_entities is None, fallback to legacy Session-ABOUT->Entity."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="oncology",
+            specialists_used=["LiteratureSpecialist"],
+            studies=[],
+            diseases=["breast cancer"],
+            drugs=["tamoxifen"],
+            genes=["BRCA1"],
+            specialist_entities=None,  # explicitly None — fallback mode
+        )
+        about_stmts = [(c, p) for c, p in statements if "ABOUT" in c]
+        assert len(about_stmts) == 3  # disease + drug + gene
+
+        found_stmts = [(c, p) for c, p in statements if "FOUND" in c]
+        assert len(found_stmts) == 0  # no FOUND edges in fallback mode
+
+    def test_no_session_cited_study_edges(self):
+        """Studies should NOT have Session-CITED->Study edges (old star model)."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=[],
+            studies=[{"pmid": "12345678", "nct_id": "", "doi": "", "title": "T", "year": "2024"}],
+            diseases=[],
+            drugs=[],
+            genes=[],
+        )
+        for cypher, params in statements:
+            # No statement should link Session to Study via CITED
+            if "CITED" in cypher:
+                assert "Session" not in cypher, "Session-CITED->Study edges should not exist"
+
+    def test_nct_and_doi_study_ids_in_evidenced_by(self):
+        """entity_studies correctly handles NCT IDs and DOIs."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=["LiteratureSpecialist"],
+            studies=[
+                {"pmid": "", "nct_id": "NCT01234567", "doi": "", "title": "Trial", "year": "2024"},
+                {"pmid": "", "nct_id": "", "doi": "10.1234/test", "title": "Paper", "year": "2024"},
+            ],
+            diseases=["diabetes"],
+            drugs=[],
+            genes=[],
+            specialist_entities={
+                "LiteratureSpecialist": {"diseases": ["diabetes"], "drugs": [], "genes": []},
+            },
+            entity_studies={
+                "diabetes": ["NCT01234567", "10.1234/test"],
+            },
+        )
+        ev_stmts = [(c, p) for c, p in statements if "EVIDENCED_BY" in c]
+        # 1 entity × 2 studies × 3 labels = 6
+        assert len(ev_stmts) == 6
+
+        # Check that at least one uses nct_id and one uses doi
+        nct_ev = [p for c, p in ev_stmts if "nct_id" in c]
+        doi_ev = [p for c, p in ev_stmts if "doi" in c]
+        assert len(nct_ev) >= 1
+        assert len(doi_ev) >= 1
+
+    def test_mixed_cross_references(self):
+        """Cross-references between PMID and NCT study IDs."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=[],
+            studies=[
+                {"pmid": "11111111", "nct_id": "", "doi": "", "title": "A", "year": ""},
+                {"pmid": "", "nct_id": "NCT01234567", "doi": "", "title": "B", "year": ""},
+            ],
+            diseases=[],
+            drugs=[],
+            genes=[],
+            cross_references=[("11111111", "NCT01234567")],
+        )
+        cited_stmts = [(c, p) for c, p in statements if "[:CITED]" in c]
+        assert len(cited_stmts) == 1
+        cypher, params = cited_stmts[0]
+        assert "pmid" in cypher  # source uses pmid
+        assert "nct_id" in cypher  # target uses nct_id
+
+    def test_empty_specialist_entities_treated_as_no_dag(self):
+        """An empty dict {} should behave like None (fallback to ABOUT)."""
+        statements = build_session_cypher(
+            session_id="s1",
+            query_text="test",
+            domain="",
+            specialists_used=[],
+            studies=[],
+            diseases=["test disease"],
+            drugs=[],
+            genes=[],
+            specialist_entities={},  # empty dict
+        )
+        about_stmts = [(c, p) for c, p in statements if "ABOUT" in c]
+        assert len(about_stmts) == 1  # fallback ABOUT edge
+
+
+# ── DAG attribution map builder tests ────────────────────────
+
+
+class TestBuildSpecialistEntities:
+    """Tests for the _build_specialist_entities helper."""
+
+    def test_attributes_disease_to_specialist_by_source(self):
+        sources = [
+            {"agent_name": "LiteratureSpecialist", "title": "Breast cancer review", "snippet": ""},
+        ]
+        result = _build_specialist_entities(
+            sources, ["LiteratureSpecialist"], ["breast cancer"], [], [],
+        )
+        assert "LiteratureSpecialist" in result
+        assert "breast cancer" in result["LiteratureSpecialist"]["diseases"]
+
+    def test_attributes_drug_to_drug_specialist(self):
+        sources = [
+            {"agent_name": "DrugSpecialist", "title": "Tamoxifen efficacy study", "snippet": ""},
+        ]
+        result = _build_specialist_entities(
+            sources, ["DrugSpecialist"], [], ["Tamoxifen"], [],
+        )
+        assert "Tamoxifen" in result["DrugSpecialist"]["drugs"]
+
+    def test_unattributed_entities_distributed_to_all_specialists(self):
+        """Entities not found in any source text go to ALL specialists."""
+        sources = [
+            {"agent_name": "LiteratureSpecialist", "title": "Some other topic", "snippet": ""},
+        ]
+        result = _build_specialist_entities(
+            sources, ["LiteratureSpecialist", "DrugSpecialist"],
+            ["rare disease"], [], [],
+        )
+        # "rare disease" appears in no source — distributed to both
+        assert "rare disease" in result["LiteratureSpecialist"]["diseases"]
+        assert "rare disease" in result["DrugSpecialist"]["diseases"]
+
+    def test_empty_sources_distributes_all(self):
+        result = _build_specialist_entities(
+            [], ["SpecA", "SpecB"], ["disease X"], ["drug Y"], ["GENE1"],
+        )
+        for spec in ["SpecA", "SpecB"]:
+            assert "disease X" in result[spec]["diseases"]
+            assert "drug Y" in result[spec]["drugs"]
+            assert "GENE1" in result[spec]["genes"]
+
+    def test_prunes_empty_specialists(self):
+        """Specialists with no entities at all are pruned from the map."""
+        sources = [
+            {"agent_name": "LitSpec", "title": "Diabetes overview", "snippet": ""},
+        ]
+        result = _build_specialist_entities(
+            sources, ["LitSpec", "EmptySpec"], ["diabetes"], [], [],
+        )
+        # LitSpec gets diabetes via attribution.
+        # EmptySpec gets diabetes via fallback? No — diabetes IS attributed to LitSpec,
+        # so it's not unattributed. EmptySpec has nothing → pruned.
+        assert "LitSpec" in result
+        # EmptySpec should be pruned (no entities)
+        assert "EmptySpec" not in result
+
+    def test_gene_case_sensitive_match(self):
+        """Gene matching is case-sensitive (uppercase in original text)."""
+        sources = [
+            {"agent_name": "GenomicsSpecialist", "title": "BRCA1 mutations", "snippet": ""},
+        ]
+        result = _build_specialist_entities(
+            sources, ["GenomicsSpecialist"], [], [], ["BRCA1"],
+        )
+        assert "BRCA1" in result["GenomicsSpecialist"]["genes"]
+
+
+class TestBuildEntityStudies:
+    """Tests for the _build_entity_studies helper."""
+
+    def test_links_disease_to_study_by_title(self):
+        sources = [
+            {"pmid": "12345678", "title": "Breast cancer treatment outcomes", "snippet": ""},
+        ]
+        result = _build_entity_studies(sources, ["breast cancer"], [], [])
+        assert "breast cancer" in result
+        assert "12345678" in result["breast cancer"]
+
+    def test_links_drug_to_study_by_snippet(self):
+        sources = [
+            {"pmid": "87654321", "title": "Study A", "snippet": "Tamoxifen showed efficacy"},
+        ]
+        result = _build_entity_studies(sources, [], ["Tamoxifen"], [])
+        assert "Tamoxifen" in result
+        assert "87654321" in result["Tamoxifen"]
+
+    def test_links_gene_case_sensitive(self):
+        sources = [
+            {"pmid": "11111111", "title": "BRCA1 and cancer risk", "snippet": ""},
+        ]
+        result = _build_entity_studies(sources, [], [], ["BRCA1"])
+        assert "BRCA1" in result
+        assert "11111111" in result["BRCA1"]
+
+    def test_no_links_when_entity_not_in_text(self):
+        sources = [
+            {"pmid": "12345678", "title": "Unrelated study", "snippet": ""},
+        ]
+        result = _build_entity_studies(sources, ["breast cancer"], [], [])
+        assert "breast cancer" not in result
+
+    def test_deduplicates_study_ids(self):
+        sources = [
+            {"pmid": "12345678", "title": "Diabetes study", "snippet": "diabetes management"},
+        ]
+        result = _build_entity_studies(sources, ["diabetes"], [], [])
+        assert result["diabetes"].count("12345678") == 1
+
+    def test_handles_nct_and_doi_ids(self):
+        sources = [
+            {"nct_id": "NCT01234567", "title": "Diabetes trial", "snippet": ""},
+            {"doi": "10.1234/test", "title": "Diabetes review", "snippet": ""},
+        ]
+        result = _build_entity_studies(sources, ["diabetes"], [], [])
+        assert "NCT01234567" in result.get("diabetes", [])
+        assert "10.1234/test" in result.get("diabetes", [])
+
+    def test_skips_sources_without_primary_id(self):
+        sources = [{"title": "No ID source about diabetes", "snippet": ""}]
+        result = _build_entity_studies(sources, ["diabetes"], [], [])
+        assert len(result) == 0
+
+
+class TestBuildCrossReferences:
+    """Tests for the _build_cross_references helper."""
+
+    def test_finds_co_cited_pmids_in_paragraph(self):
+        text = "Studies [[pmid:11111111]] and [[pmid:22222222]] both showed efficacy."
+        result = _build_cross_references(text)
+        assert len(result) == 1
+        assert ("11111111", "22222222") in result or ("22222222", "11111111") in result
+
+    def test_no_cross_refs_for_single_pmid(self):
+        text = "Only [[pmid:11111111]] was relevant."
+        result = _build_cross_references(text)
+        assert len(result) == 0
+
+    def test_multiple_paragraphs_separate(self):
+        text = (
+            "Paragraph 1: [[pmid:11111111]] and [[pmid:22222222]]\n\n"
+            "Paragraph 2: [[pmid:33333333]] and [[pmid:44444444]]"
+        )
+        result = _build_cross_references(text)
+        assert len(result) == 2
+
+    def test_deduplicates_pairs(self):
+        text = (
+            "[[pmid:11111111]] and [[pmid:22222222]] agree. "
+            "Also [[pmid:11111111]] and [[pmid:22222222]] confirmed."
+        )
+        result = _build_cross_references(text)
+        assert len(result) == 1
+
+    def test_empty_text(self):
+        assert _build_cross_references("") == []
+        assert _build_cross_references("no pmids here") == []
+
+    def test_three_pmids_in_one_paragraph(self):
+        text = "[[pmid:11111111]], [[pmid:22222222]], and [[pmid:33333333]] all agree."
+        result = _build_cross_references(text)
+        # 3 choose 2 = 3 pairs
+        assert len(result) == 3
