@@ -226,7 +226,7 @@ apps:
       artifact_handling_mode: "reference"
       enable_embed_resolution: true
       enable_artifact_content_instruction: true
-      max_llm_calls_per_task: 50
+      max_llm_calls_per_task: 25
       protocol_enforcement: true
       specialist_response_validation: true
       context_compaction: true

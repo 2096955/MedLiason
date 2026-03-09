@@ -122,7 +122,7 @@ apps:
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service
-      max_llm_calls_per_task: 15
+      max_llm_calls_per_task: 8
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Clinical trials specialist. Searches ClinicalTrials.gov for trial data, enrollment status, and results."

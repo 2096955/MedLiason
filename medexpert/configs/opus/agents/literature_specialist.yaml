@@ -177,7 +177,7 @@ apps:
 
       artifact_handling_mode: "reference"
       enable_embed_resolution: true
-      max_llm_calls_per_task: 15
+      max_llm_calls_per_task: 8
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Literature specialist for biomedical research. Searches PubMed, retrieves abstracts, and grades evidence quality using GRADE methodology."

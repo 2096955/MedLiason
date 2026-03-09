@@ -160,7 +160,7 @@ apps:
       session_service: *default_session_service
       artifact_service: *default_artifact_service
 
-      max_llm_calls_per_task: 25
+      max_llm_calls_per_task: 15
 
       tools:
         # -- Stage 2: ROUTING --
