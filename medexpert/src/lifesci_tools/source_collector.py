@@ -445,12 +445,16 @@ class SourceCollectorTool(DynamicTool):
                     r = _redis.from_url(redis_url, decode_responses=False)
                     redis_key = f"medexpert:{session_id}:evidence:citation_map_json"
                     r.set(redis_key, citation_map_json.encode("utf-8"), ex=3600)
+                    # Also store the raw sources array (has pmid/nct_id/doi/title/year)
+                    # for graph_writer entity extraction at PERSIST step.
+                    raw_key = f"medexpert:{session_id}:evidence:published_sources_raw"
+                    r.set(raw_key, json.dumps(sources).encode("utf-8"), ex=3600)
                     r.close()
                     logger.info(
-                        "%s Auto-stored citation_map_json in Redis (%d entries, key=%s)",
+                        "%s Auto-stored citation_map_json + published_sources_raw in Redis (%d entries, session=%s)",
                         log_id,
                         len(citation_map),
-                        redis_key,
+                        session_id[:12],
                     )
                 except ImportError:
                     logger.warning("%s Redis not available for citation_map auto-store", log_id)

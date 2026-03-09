@@ -117,6 +117,11 @@ _DRUG_CLASS_EXCLUSIONS = frozenset({
     "antiemetic", "antiemetics", "anticonvulsant", "anticonvulsants",
     "beta-blocker", "beta-blockers", "ace-inhibitor", "ace-inhibitors",
     "statin", "statins", "insulin", "metformin", "aspirin",
+    # Salt / ester forms — not drugs themselves, part of compound names
+    "dipropionate", "propionate", "valerate", "acetonide",
+    "butyrate", "furoate", "hemisuccinate", "phosphate",
+    "hydrochloride", "sulfate", "maleate", "fumarate",
+    "citrate", "tartrate", "mesylate", "besylate",
 })
 
 # Gene pattern: 2-5 uppercase letters + optional 0-3 alphanumeric (max 8 chars)
@@ -444,15 +449,24 @@ async def _read_session_data(session_id: str) -> dict[str, Any]:
             if query:
                 data["query_text"] = query
 
-            # Read citation map (written by source_collector to evidence namespace)
-            citation_map_raw = await client.get(f"{pfx}:evidence:citation_map_json")
-            if citation_map_raw:
+            # Prefer raw sources (has pmid/nct_id/doi/title/year for entity extraction)
+            raw_sources = await client.get(f"{pfx}:evidence:published_sources_raw")
+            if raw_sources:
                 try:
-                    data["sources"] = json.loads(citation_map_raw)
+                    data["sources"] = json.loads(raw_sources)
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            # Fallback: try the old key path
+            # Fallback 1: citation_map_json (has id/title/snippet/url only)
+            if not data["sources"]:
+                citation_map_raw = await client.get(f"{pfx}:evidence:citation_map_json")
+                if citation_map_raw:
+                    try:
+                        data["sources"] = json.loads(citation_map_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+            # Fallback 2: try the old key path
             if not data["sources"]:
                 sources_raw = await client.get(f"{pfx}:citations:published_sources")
                 if sources_raw:

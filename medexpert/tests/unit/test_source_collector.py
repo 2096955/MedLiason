@@ -1,8 +1,9 @@
 """Unit tests for the source_collector tool."""
 
+import json
 import sys
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -373,3 +374,49 @@ async def test_tool_cross_reference_unmatched(tool, ctx):
     )
     assert len(result["cross_reference_warnings"]) == 1
     assert "[[pmid:999]]" in result["cross_reference_warnings"][0]
+
+
+# ── Redis raw sources storage ────────────────────────────────
+
+
+async def test_raw_sources_stored_in_redis(tool, ctx):
+    """publish_sources stores raw sources array in Redis for graph_writer."""
+    mock_redis_instance = MagicMock()
+
+    # Ensure the state path falls through to ctx.session.id
+    ctx.state = None
+
+    sources = [
+        {"title": "Study A", "snippet": "Finding.", "pmid": "12345678", "publication_year": "2024"},
+        {"title": "Trial B", "snippet": "Result.", "nct_id": "NCT01234567", "publication_year": "2023"},
+    ]
+
+    with patch("redis.from_url", return_value=mock_redis_instance):
+        result = await tool._run_async_impl(
+            {"query": "cancer treatment", "sources": sources},
+            ctx,
+        )
+
+    assert result["status"] == "published"
+
+    # Collect all r.set() calls
+    set_calls = mock_redis_instance.set.call_args_list
+    assert len(set_calls) == 2, f"Expected 2 Redis set calls, got {len(set_calls)}"
+
+    # First call: citation_map_json
+    cm_key = set_calls[0][0][0]
+    assert cm_key == "medexpert:test-session-001:evidence:citation_map_json"
+
+    # Second call: published_sources_raw
+    raw_key = set_calls[1][0][0]
+    assert raw_key == "medexpert:test-session-001:evidence:published_sources_raw"
+
+    raw_value = json.loads(set_calls[1][0][1].decode("utf-8"))
+    assert len(raw_value) == 2
+    assert raw_value[0]["pmid"] == "12345678"
+    assert raw_value[0]["publication_year"] == "2024"
+    assert raw_value[1]["nct_id"] == "NCT01234567"
+
+    # Both use same TTL
+    assert set_calls[0][1]["ex"] == 3600
+    assert set_calls[1][1]["ex"] == 3600

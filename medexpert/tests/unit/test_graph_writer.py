@@ -502,6 +502,84 @@ class TestExtractEntitiesFromSourceMetadata:
         assert "atorvastatin" in drugs
 
 
+class TestReadSessionDataSourcePriority:
+    """Tests that _read_session_data prefers published_sources_raw over citation_map_json."""
+
+    @pytest.mark.asyncio
+    async def test_prefers_published_sources_raw(self):
+        """published_sources_raw (with pmid/nct_id) is used when available."""
+        from lifesci_tools.graph_writer import _read_session_data
+
+        raw_sources = json.dumps([
+            {"pmid": "12345678", "nct_id": "", "doi": "", "title": "Study A", "publication_year": "2024"},
+        ])
+        citation_map = json.dumps([
+            {"id": "s0r0", "title": "Study A", "snippet": "Finding.", "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/"},
+        ])
+
+        async def mock_get(key):
+            if key.endswith(":evidence:published_sources_raw"):
+                return raw_sources
+            if key.endswith(":evidence:citation_map_json"):
+                return citation_map
+            return None
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.scan_iter = MagicMock(return_value=AsyncIteratorMock([]))
+        mock_client.aclose = AsyncMock()
+
+        with patch("redis.asyncio.from_url", return_value=mock_client):
+            data = await _read_session_data("test-session-123")
+
+        sources = data["sources"]
+        assert len(sources) == 1
+        assert sources[0]["pmid"] == "12345678"
+        assert sources[0]["publication_year"] == "2024"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_citation_map_when_no_raw(self):
+        """Falls back to citation_map_json when published_sources_raw is absent."""
+        from lifesci_tools.graph_writer import _read_session_data
+
+        citation_map = json.dumps([
+            {"id": "s0r0", "title": "Study A", "snippet": "Finding.", "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/"},
+        ])
+
+        async def mock_get(key):
+            if key.endswith(":evidence:citation_map_json"):
+                return citation_map
+            return None
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_client.scan_iter = MagicMock(return_value=AsyncIteratorMock([]))
+        mock_client.aclose = AsyncMock()
+
+        with patch("redis.asyncio.from_url", return_value=mock_client):
+            data = await _read_session_data("test-session-456")
+
+        sources = data["sources"]
+        assert len(sources) == 1
+        assert sources[0]["id"] == "s0r0"  # citation_map format
+
+
+class AsyncIteratorMock:
+    """Helper to mock async iterators (scan_iter)."""
+
+    def __init__(self, items):
+        self._items = iter(items)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._items)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
 class TestSessionIdOverride:
     """Tests for the session ID defensive override in _do_write."""
 
