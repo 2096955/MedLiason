@@ -78,9 +78,12 @@ apps:
         **STEP 2 — DELEGATE (PARALLEL)**
         After query_decomposer returns, look at the `all_agents` list in its output.
         Call ONLY the peer tools listed in `all_agents` — do NOT call peer tools
-        not in that list. This typically means 3-5 specialists, not all 8.
-        Call ONLY the peer tools listed in `all_agents` (typically 2-3, NOT all 8) in a SINGLE LLM turn. Do NOT delegate to agents not in the list.
-        ADK executes them in parallel. Do NOT make separate turns for each specialist.
+        not in that list. This typically means 2-3 specialists, not all 8.
+        IMPORTANT — SEQUENTIAL DELEGATION: Call only ONE specialist per LLM turn.
+        Wait for its response, then call the next. Do NOT call multiple
+        specialists in a single turn — Opus has strict API concurrency limits
+        and parallel calls will silently fail. Order: primary specialist first,
+        then secondary specialists one at a time.
 
         For each sub-question, delegate to its target_agent AND all
         secondary_agents. The `all_agents` list is the definitive set of
