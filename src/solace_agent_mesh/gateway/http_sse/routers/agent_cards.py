@@ -351,3 +351,11 @@ async def get_data_sources_health(
             "agentsTotal": agent_count,
         },
     }
+
+
+@router.get("/datasources/health")
+async def get_data_sources_health_lowercase(
+    agent_registry: AgentRegistry = Depends(get_agent_registry),
+):
+    """Lowercase alias for /dataSources/health."""
+    return await get_data_sources_health(agent_registry=agent_registry)

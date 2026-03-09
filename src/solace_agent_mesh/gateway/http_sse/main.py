@@ -600,3 +600,9 @@ async def read_root():
     """Basic health check endpoint."""
     log.debug("Health check endpoint '/health' called")
     return {"status": "A2A Web UI Backend is running"}
+
+
+@app.get("/api/v1/health", tags=["Health"])
+async def api_v1_health():
+    """API-prefixed health check endpoint (alias for /health)."""
+    return {"status": "A2A Web UI Backend is running"}

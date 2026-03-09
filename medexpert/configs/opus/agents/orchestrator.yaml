@@ -183,9 +183,15 @@ apps:
         1. Call `memory_plane` with operation="flush_cold",
            query=<original question>, query_domain=<primary domain>.
            The tool auto-collects session signals.
-        2. Call `graph_writer` with session_id, query_text, domain,
-           specialists_used (JSON array), and sources (JSON array of
-           source objects). This persists entities to the knowledge graph.
+        2. Call `graph_writer` with:
+           - session_id: use the ACTUAL session identifier from context
+             (do NOT use "12345" or any placeholder — the tool will
+             override with the real session ID if you get this wrong)
+           - query_text: the original user question
+           - domain: the primary research domain
+           - specialists_used: JSON array of specialist names delegated to
+           - sources: JSON array of source objects from publish_sources
+           This persists entities to the knowledge graph.
 
         ═══════════════════════════════════════════════════════════════
         GENERAL GUIDELINES

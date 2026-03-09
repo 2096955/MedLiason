@@ -26,10 +26,23 @@ _SELECTED_AGENTS_KEY = "_selected_agents"
 
 
 def _score_domain(text: str, domain_info: dict) -> float:
-    """Score how well a text matches a domain based on keyword overlap."""
+    """Score how well a text matches a domain based on keyword overlap.
+
+    Short keywords (<=3 chars like 'rna', 'dna', 'snp') use word-boundary
+    matching to prevent false positives from substrings (e.g. 'alternatives'
+    matching 'rna'). Longer keywords use simple substring matching.
+    """
     text_lower = text.lower()
     keywords = domain_info["keywords"]
-    matches = sum(1 for kw in keywords if kw in text_lower)
+    matches = 0
+    for kw in keywords:
+        if len(kw) <= 3:
+            # Word-boundary match for short keywords
+            if re.search(r"\b" + re.escape(kw) + r"\b", text_lower):
+                matches += 1
+        else:
+            if kw in text_lower:
+                matches += 1
     return matches / max(len(keywords), 1)
 
 
@@ -46,6 +59,11 @@ def _route_question(question: str) -> list[dict]:
         scored.append((domain, info["agent"], score))
 
     scored.sort(key=lambda x: x[2], reverse=True)
+
+    # Debug: log all domain scores for diagnosis
+    if log.isEnabledFor(logging.DEBUG):
+        top_scores = [(d, round(s, 4)) for d, _, s in scored[:5]]
+        log.debug("query_decomposer: domain scores for %r: %s", question[:80], top_scores)
 
     results = []
 
@@ -89,6 +107,7 @@ def _route_question(question: str) -> list[dict]:
               "Which", "Where", "Why", "Who", "Please", "Tell", "Not"}
     potential_brands = [w for w in words if w not in common]
     if potential_brands and not any(r["agent"] == "DrugSpecialist" for r in results):
+        log.info("query_decomposer: brand-name heuristic fired for %s → adding DrugSpecialist", potential_brands)
         results.append({
             "domain": "drugs",
             "agent": "DrugSpecialist",
@@ -96,6 +115,11 @@ def _route_question(question: str) -> list[dict]:
             "role": "secondary",
         })
 
+    log.info(
+        "query_decomposer: routed %r → %s",
+        question[:60],
+        [(r["agent"], r["role"], r["confidence"]) for r in results],
+    )
     return results
 
 

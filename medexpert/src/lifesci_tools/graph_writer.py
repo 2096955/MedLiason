@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -34,10 +35,11 @@ MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "")
 MEMGRAPH_TIMEOUT = 5  # seconds
 
 _driver = None
+_driver_lock = threading.Lock()
 
 
 def _get_rw_driver():
-    """Get the read-write Memgraph driver (lazy singleton)."""
+    """Get the read-write Memgraph driver (thread-safe lazy singleton)."""
     global _driver
     if _driver is not None:
         return _driver
@@ -45,21 +47,26 @@ def _get_rw_driver():
     if not MEMGRAPH_URL:
         return None
 
-    try:
-        from neo4j import GraphDatabase
+    with _driver_lock:
+        # Double-checked locking: re-check after acquiring lock
+        if _driver is not None:
+            return _driver
 
-        _driver = GraphDatabase.driver(
-            MEMGRAPH_URL,
-            auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD),
-            connection_timeout=MEMGRAPH_TIMEOUT,
-            max_transaction_retry_time=MEMGRAPH_TIMEOUT,
-        )
-        _driver.verify_connectivity()
-        return _driver
-    except Exception as exc:
-        log.warning("graph_writer: Memgraph connection failed: %s", exc)
-        _driver = None
-        return None
+        try:
+            from neo4j import GraphDatabase
+
+            drv = GraphDatabase.driver(
+                MEMGRAPH_URL,
+                auth=(MEMGRAPH_USER, MEMGRAPH_PASSWORD),
+                connection_timeout=MEMGRAPH_TIMEOUT,
+                max_transaction_retry_time=MEMGRAPH_TIMEOUT,
+            )
+            drv.verify_connectivity()
+            _driver = drv
+            return _driver
+        except Exception as exc:
+            log.warning("graph_writer: Memgraph connection failed: %s", exc)
+            return None
 
 
 # ── Entity extraction (regex, no LLM) ────────────────────────────────
@@ -71,6 +78,103 @@ _DRUG_INLINE_RE = re.compile(r"\[\[drug:([^\]]+)\]\]")
 _DISEASE_INLINE_RE = re.compile(r"\[\[disease:([^\]]+)\]\]")
 _GENE_INLINE_RE = re.compile(r"\[\[gene:([^\]]+)\]\]")
 
+# ── Module-level constants for entity extraction ─────────────────────
+
+# Pharmaceutical name suffixes as (suffix, min_word_length) tuples.
+# Short stems like "sone" require longer words to avoid false positives
+# (e.g. "ozone" matches "sone" at 5 chars — require 7+).
+_DRUG_SUFFIX_RULES: tuple[tuple[str, int], ...] = (
+    # INN stems (safe at 4-char word minimum)
+    ("mab", 4), ("nib", 5), ("vir", 5), ("statin", 6), ("pril", 5),
+    ("sartan", 6), ("olol", 5), ("oxacin", 7), ("cillin", 7), ("mycin", 6),
+    ("cycline", 8), ("azole", 6), ("prazole", 8), ("gliptin", 8),
+    ("glutide", 8), ("gliflozin", 10), ("fenac", 6), ("profen", 7),
+    ("coxib", 6), ("setron", 7),
+    # Corticosteroids (min-length prevents short false positives)
+    ("sone", 6), ("olone", 7), ("onide", 7),
+    ("propionate", 11), ("valerate", 9), ("acetonide", 10),
+    ("butyrate", 9), ("dipropionate", 14),
+    # Benzodiazepines (require 7+ to avoid "clam", "spam", "slam")
+    ("zepam", 7),
+    # PDE5 inhibitors (-afil stem covers sildenafil, tadalafil, vardenafil)
+    ("afil", 7),
+    # Leukotriene antagonists
+    ("lukast", 8),
+    # Calcium channel blockers
+    ("dipine", 7),
+)
+
+# Drug-class terms that should NOT be classified as diseases or drugs
+_DRUG_CLASS_EXCLUSIONS = frozenset({
+    "corticosteroid", "corticosteroids", "antibiotic", "antibiotics",
+    "nsaid", "nsaids", "antidepressant", "antidepressants",
+    "antihistamine", "antihistamines", "benzodiazepine", "benzodiazepines",
+    "steroid", "steroids", "analgesic", "analgesics",
+    "antipyretic", "antipyretics", "antiviral", "antivirals",
+    "antifungal", "antifungals", "anticoagulant", "anticoagulants",
+    "immunosuppressant", "immunosuppressants", "bronchodilator",
+    "bronchodilators", "diuretic", "diuretics", "laxative", "laxatives",
+    "antiemetic", "antiemetics", "anticonvulsant", "anticonvulsants",
+    "beta-blocker", "beta-blockers", "ace-inhibitor", "ace-inhibitors",
+    "statin", "statins", "insulin", "metformin", "aspirin",
+})
+
+# Gene pattern: 2-5 uppercase letters + optional 0-3 alphanumeric (max 8 chars)
+# Matches: BRCA1, IL4R, CYP3A5, TP53, HER2, EGFR, KRAS, KCNQ1
+_GENE_RE = re.compile(r"\b([A-Z]{2,5}[A-Z0-9]{0,3})\b")
+
+_GENE_EXCLUSIONS = frozenset({
+    # Common abbreviations
+    "PMID", "NCT", "DOI", "FDA", "CDC", "WHO", "NHS", "URL",
+    # English stopwords (all-caps in titles)
+    "THE", "AND", "FOR", "WITH", "FROM", "THAT", "THIS", "NOT",
+    "ARE", "WAS", "BUT", "HAS", "HAD", "MAY", "CAN", "ALL",
+    "ANY", "ITS", "OUR", "YOU", "USE", "ONE", "TWO", "NEW",
+    "OLD", "SET", "GET", "PUT", "RUN", "END", "TOP", "OUT",
+    # Medical abbreviations (not gene names)
+    "HIV", "BMI", "ICU", "MRI", "DNA", "RNA", "API", "SSE",
+    "JSON", "HTTP", "POST", "USA", "ATP", "PCR", "RCT", "AUC",
+    "SNP", "QOL", "HBA", "LDL", "HDL", "BMD", "CVD", "CVA",
+    "AMI", "CHD", "COPD", "EHR", "EMR", "GFR", "BUN",
+    # Source title noise
+    "RESULTS", "METHODS", "STUDY", "TRIAL",
+    "REVIEW", "META", "DATA", "GROUP",
+    "DOSE", "RISK", "RATE", "CASE", "CARE",
+})
+
+# Stopwords for disease extraction
+_DISEASE_STOPWORDS = frozenset({
+    "the", "this", "that", "what", "which", "some", "many", "most",
+    "educational", "purposes", "information", "professional",
+})
+
+# Disease patterns (compiled once at module level)
+_DISEASE_PATTERN_PREPOSITIONAL = re.compile(
+    r"(?:for|of|in|treat(?:ment)?|with)\s+"
+    r"([A-Za-z][A-Za-z-]+(?:\s+[A-Za-z-]+){0,4}"
+    r"(?:\s+(?:disease|syndrome|cancer|disorder|infection|failure|deficiency|anemia|anaemia))?)",
+    re.IGNORECASE,
+)
+_DISEASE_PATTERN_DIRECT = re.compile(
+    r"\b((?:type\s+[12]\s+)?(?:diabetes|hypertension|asthma|copd|"
+    r"alzheimer(?:'s)?|parkinson(?:'s)?|epilepsy|"
+    r"leukemia|leukaemia|lymphoma|melanoma|carcinoma|sarcoma|"
+    r"arthritis|osteoporosis|fibromyalgia|psoriasis|eczema|"
+    r"schizophrenia|depression|anxiety|migraine|"
+    r"pneumonia|tuberculosis|hepatitis|cirrhosis|"
+    r"multiple\s+sclerosis|crohn(?:'s)?|lupus|gout))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_drug_suffix_match(word_lower: str) -> bool:
+    """Check if a word matches a pharmaceutical suffix with min-length guard."""
+    for sfx, min_len in _DRUG_SUFFIX_RULES:
+        if word_lower.endswith(sfx) and len(word_lower) >= min_len:
+            return True
+    return False
+
+
 def extract_entities_from_source_metadata(sources: list[dict], query_text: str) -> dict[str, list[str]]:
     """Extract drug/disease/gene names from source metadata fields.
 
@@ -80,22 +184,15 @@ def extract_entities_from_source_metadata(sources: list[dict], query_text: str) 
 
     Strategy:
     - Drug sources (source_type contains 'drug'/'fda') → extract drug names
-      from title using known pharmaceutical suffixes
+      from title using known pharmaceutical suffixes (with min-word-length guard)
     - Disease entities → extracted from query text using common patterns
+      (supports hyphens, e.g. "non-small cell lung cancer")
     - Gene entities → extracted from genomic sources using gene name patterns
+      (supports mid-string digits like IL4R, CYP3A5, capped at 8 chars)
     """
     drugs: set[str] = set()
     diseases: set[str] = set()
     genes: set[str] = set()
-
-    # Pharmaceutical name suffixes (INN stems)
-    _DRUG_SUFFIXES = (
-        "mab", "nib", "vir", "statin", "pril", "sartan", "olol", "oxacin",
-        "cillin", "mycin", "cycline", "azole", "prazole", "gliptin", "tide",
-        "glutide", "gliflozin", "fenac", "profen", "coxib", "setron",
-    )
-    # Gene name pattern: 2-5 uppercase letters optionally followed by digits
-    _GENE_RE = re.compile(r"\b([A-Z]{2,5}\d{0,2})\b")
 
     # Extract from source titles based on source_type/agent_name
     for src in sources:
@@ -103,33 +200,40 @@ def extract_entities_from_source_metadata(sources: list[dict], query_text: str) 
         agent = (src.get("agent_name") or "").lower()
         stype = (src.get("source_type") or "").lower()
         snippet = (src.get("snippet") or "")
+        text_block = title + " " + snippet
 
         # Drug extraction from drug/FDA sources
-        if "drug" in agent or "drug" in stype or "fda" in stype:
-            # Look for words ending in pharmaceutical suffixes
-            for word in re.findall(r"\b[A-Za-z]{4,}\b", title + " " + snippet):
+        if "drug" in agent or "drug" in stype or "fda" in stype or "pharm" in stype:
+            for word in re.findall(r"\b[A-Za-z]{4,}\b", text_block):
                 lower = word.lower()
-                if any(lower.endswith(sfx) for sfx in _DRUG_SUFFIXES):
+                if lower not in _DRUG_CLASS_EXCLUSIONS and _is_drug_suffix_match(lower):
                     drugs.add(word.capitalize())
 
         # Gene extraction from genomic sources
         if "genom" in agent or "genom" in stype or "gene" in stype:
-            for match in _GENE_RE.findall(title + " " + snippet):
-                if len(match) >= 2 and match not in {"PMID", "NCT", "DOI", "FDA", "CDC", "WHO", "NHS", "URL", "THE", "AND"}:
+            for match in _GENE_RE.findall(text_block):
+                if len(match) >= 2 and match not in _GENE_EXCLUSIONS:
                     genes.add(match)
 
-    # Extract disease from query text — look for "of X", "for X", "in X" patterns
-    # where X is a capitalized term or common disease name
-    _DISEASE_PATTERNS = [
-        re.compile(r"(?:for|of|in|treat(?:ment)?|with)\s+([A-Z][a-z]+(?:\s+[a-z]+){0,3}(?:\s+(?:disease|syndrome|cancer|disorder|infection))?)", re.IGNORECASE),
-    ]
-    for pat in _DISEASE_PATTERNS:
+    # Also scan query text for drug names (user may mention drugs directly)
+    for word in re.findall(r"\b[A-Za-z]{4,}\b", query_text):
+        lower = word.lower()
+        if lower not in _DRUG_CLASS_EXCLUSIONS and _is_drug_suffix_match(lower):
+            drugs.add(word.capitalize())
+
+    # ── Disease extraction from query text ────────────────────────────
+    for pat in (_DISEASE_PATTERN_PREPOSITIONAL, _DISEASE_PATTERN_DIRECT):
         for match in pat.findall(query_text):
             cleaned = match.strip().rstrip("?.,!").strip()
-            if len(cleaned) > 3 and cleaned.lower() not in {"the", "this", "that", "what", "which"}:
+            if len(cleaned) > 3:
+                # Token-level exclusion: reject if ANY word is a drug-class term
+                tokens = set(cleaned.lower().split())
+                if tokens & _DRUG_CLASS_EXCLUSIONS:
+                    continue
+                if tokens & _DISEASE_STOPWORDS:
+                    continue
                 diseases.add(cleaned)
 
-    # Also extract from domain field if provided
     return {
         "drugs": list(drugs),
         "diseases": list(diseases),
@@ -464,22 +568,47 @@ class GraphWriterTool(DynamicTool):
                 "edges_created": 0,
             }
 
+    # Placeholder session IDs that the LLM may hallucinate
+    _PLACEHOLDER_SESSION_IDS = frozenset({
+        "", "12345", "123456", "test", "session_id", "current_session",
+        "session", "my_session", "example", "placeholder",
+    })
+
     async def _do_write(self, args: dict, tool_context: ToolContext) -> dict:
         """Core write logic."""
-        session_id = args.get("session_id", "")
-        if not session_id:
-            # Try to get from tool context
-            if hasattr(tool_context, "session") and tool_context.session:
-                session_id = getattr(tool_context.session, "id", "")
-            if not session_id:
+        session_id = (args.get("session_id") or "").strip()
+
+        # Defensive override: if the LLM passed a placeholder, get the real
+        # session ID from tool_context (ADK always has the real one).
+        real_session_id = ""
+        if hasattr(tool_context, "session") and tool_context.session:
+            real_session_id = getattr(tool_context.session, "id", "") or ""
+
+        if session_id.lower() in self._PLACEHOLDER_SESSION_IDS:
+            if real_session_id:
+                log.warning(
+                    "graph_writer: overriding placeholder session_id=%r with real=%s",
+                    session_id, real_session_id[:12],
+                )
+                session_id = real_session_id
+            else:
                 return {
                     "success": False,
-                    "error": "session_id is required",
+                    "error": "session_id is required (LLM passed placeholder and no real session available)",
                     "error_category": "validation_error",
                     "is_retryable": False,
                     "nodes_created": 0,
                     "edges_created": 0,
                 }
+
+        # Even when the LLM passes something non-placeholder, prefer the real
+        # session ID if available (the LLM value may be truncated or wrong)
+        if real_session_id and session_id != real_session_id:
+            log.info(
+                "graph_writer: using real session_id=%s (LLM passed=%s)",
+                real_session_id[:12], session_id[:12],
+            )
+            session_id = real_session_id
 
         # Get driver
         driver = _get_rw_driver()

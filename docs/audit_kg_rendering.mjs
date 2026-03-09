@@ -81,13 +81,50 @@ async function main() {
     }
   }
 
-  // Navigate to KG page
+  // ── Step 1: Submit a research query to populate Memgraph ──────────
   try {
-    console.log("\nNavigating to Knowledge Graph page...");
-    await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3000); // Let graph render
+    console.log("\n1. Submitting research query to populate graph...");
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(3000);
 
-    // Take before screenshot
+    // Find the chat input (contenteditable div or textarea)
+    const chatInput = page.locator('[contenteditable="true"], textarea[placeholder*="message"], textarea[placeholder*="Ask"]').first();
+    const inputExists = await chatInput.count();
+
+    if (inputExists > 0) {
+      await chatInput.click();
+      await chatInput.fill("What are the treatments for type 2 diabetes?");
+      // Press Enter or click send
+      await chatInput.press("Enter");
+      console.log("  Query submitted. Waiting for research pipeline (up to 5 min)...");
+
+      // Wait for a response — look for the disclaimer or any substantial response
+      try {
+        await page.locator("text=medical advice, text=educational purposes").first().waitFor({
+          state: "visible",
+          timeout: 300_000, // 5 min max for full pipeline
+        });
+        console.log("  Research response received.");
+      } catch {
+        console.log("  Timeout waiting for response — checking KG anyway.");
+      }
+      await page.waitForTimeout(5000); // Let PERSIST step complete
+      await page.screenshot({ path: path.join(SCREENSHOTS_DIR, "00-chat-response.png"), fullPage: false });
+      console.log("  Screenshot: 00-chat-response.png");
+    } else {
+      console.log("  Could not find chat input — skipping query submission.");
+    }
+  } catch (e) {
+    console.log(`  Query submission failed: ${e.message} — continuing to KG page.`);
+  }
+
+  // ── Step 2: Navigate to KG page and audit ───────────────────────
+  try {
+    console.log("\n2. Navigating to Knowledge Graph page...");
+    await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(5000); // Let graph render + API calls
+
+    // Take screenshot
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, "01-kg-initial.png"), fullPage: false });
     console.log("  Screenshot: 01-kg-initial.png\n");
 

@@ -91,10 +91,34 @@ def test_route_provider_question():
 
 
 def test_route_ambiguous_defaults_to_literature():
-    routes = _route_question("Tell me about aspirin")
+    # Query with no domain-specific keywords → falls to literature default
+    routes = _route_question("Hello there.")
     assert routes[0]["domain"] == "literature"
     assert routes[0]["agent"] == "LiteratureSpecialist"
     assert routes[0]["confidence"] == 0.2
+
+
+def test_route_tell_me_about_drug_routes_to_drugs():
+    """'Tell me about aspirin' should route to drugs (has 'tell me about' keyword)."""
+    routes = _route_question("Tell me about aspirin")
+    assert routes[0]["domain"] == "drugs"
+    assert routes[0]["agent"] == "DrugSpecialist"
+
+
+def test_route_drug_alternatives_not_genomics():
+    """'alternatives' contains substring 'rna' — must NOT route to genomics.
+
+    Regression test: short keywords like 'rna' must use word-boundary matching
+    to prevent false positives from substrings.
+    """
+    routes = _route_question(
+        "What alternatives are there to betamethasone dipropionate (Eleuphrat)?"
+    )
+    assert routes[0]["domain"] == "drugs", (
+        f"Expected drugs as primary, got {routes[0]['domain']}"
+    )
+    # Genomics should NOT be primary (it was before the word-boundary fix)
+    assert routes[0]["agent"] != "GenomicsSpecialist"
 
 
 def test_route_returns_secondary_agents():
