@@ -3,9 +3,10 @@
  *
  * Displays the MedExpert 7-step research protocol progress.
  * Shows each step's status (pending/active/complete/error) with details.
+ * Includes elapsed timer and model-based ETA.
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Sparkles,
   GitBranch,
@@ -21,6 +22,7 @@ import {
   Loader2,
   RefreshCw,
   Clock,
+  Timer,
 } from "lucide-react";
 import type { PipelineErrorData } from "@/lib/types";
 
@@ -39,6 +41,23 @@ interface ResearchProtocolStepperProps {
   progress: ResearchProtocolProgressData;
   isComplete?: boolean;
   pipelineErrors?: PipelineErrorData | null;
+  agentName?: string;
+}
+
+/** Derive model tier from agent name suffix → estimated total time in seconds. */
+function getModelEta(agentName?: string): { label: string; minSec: number; maxSec: number } {
+  if (!agentName) return { label: "Flash", minSec: 60, maxSec: 180 };
+  if (agentName.includes("Opus")) return { label: "Opus", minSec: 300, maxSec: 480 };
+  if (agentName.includes("Pro")) return { label: "Pro", minSec: 180, maxSec: 300 };
+  return { label: "Flash", minSec: 60, maxSec: 180 };
+}
+
+/** Format seconds into "Xm Ys". */
+function formatElapsed(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
 interface StepInfo {
@@ -118,8 +137,31 @@ export function ResearchProtocolStepper({
   progress,
   isComplete = false,
   pipelineErrors,
+  agentName,
 }: ResearchProtocolStepperProps) {
   const [expanded, setExpanded] = useState(true);
+
+  // ── Elapsed timer ────────────────────────────────────────────────
+  const startTimeRef = useRef<number>(Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  // Reset start time when a new research begins (step goes back to 0)
+  useEffect(() => {
+    if (progress.step === 0 && !isComplete) {
+      startTimeRef.current = Date.now();
+    }
+  }, [progress.step, isComplete]);
+
+  // Tick every second while research is active
+  useEffect(() => {
+    if (isComplete) return;
+    const interval = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isComplete]);
+
+  const eta = getModelEta(agentName);
 
   const progressPct = isComplete
     ? 100
@@ -143,6 +185,22 @@ export function ResearchProtocolStepper({
           <span className="font-medium text-gray-900 dark:text-gray-100">
             {isComplete ? "Research complete" : `Research in progress — ${progressPct}%`}
           </span>
+          {/* Elapsed timer + ETA (only while running) */}
+          {!isComplete && (
+            <span className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 font-normal tabular-nums">
+              <Timer className="w-3 h-3" />
+              {formatElapsed(elapsedSec)}
+              <span className="text-gray-300 dark:text-gray-600 mx-0.5">/</span>
+              ~{Math.round(eta.minSec / 60)}-{Math.round(eta.maxSec / 60)}min
+            </span>
+          )}
+          {/* Total time when complete */}
+          {isComplete && elapsedSec > 0 && (
+            <span className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 font-normal tabular-nums">
+              <Timer className="w-3 h-3" />
+              {formatElapsed(elapsedSec)}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {progress.coverage_pct != null && (

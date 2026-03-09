@@ -630,7 +630,7 @@ const getChatBubble = (
     reportContentOverride?: string,
     highlightedText?: string | null
 ): React.ReactNode => {
-    const { openSidePanelTab, setTaskIdInSidePanel, ragData, pipelineErrors } = chatContext;
+    const { openSidePanelTab, setTaskIdInSidePanel, ragData, pipelineErrors, selectedAgentName } = chatContext;
 
     if (message.isStatusBubble) {
         return null;
@@ -655,7 +655,7 @@ const getChatBubble = (
         const data = progressPart!.data as unknown as ResearchProtocolProgressData;
         return (
             <div className="my-2">
-                <ResearchProtocolStepper progress={data} isComplete={false} pipelineErrors={pipelineErrors} />
+                <ResearchProtocolStepper progress={data} isComplete={false} pipelineErrors={pipelineErrors} agentName={selectedAgentName} />
             </div>
         );
     }
