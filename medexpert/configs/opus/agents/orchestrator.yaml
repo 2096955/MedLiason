@@ -100,6 +100,17 @@ apps:
 
         **STEP 3 — COLLECT + PUBLISH**
         After specialist responses arrive:
+
+        CRASH RECOVERY: If any specialist returned a generic error
+        (e.g. "unexpected error occurred", "tool execution error", or
+        any response that lacks structured fields like execution_status
+        or findings), treat it as execution_status="failed" with
+        mcp_failures=[{server:"unknown", error_category:"service_unavailable",
+        is_retryable:false}]. Do NOT retry the crashed specialist — its
+        MCP servers may be down. Proceed with the remaining specialists'
+        data. A partial answer from 2 specialists is far better than
+        "Research Inconclusive" from 0.
+
         0. Check each specialist response for execution_status and
            mcp_failures fields. If any specialist reports
            execution_status="failed" or "partial":

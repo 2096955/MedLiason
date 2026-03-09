@@ -126,24 +126,42 @@ for entry in "${MCP_SERVERS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 4. Health check MCP servers
+# 4. Health check MCP servers (Tier 1 = blocking, Tier 2 = graceful)
 # ---------------------------------------------------------------------------
+# Tier 1: core research servers — agents crash without these
+TIER1_PORTS="9001 9002 9003 9004 9005"
+
 echo "[MedExpert-v2] Waiting for MCP servers..."
 for entry in "${MCP_SERVERS[@]}"; do
   port="${entry##*:}"
   module="${entry%%:*}"
   ready=false
-  for i in $(seq 1 30); do
+
+  # Tier 1 gets more attempts (45s) and blocks on failure
+  if echo "$TIER1_PORTS" | grep -qw "$port"; then
+    max_attempts=45
+    tier="Tier1"
+  else
+    max_attempts=30
+    tier="Tier2"
+  fi
+
+  for i in $(seq 1 $max_attempts); do
     if python -c "import socket; s=socket.create_connection(('localhost',$port),timeout=2); s.close()" 2>/dev/null; then
       ready=true
       break
     fi
     sleep 1
   done
+
   if [ "$ready" = true ]; then
-    echo "[MedExpert-v2]   Port $port ready ($module)"
+    echo "[MedExpert-v2]   [$tier] Port $port ready ($module)"
+  elif [ "$tier" = "Tier1" ]; then
+    echo "[MedExpert-v2]   FATAL: $tier port $port not ready after ${max_attempts}s ($module) — aborting"
+    echo "[MedExpert-v2]   Tier 1 MCP servers are required for core research pipeline."
+    exit 1
   else
-    echo "[MedExpert-v2]   WARNING: Port $port not ready ($module) — continuing (graceful degradation)"
+    echo "[MedExpert-v2]   WARNING: $tier port $port not ready ($module) — continuing (graceful degradation)"
   fi
 done
 
