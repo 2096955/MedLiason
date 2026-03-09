@@ -171,6 +171,49 @@ async def get_graph_stats_endpoint():
     return JSONResponse(content=result, status_code=status)
 
 
+async def _fetch_edges_between_nodes(node_ids: list[str]) -> list[dict]:
+    """Fetch all edges between a set of node element IDs via a single Cypher pass.
+
+    Note: Uses Memgraph's elementId() which returns string IDs consistent with
+    the explore query's node.element_id. If migrating to Neo4j 5.x+, elementId()
+    behaviour differs (deprecated, returns internal refs). The node_ids coming
+    from the explore query are element IDs from that same driver, so they match.
+    """
+    if not node_ids:
+        return []
+    try:
+        from mcp_servers.knowledge_graph.server import _get_driver
+
+        driver = _get_driver()
+        if driver is None:
+            return []
+
+        cypher = (
+            "MATCH (a)-[r]->(b) "
+            "WHERE elementId(a) IN $ids AND elementId(b) IN $ids "
+            "RETURN elementId(a) AS src, elementId(b) AS tgt, type(r) AS label "
+            "LIMIT 500"
+        )
+        edges = []
+        seen = set()
+        with driver.session() as session:
+            result = session.run(cypher, {"ids": node_ids})
+            for record in result:
+                edge_id = f"{record['src']}-{record['label']}-{record['tgt']}"
+                if edge_id not in seen:
+                    seen.add(edge_id)
+                    edges.append({
+                        "id": edge_id,
+                        "source": record["src"],
+                        "target": record["tgt"],
+                        "label": record["label"],
+                    })
+        return edges
+    except Exception as exc:
+        log.warning("Edge fetch failed (non-fatal): %s", exc)
+        return []
+
+
 @router.get("/explore")
 async def explore_graph(
     labels: str | None = Query(None, description="Comma-separated entity types to browse"),
@@ -179,7 +222,7 @@ async def explore_graph(
     """Browse the persistent knowledge base with optional type filters.
 
     Reshapes the MCP result into {nodes, edges} format expected by the
-    frontend's useGraphData hook.
+    frontend's useGraphData hook. Fetches real edges between returned nodes.
     """
     entity_types = [t.strip() for t in labels.split(",")] if labels else None
     result = await _call_tool(
@@ -194,6 +237,7 @@ async def explore_graph(
     raw_results = result.get("results", [])
     _STRIP_KEYS = {"id", "labels", "name", "description", "type", "label", "properties"}
     nodes = []
+    node_ids = []
     for idx, item in enumerate(raw_results):
         if isinstance(item, dict):
             node_id = item.get("id") or item.get("name") or f"node-{idx}"
@@ -205,9 +249,14 @@ async def explore_graph(
                 "description": item.get("description", ""),
                 "properties": {k: v for k, v in item.items() if k not in _STRIP_KEYS},
             })
+            node_ids.append(node_id)
+
+    # Fetch real edges between the returned nodes
+    edges = await _fetch_edges_between_nodes(node_ids)
+
     return JSONResponse(content={
         "success": True,
         "nodes": nodes,
-        "edges": [],
+        "edges": edges,
         "total_results": result.get("total_results", len(nodes)),
     })

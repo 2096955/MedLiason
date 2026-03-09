@@ -1,17 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Network, RefreshCw, Database, Loader2 } from "lucide-react";
 
 import { Button } from "@/lib/components/ui";
 import { cn } from "@/lib/utils";
 import { useGraphData } from "@/lib/hooks/useGraphData";
-import CytoscapeGraph from "./CytoscapeGraph";
+import GraphCanvas from "./GraphCanvas";
 import EntityDetailPanel from "./EntityDetailPanel";
-import GraphLegend from "./GraphLegend";
 import GraphQueryBar from "./GraphQueryBar";
-import type { GraphStats } from "@/lib/types";
-
-type TabMode = "session" | "explore";
+import type { GraphNode, GraphStats } from "@/lib/types";
 
 const ENTITY_TYPES = ["Disease", "Drug", "Gene", "Study", "All"] as const;
 type EntityFilter = (typeof ENTITY_TYPES)[number];
@@ -28,23 +25,15 @@ const KnowledgeGraphPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const sessionIdFromUrl = searchParams.get("session");
 
-    const [activeTab, setActiveTab] = useState<TabMode>(sessionIdFromUrl ? "session" : "explore");
     const [entityFilter, setEntityFilter] = useState<EntityFilter>("All");
     const [selectedNode, setSelectedNode] = useState<{ id: string; data: Record<string, unknown> } | null>(null);
-    const [highlightedNodes, setHighlightedNodes] = useState<string[]>([]);
+    const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
     const [stats, setStats] = useState<GraphStats | null>(null);
     const [statsLoading, setStatsLoading] = useState(false);
 
-    // Compute entity types for explore mode
-    const entityTypes = useMemo(() => {
-        if (entityFilter === "All") return undefined;
-        return [entityFilter];
-    }, [entityFilter]);
-
-    const { elements, isLoading, error, isEmpty, refetch } = useGraphData({
-        mode: activeTab,
-        sessionId: activeTab === "session" ? sessionIdFromUrl : undefined,
-        entityTypes: activeTab === "explore" ? entityTypes : undefined,
+    const { nodes, edges, isLoading, error, isEmpty, refetch } = useGraphData({
+        sessionId: sessionIdFromUrl || undefined,
+        entityFilter,
     });
 
     // Fetch stats
@@ -66,25 +55,40 @@ const KnowledgeGraphPage: React.FC = () => {
         fetchStats();
     }, [fetchStats]);
 
-    // Switch tab when URL session param changes
+    // Pre-select session node when ?session=X is in URL
     useEffect(() => {
         if (sessionIdFromUrl) {
-            setActiveTab("session");
+            setHighlightedNodeId(
+                nodes.find((n) => n.labels.includes("Session") && n.properties.session_id === sessionIdFromUrl)?.id ?? null,
+            );
         }
-    }, [sessionIdFromUrl]);
+    }, [sessionIdFromUrl, nodes]);
 
-    const handleNodeClick = useCallback((nodeId: string, nodeData: Record<string, unknown>) => {
-        setSelectedNode({ id: nodeId, data: nodeData });
+    const handleNodeClick = useCallback((node: GraphNode) => {
+        setSelectedNode({
+            id: node.id,
+            data: {
+                ...node.properties,
+                id: node.id,
+                label: node.name,
+                nodeLabel: node.labels[0] || "Unknown",
+                description: node.description,
+            },
+        });
+        setHighlightedNodeId(node.id);
     }, []);
 
     const handleCloseDetail = useCallback(() => {
         setSelectedNode(null);
+        setHighlightedNodeId(null);
     }, []);
 
     const handleNLQResult = useCallback((nodeIds: string[]) => {
-        setHighlightedNodes(nodeIds);
-        // Clear highlights after 5 seconds
-        setTimeout(() => setHighlightedNodes([]), 5000);
+        if (nodeIds.length > 0) {
+            setHighlightedNodeId(nodeIds[0]);
+        }
+        // Clear highlight after 5 seconds
+        setTimeout(() => setHighlightedNodeId(null), 5000);
     }, []);
 
     return (
@@ -110,49 +114,26 @@ const KnowledgeGraphPage: React.FC = () => {
                 </Button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex items-center gap-1 border-b border-border px-6">
-                <button
-                    onClick={() => setActiveTab("session")}
-                    className={cn(
-                        "border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                        activeTab === "session"
-                            ? "border-primary text-foreground"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                >
-                    Session
-                </button>
-                <button
-                    onClick={() => setActiveTab("explore")}
-                    className={cn(
-                        "border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                        activeTab === "explore"
-                            ? "border-primary text-foreground"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
-                    )}
-                >
-                    Knowledge Base
-                </button>
-
-                {/* Entity type filters (explore tab only) */}
-                {activeTab === "explore" && (
-                    <div className="ml-4 flex items-center gap-1.5">
-                        {ENTITY_TYPES.map((type) => (
-                            <button
-                                key={type}
-                                onClick={() => setEntityFilter(type)}
-                                className={cn(
-                                    "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                                    ENTITY_FILTER_COLORS[type],
-                                    entityFilter === type && "ring-1 ring-ring"
-                                )}
-                            >
-                                {type}
-                            </button>
-                        ))}
-                    </div>
+            {/* Entity type filter bar */}
+            <div className="flex items-center gap-1.5 border-b border-border px-6 py-2">
+                {sessionIdFromUrl && (
+                    <span className="mr-2 text-xs text-muted-foreground">
+                        Session: <span className="font-mono text-foreground">{sessionIdFromUrl.slice(0, 12)}...</span>
+                    </span>
                 )}
+                {ENTITY_TYPES.map((type) => (
+                    <button
+                        key={type}
+                        onClick={() => setEntityFilter(type)}
+                        className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                            ENTITY_FILTER_COLORS[type],
+                            entityFilter === type && "ring-1 ring-ring",
+                        )}
+                    >
+                        {type}
+                    </button>
+                ))}
             </div>
 
             {/* Main content area */}
@@ -183,38 +164,21 @@ const KnowledgeGraphPage: React.FC = () => {
                         <div className="flex h-full items-center justify-center">
                             <div className="text-center">
                                 <Network className="mx-auto mb-3 h-12 w-12 text-muted-foreground/50" />
-                                {activeTab === "session" ? (
-                                    <>
-                                        <p className="text-sm font-medium text-foreground">
-                                            {sessionIdFromUrl ? "No graph data for this session" : "No session selected"}
-                                        </p>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                            {sessionIdFromUrl
-                                                ? "Graph data is generated at the end of the research pipeline."
-                                                : 'Click "View in Graph" on a completed research message to view its session graph.'}
-                                        </p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="text-sm font-medium text-foreground">No entities found</p>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                            The knowledge base will grow as research sessions complete.
-                                        </p>
-                                    </>
-                                )}
+                                <p className="text-sm font-medium text-foreground">No graph data available</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    The knowledge graph grows as research sessions complete.
+                                </p>
                             </div>
                         </div>
                     )}
 
                     {!isLoading && !error && !isEmpty && (
-                        <>
-                            <CytoscapeGraph
-                                elements={elements}
-                                onNodeClick={handleNodeClick}
-                                highlightedNodes={highlightedNodes}
-                            />
-                            <GraphLegend />
-                        </>
+                        <GraphCanvas
+                            nodes={nodes}
+                            edges={edges}
+                            onNodeClick={handleNodeClick}
+                            highlightedNodeId={highlightedNodeId}
+                        />
                     )}
                 </div>
 

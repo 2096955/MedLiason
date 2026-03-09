@@ -21,7 +21,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import structured_error_response
+from mcp_servers._http import raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ async def query_knowledge_graph(
 
     except Exception as exc:
         log.error("Knowledge graph query failed: %s", exc)
-        return structured_error_response(exc, "knowledge_graph", "query_knowledge_graph")
+        return raise_or_return_error(exc, "knowledge_graph", "query_knowledge_graph")
 
 
 @mcp.tool()
@@ -339,7 +339,7 @@ async def get_entity_relationships(entity_id: str) -> dict:
 
     except Exception as exc:
         log.error("Entity relationship query failed: %s", exc)
-        return structured_error_response(exc, "knowledge_graph", "get_entity_relationships")
+        return raise_or_return_error(exc, "knowledge_graph", "get_entity_relationships")
 
 
 @mcp.tool()
@@ -365,93 +365,91 @@ async def get_session_graph(session_id: str) -> dict:
         return _no_connection_response(safe_id)
 
     try:
-        # Get all nodes connected to this session (up to 2 hops)
-        cypher = (
-            "MATCH (s:Session {session_id: $sid})-[r1]-(n1) "
-            "OPTIONAL MATCH (n1)-[r2]-(n2) "
-            "WHERE n2 <> s "
-            "RETURN s, r1, n1, r2, n2 LIMIT 200"
-        )
+        # Pipeline DAG traversal split into separate hops to avoid
+        # cartesian product explosion (6 specialists × 10 entities × 3
+        # studies × 2 citations = 360 rows from a single chained query).
         params = {"sid": _sanitize_cypher_param(safe_id)}
 
         nodes = {}
-        edges = []
+        edges = {}
+
+        def _add_node(n, fallback_name=""):
+            if n and n.element_id not in nodes:
+                nodes[n.element_id] = {
+                    "id": n.element_id,
+                    "labels": list(n.labels),
+                    "name": n.get("name", fallback_name),
+                    "properties": dict(n),
+                }
+
+        def _add_edge(src, rel, tgt):
+            if src and rel and tgt:
+                edge_id = f"{src.element_id}-{rel.type}-{tgt.element_id}"
+                if edge_id not in edges:
+                    edges[edge_id] = {
+                        "id": edge_id,
+                        "source": src.element_id,
+                        "target": tgt.element_id,
+                        "label": rel.type,
+                    }
 
         with driver.session() as session:
-            result = session.run(cypher, params)
-            for record in result:
-                # Session node
-                s = record["s"]
-                if s and s.element_id not in nodes:
-                    nodes[s.element_id] = {
-                        "id": s.element_id,
-                        "labels": list(s.labels),
-                        "name": s.get("name", safe_id),
-                        "properties": dict(s),
-                    }
+            # Hop 1: Session -> Specialists (QUERIED)
+            r1 = session.run(
+                "MATCH (s:Session {session_id: $sid})-[r:QUERIED]->(sp:Specialist) "
+                "RETURN DISTINCT s, r, sp LIMIT 50",
+                params,
+            )
+            for rec in r1:
+                _add_node(rec["s"], safe_id)
+                _add_node(rec["sp"])
+                _add_edge(rec["s"], rec["r"], rec["sp"])
 
-                # First-hop node
-                n1 = record["n1"]
-                if n1 and n1.element_id not in nodes:
-                    nodes[n1.element_id] = {
-                        "id": n1.element_id,
-                        "labels": list(n1.labels),
-                        "name": n1.get("name", ""),
-                        "properties": dict(n1),
-                    }
+            # Hop 2: Specialists -> Entities (FOUND)
+            r2 = session.run(
+                "MATCH (s:Session {session_id: $sid})-[:QUERIED]->(sp:Specialist)-[r:FOUND]->(e) "
+                "RETURN DISTINCT sp, r, e LIMIT 200",
+                params,
+            )
+            for rec in r2:
+                _add_node(rec["sp"])
+                _add_node(rec["e"])
+                _add_edge(rec["sp"], rec["r"], rec["e"])
 
-                # First-hop edge
-                r1 = record["r1"]
-                if r1:
-                    edge_id = f"{s.element_id}-{r1.type}-{n1.element_id}"
-                    edges.append({
-                        "id": edge_id,
-                        "source": s.element_id,
-                        "target": n1.element_id,
-                        "label": r1.type,
-                    })
+            # Hop 3: Entities -> Studies (EVIDENCED_BY)
+            r3 = session.run(
+                "MATCH (s:Session {session_id: $sid})-[:QUERIED]->(:Specialist)-[:FOUND]->(e)-[r:EVIDENCED_BY]->(st:Study) "
+                "RETURN DISTINCT e, r, st LIMIT 300",
+                params,
+            )
+            for rec in r3:
+                _add_node(rec["e"])
+                _add_node(rec["st"])
+                _add_edge(rec["e"], rec["r"], rec["st"])
 
-                # Second-hop node
-                n2 = record["n2"]
-                if n2 and n2.element_id not in nodes:
-                    nodes[n2.element_id] = {
-                        "id": n2.element_id,
-                        "labels": list(n2.labels),
-                        "name": n2.get("name", ""),
-                        "properties": dict(n2),
-                    }
-
-                # Second-hop edge
-                r2 = record["r2"]
-                if r2 and n2:
-                    edge_id = f"{n1.element_id}-{r2.type}-{n2.element_id}"
-                    edges.append({
-                        "id": edge_id,
-                        "source": n1.element_id,
-                        "target": n2.element_id,
-                        "label": r2.type,
-                    })
-
-        # Deduplicate edges
-        seen_edges = set()
-        unique_edges = []
-        for e in edges:
-            if e["id"] not in seen_edges:
-                seen_edges.add(e["id"])
-                unique_edges.append(e)
+            # Hop 4: Study -> Study (CITED cross-references)
+            r4 = session.run(
+                "MATCH (s:Session {session_id: $sid})-[:QUERIED]->(:Specialist)-[:FOUND]->()-[:EVIDENCED_BY]->(st:Study)-[r:CITED]->(st2:Study) "
+                "RETURN DISTINCT st, r, st2 LIMIT 200",
+                params,
+            )
+            for rec in r4:
+                _add_node(rec["st"])
+                _add_node(rec["st2"])
+                _add_edge(rec["st"], rec["r"], rec["st2"])
 
         return {
             "success": True,
             "session_id": safe_id,
             "nodes": list(nodes.values()),
-            "edges": unique_edges,
+            "edges": list(edges.values()),
             "total_nodes": len(nodes),
-            "total_edges": len(unique_edges),
+            "total_edges": len(edges),
         }
 
     except Exception as exc:
         log.error("Session graph query failed: %s", exc)
-        return structured_error_response(exc, "knowledge_graph", "get_session_graph")
+        return raise_or_return_error(exc, "knowledge_graph", "get_session_graph")
 
 
 @mcp.tool()
@@ -501,7 +499,7 @@ async def get_graph_stats() -> dict:
 
     except Exception as exc:
         log.error("Graph stats query failed: %s", exc)
-        return structured_error_response(exc, "knowledge_graph", "get_graph_stats")
+        return raise_or_return_error(exc, "knowledge_graph", "get_graph_stats")
 
 
 @mcp.tool()
@@ -622,7 +620,7 @@ async def natural_language_query(question: str) -> dict:
         }
     except Exception as exc:
         log.error("NLQ query failed: %s", exc)
-        return structured_error_response(exc, "knowledge_graph", "natural_language_query")
+        return raise_or_return_error(exc, "knowledge_graph", "natural_language_query")
 
 
 if __name__ == "__main__":

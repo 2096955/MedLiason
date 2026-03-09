@@ -36,8 +36,14 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
     const labels = nodeLabel.split(",").map((l) => l.trim());
     const description = nodeData.description as string | undefined;
 
-    // Filter out internal keys to show user-relevant properties
-    const properties = Object.entries(nodeData).filter(([key]) => !HIDDEN_KEYS.has(key) && key !== "description");
+    // Filter out internal keys and empty values to show user-relevant properties
+    const properties = Object.entries(nodeData)
+        .filter(([key]) => !HIDDEN_KEYS.has(key) && key !== "description")
+        .filter(([, value]) => value !== "" && value !== null && value !== undefined);
+
+    const pmid = nodeData.pmid as string | undefined;
+    const nctId = nodeData.nct_id as string | undefined;
+    const isPartial = nodeData.partial === true;
 
     return (
         <div className="flex h-full w-80 flex-col border-l border-border bg-background">
@@ -60,6 +66,39 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
                     </span>
                 ))}
             </div>
+
+            {/* Partial study indicator */}
+            {isPartial && (
+                <div className="border-b border-border px-4 py-2">
+                    <span className="text-xs text-amber-500">Stub — referenced but not directly retrieved</span>
+                </div>
+            )}
+
+            {/* External links for Study nodes */}
+            {nodeLabel === "Study" && (pmid || nctId) && (
+                <div className="border-b border-border px-4 py-3">
+                    {pmid && (
+                        <a
+                            href={`https://pubmed.ncbi.nlm.nih.gov/${pmid}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-500 hover:underline"
+                        >
+                            View on PubMed
+                        </a>
+                    )}
+                    {nctId && (
+                        <a
+                            href={`https://clinicaltrials.gov/study/${nctId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-3 text-xs text-blue-500 hover:underline"
+                        >
+                            View on ClinicalTrials.gov
+                        </a>
+                    )}
+                </div>
+            )}
 
             {/* Description */}
             {description && (

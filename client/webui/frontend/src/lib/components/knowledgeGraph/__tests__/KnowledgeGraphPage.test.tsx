@@ -1,6 +1,5 @@
 /// <reference types="@testing-library/jest-dom" />
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
 
@@ -11,23 +10,6 @@ const mockSearchParams = new URLSearchParams();
 vi.mock("react-router-dom", () => ({
     useSearchParams: () => [mockSearchParams],
     useNavigate: () => vi.fn(),
-}));
-
-// Mock cytoscape
-vi.mock("cytoscape", () => {
-    const mockCy = {
-        on: vi.fn(),
-        nodes: vi.fn(() => ({ removeClass: vi.fn() })),
-        getElementById: vi.fn(() => ({ length: 0, addClass: vi.fn() })),
-        destroy: vi.fn(),
-    };
-    const cytoscapeFn = vi.fn(() => mockCy);
-    (cytoscapeFn as unknown as Record<string, unknown>).use = vi.fn();
-    return { default: cytoscapeFn };
-});
-
-vi.mock("cytoscape-cose-bilkent", () => ({
-    default: vi.fn(),
 }));
 
 // Mock fetch globally
@@ -66,31 +48,17 @@ describe("KnowledgeGraphPage", () => {
         });
     });
 
-    test("renders the page with title and tabs", async () => {
+    test("renders the page with title", async () => {
         render(<KnowledgeGraphPage />);
 
         expect(screen.getByText("Knowledge Graph")).toBeInTheDocument();
-        expect(screen.getByText("Session")).toBeInTheDocument();
-        expect(screen.getByText("Knowledge Base")).toBeInTheDocument();
     });
 
-    test("shows empty state for explore tab when no data", async () => {
+    test("shows empty state when no data", async () => {
         render(<KnowledgeGraphPage />);
 
         await waitFor(() => {
-            expect(screen.getByText("No entities found")).toBeInTheDocument();
-        });
-    });
-
-    test("shows empty state for session tab with no session selected", async () => {
-        render(<KnowledgeGraphPage />);
-
-        // Click the Session tab
-        const sessionTab = screen.getByText("Session");
-        await userEvent.click(sessionTab);
-
-        await waitFor(() => {
-            expect(screen.getByText("No session selected")).toBeInTheDocument();
+            expect(screen.getByText("No graph data available")).toBeInTheDocument();
         });
     });
 
@@ -116,7 +84,7 @@ describe("KnowledgeGraphPage", () => {
         });
     });
 
-    test("renders entity type filter buttons in explore tab", async () => {
+    test("renders entity type filter buttons", async () => {
         render(<KnowledgeGraphPage />);
 
         expect(screen.getByText("Disease")).toBeInTheDocument();
@@ -136,5 +104,50 @@ describe("KnowledgeGraphPage", () => {
         render(<KnowledgeGraphPage />);
 
         expect(screen.getByText("Refresh")).toBeInTheDocument();
+    });
+
+    test("shows session ID when ?session param provided", async () => {
+        mockSearchParams.set("session", "abc123def456789xyz");
+
+        render(<KnowledgeGraphPage />);
+
+        await waitFor(() => {
+            expect(screen.getByText("abc123def456...")).toBeInTheDocument();
+        });
+    });
+
+    test("renders GraphCanvas when data is available", async () => {
+        mockFetch.mockImplementation((url: string) => {
+            if (url.includes("/api/v1/graph/stats")) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({ total_nodes: 2, total_edges: 1, node_counts: {}, edge_counts: {} }),
+                });
+            }
+            if (url.includes("/api/v1/graph/explore")) {
+                return Promise.resolve({
+                    ok: true,
+                    json: () =>
+                        Promise.resolve({
+                            nodes: [
+                                { id: "1", labels: ["Disease"], name: "Diabetes", properties: {} },
+                                { id: "2", labels: ["Drug"], name: "Metformin", properties: {} },
+                            ],
+                            edges: [{ id: "e1", source: "1", target: "2", label: "FOUND" }],
+                        }),
+                });
+            }
+            return Promise.resolve({ ok: false, status: 404 });
+        });
+
+        render(<KnowledgeGraphPage />);
+
+        await waitFor(() => {
+            // GraphCanvas renders SVG with column headers
+            expect(screen.getByText("SESSIONS")).toBeInTheDocument();
+            expect(screen.getByText("SPECIALISTS")).toBeInTheDocument();
+            expect(screen.getByText("SHARED ENTITIES")).toBeInTheDocument();
+            expect(screen.getByText("STUDIES")).toBeInTheDocument();
+        });
     });
 });

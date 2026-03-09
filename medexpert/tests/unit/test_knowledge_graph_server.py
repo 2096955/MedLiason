@@ -248,3 +248,126 @@ async def test_query_wildcard_browse_with_types(mock_driver):
     result = await fn(query="*", entity_types=["Disease"])
     assert result["success"] is False  # no connection
     assert "Disease" in result.get("fallback_search_query", "")
+
+
+# ── Session graph pipeline DAG tests ─────────────────────────
+
+
+def _make_mock_node(element_id, labels, props):
+    """Create a mock Neo4j/Memgraph node."""
+    node = MagicMock()
+    node.element_id = element_id
+    node.labels = set(labels)
+    node.get = MagicMock(side_effect=lambda k, d="": props.get(k, d))
+    node.__iter__ = MagicMock(return_value=iter(props.items()))
+    node.keys = MagicMock(return_value=list(props.keys()))
+    node.__getitem__ = MagicMock(side_effect=lambda k: props.get(k, ""))
+    node.__bool__ = MagicMock(return_value=True)
+    return node
+
+
+def _make_mock_rel(rel_type):
+    """Create a mock Neo4j/Memgraph relationship."""
+    rel = MagicMock()
+    rel.type = rel_type
+    rel.__bool__ = MagicMock(return_value=True)
+    return rel
+
+
+def _make_iter_result(records):
+    """Create a mock Memgraph result that iterates over the given records."""
+    mock_result = MagicMock()
+    mock_result.__iter__ = MagicMock(return_value=iter(records))
+    return mock_result
+
+
+def _make_hop_record(mapping):
+    """Create a mock record with dict-like access."""
+    rec = MagicMock()
+    rec.__getitem__ = MagicMock(side_effect=lambda k: mapping.get(k))
+    return rec
+
+
+@patch("mcp_servers.knowledge_graph.server._get_driver")
+async def test_get_session_graph_pipeline_dag_edges(mock_driver):
+    """Session graph should traverse the pipeline DAG via 4 separate hop queries."""
+    session_node = _make_mock_node("s1", ["Session"], {"session_id": "test-1", "query": "diabetes"})
+    spec_node = _make_mock_node("sp1", ["Specialist"], {"name": "DrugSpecialist"})
+    entity_node = _make_mock_node("e1", ["Drug"], {"name": "metformin"})
+    study_node = _make_mock_node("st1", ["Study"], {"pmid": "12345678", "title": "Study A"})
+
+    r_queried = _make_mock_rel("QUERIED")
+    r_found = _make_mock_rel("FOUND")
+    r_evidenced = _make_mock_rel("EVIDENCED_BY")
+
+    # 4 hop queries return separate results
+    hop1 = _make_iter_result([_make_hop_record({"s": session_node, "r": r_queried, "sp": spec_node})])
+    hop2 = _make_iter_result([_make_hop_record({"sp": spec_node, "r": r_found, "e": entity_node})])
+    hop3 = _make_iter_result([_make_hop_record({"e": entity_node, "r": r_evidenced, "st": study_node})])
+    hop4 = _make_iter_result([])  # no CITED edges
+
+    mock_session = MagicMock()
+    mock_session.run.side_effect = [hop1, hop2, hop3, hop4]
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+
+    mock_drv = MagicMock()
+    mock_drv.session.return_value = mock_session
+    mock_driver.return_value = mock_drv
+
+    fn = _get_tool_fn("get_session_graph")
+    result = await fn(session_id="test-1")
+
+    assert result["success"] is True
+    assert result["total_nodes"] == 4  # session, specialist, entity, study
+    edge_labels = {e["label"] for e in result["edges"]}
+    assert "QUERIED" in edge_labels
+    assert "FOUND" in edge_labels
+    assert "EVIDENCED_BY" in edge_labels
+
+    # Verify 4 separate hop queries were made
+    assert mock_session.run.call_count == 4
+    all_cyphers = [call[0][0] for call in mock_session.run.call_args_list]
+    assert any("QUERIED" in c for c in all_cyphers)
+    assert any("FOUND" in c for c in all_cyphers)
+    assert any("EVIDENCED_BY" in c for c in all_cyphers)
+    assert any("CITED" in c for c in all_cyphers)
+
+
+@patch("mcp_servers.knowledge_graph.server._get_driver")
+async def test_get_session_graph_cited_cross_refs(mock_driver):
+    """Session graph should include Study-CITED->Study cross-references."""
+    session_node = _make_mock_node("s1", ["Session"], {"session_id": "test-2", "query": "test"})
+    spec_node = _make_mock_node("sp1", ["Specialist"], {"name": "LitSpecialist"})
+    entity_node = _make_mock_node("e1", ["Disease"], {"name": "cancer"})
+    study1 = _make_mock_node("st1", ["Study"], {"pmid": "11111111", "title": "Study A"})
+    study2 = _make_mock_node("st2", ["Study"], {"pmid": "22222222", "title": "Study B"})
+
+    r_queried = _make_mock_rel("QUERIED")
+    r_found = _make_mock_rel("FOUND")
+    r_evidenced = _make_mock_rel("EVIDENCED_BY")
+    r_cited = _make_mock_rel("CITED")
+
+    hop1 = _make_iter_result([_make_hop_record({"s": session_node, "r": r_queried, "sp": spec_node})])
+    hop2 = _make_iter_result([_make_hop_record({"sp": spec_node, "r": r_found, "e": entity_node})])
+    hop3 = _make_iter_result([_make_hop_record({"e": entity_node, "r": r_evidenced, "st": study1})])
+    hop4 = _make_iter_result([_make_hop_record({"st": study1, "r": r_cited, "st2": study2})])
+
+    mock_session = MagicMock()
+    mock_session.run.side_effect = [hop1, hop2, hop3, hop4]
+    mock_session.__enter__ = MagicMock(return_value=mock_session)
+    mock_session.__exit__ = MagicMock(return_value=False)
+
+    mock_drv = MagicMock()
+    mock_drv.session.return_value = mock_session
+    mock_driver.return_value = mock_drv
+
+    fn = _get_tool_fn("get_session_graph")
+    result = await fn(session_id="test-2")
+
+    assert result["success"] is True
+    edge_labels = {e["label"] for e in result["edges"]}
+    assert "CITED" in edge_labels
+    # Should have the cited study node
+    node_ids = {n["id"] for n in result["nodes"]}
+    assert "st2" in node_ids

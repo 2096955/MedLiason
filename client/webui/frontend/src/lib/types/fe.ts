@@ -284,12 +284,16 @@ export interface GraphNode {
     properties: Record<string, unknown>;
 }
 
+export type GraphEdgeType = "QUERIED" | "FOUND" | "EVIDENCED_BY" | "CITED";
+
 export interface GraphEdge {
     id: string;
     source: string;
     target: string;
-    label: string;
+    label: GraphEdgeType | string;
 }
+
+export type GraphNodeType = "Session" | "Specialist" | "Disease" | "Drug" | "Gene" | "Study";
 
 export interface SessionGraph {
     session_id: string;

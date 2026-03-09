@@ -2,64 +2,33 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 
 import type { GraphNode, GraphEdge } from "@/lib/types";
 
-interface CytoscapeElement {
-    data: Record<string, unknown>;
-    group?: "nodes" | "edges";
-}
-
 interface UseGraphDataParams {
-    mode: "session" | "explore";
     sessionId?: string | null;
-    entityTypes?: string[];
+    /** Single entity type filter string (e.g. "Disease"), or undefined/null for all. */
+    entityFilter?: string | null;
 }
 
 interface UseGraphDataReturn {
-    elements: CytoscapeElement[];
+    nodes: GraphNode[];
+    edges: GraphEdge[];
     isLoading: boolean;
     error: string | null;
     isEmpty: boolean;
     refetch: () => void;
 }
 
-function nodesToCytoscapeElements(nodes: GraphNode[], edges: GraphEdge[]): CytoscapeElement[] {
-    // Compute degree for each node from edge list
-    const degreeMap: Record<string, number> = {};
-    for (const edge of edges) {
-        degreeMap[edge.source] = (degreeMap[edge.source] ?? 0) + 1;
-        degreeMap[edge.target] = (degreeMap[edge.target] ?? 0) + 1;
-    }
-
-    return nodes.map((node) => ({
-        group: "nodes" as const,
-        data: {
-            ...node.properties,
-            id: node.id,
-            label: node.name,
-            nodeLabel: node.labels?.[0] || "Unknown",
-            description: node.description,
-            degree: degreeMap[node.id] ?? 0,
-        },
-    }));
-}
-
-function edgesToCytoscapeElements(edges: GraphEdge[]): CytoscapeElement[] {
-    return edges.map((edge) => ({
-        group: "edges" as const,
-        data: {
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            label: edge.label,
-        },
-    }));
-}
-
-export function useGraphData({ mode, sessionId, entityTypes }: UseGraphDataParams): UseGraphDataReturn {
+export function useGraphData({ sessionId, entityFilter }: UseGraphDataParams): UseGraphDataReturn {
     const [nodes, setNodes] = useState<GraphNode[]>([]);
     const [edges, setEdges] = useState<GraphEdge[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [fetchKey, setFetchKey] = useState(0);
+
+    // Stable labels string derived from entityFilter (primitive, no referential issues)
+    const labelsParam = useMemo(() => {
+        if (!entityFilter || entityFilter === "All") return "";
+        return entityFilter;
+    }, [entityFilter]);
 
     const fetchData = useCallback(async () => {
         setIsLoading(true);
@@ -68,18 +37,12 @@ export function useGraphData({ mode, sessionId, entityTypes }: UseGraphDataParam
         try {
             let url: string;
 
-            if (mode === "session") {
-                if (!sessionId) {
-                    setNodes([]);
-                    setEdges([]);
-                    setIsLoading(false);
-                    return;
-                }
+            if (sessionId) {
                 url = `/api/v1/graph/session/${encodeURIComponent(sessionId)}`;
             } else {
                 const params = new URLSearchParams({ limit: "100" });
-                if (entityTypes && entityTypes.length > 0) {
-                    params.set("labels", entityTypes.join(","));
+                if (labelsParam) {
+                    params.set("labels", labelsParam);
                 }
                 url = `/api/v1/graph/explore?${params.toString()}`;
             }
@@ -107,21 +70,14 @@ export function useGraphData({ mode, sessionId, entityTypes }: UseGraphDataParam
             setIsLoading(false);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchKey is an intentional refetch trigger
-    }, [mode, sessionId, entityTypes, fetchKey]);
+    }, [sessionId, labelsParam, fetchKey]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    const elements = useMemo(() => {
-        return [...nodesToCytoscapeElements(nodes, edges), ...edgesToCytoscapeElements(edges)];
-    }, [nodes, edges]);
-
     const isEmpty = nodes.length === 0 && edges.length === 0;
+    const refetch = useCallback(() => setFetchKey((prev) => prev + 1), []);
 
-    const refetch = useCallback(() => {
-        setFetchKey((prev) => prev + 1);
-    }, []);
-
-    return { elements, isLoading, error, isEmpty, refetch };
+    return { nodes, edges, isLoading, error, isEmpty, refetch };
 }
