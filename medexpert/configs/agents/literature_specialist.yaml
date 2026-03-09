@@ -151,9 +151,6 @@ apps:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
             cold_db_path: data/medexpert-cold.db
 
-        - tool_type: builtin-group
-          group_name: web_search
-
       session_service: *default_session_service
       artifact_service: *default_artifact_service
 
