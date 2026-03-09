@@ -267,7 +267,9 @@ class DeliberationSynthesizerTool(DynamicTool):
             "genuine multi-perspective synthesis with consensus_points, contested_points "
             "(with resolution notes), blind_spots, confidence_level, and key_uncertainty. "
             "Falls back to keyword-based consensus_themes, disagreement_themes, "
-            "consensus_score, and minority_dissent detection."
+            "consensus_score, and minority_dissent detection. "
+            "Used at STEP 4 (SYNTHESIZE) for multi-persona synthesis. "
+            "NOT for evidence gap detection — use reflection_analyzer for that."
         )
 
     @property

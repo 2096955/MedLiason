@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import CLINVAR_API_URL, DBSNP_API_URL
 
@@ -143,7 +143,7 @@ async def search_variants(
         }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "genomic", "search_variants"), "results": []}
+        return raise_or_return_error(exc, "genomic", "search_variants", results=[])
     except Exception as exc:
         log.error("ClinVar search failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -191,7 +191,7 @@ async def get_variant_details(variant_id: str) -> dict:
         }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "genomic", "get_variant_details")
+        return raise_or_return_error(exc, "genomic", "get_variant_details")
     except Exception as exc:
         log.error("ClinVar variant lookup failed: %s", exc)
         return {"error": str(exc)}
@@ -272,7 +272,7 @@ async def search_gene_info(gene_name: str) -> dict:
             }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "genomic", "search_gene_info"), "results": []}
+        return raise_or_return_error(exc, "genomic", "search_gene_info", results=[])
     except Exception as exc:
         log.error("dbSNP gene search failed: %s", exc)
         return {"error": str(exc), "results": []}

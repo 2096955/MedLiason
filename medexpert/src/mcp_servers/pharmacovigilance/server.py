@@ -20,7 +20,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ async def search_serious_adverse_events(
     try:
         response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "pharmacovigilance", "search_serious_adverse_events"), "results": []}
+        return raise_or_return_error(exc, "pharmacovigilance", "search_serious_adverse_events", results=[])
 
     if response.status_code != 200:
         return {
@@ -191,7 +191,7 @@ async def search_death_reports(drug_name: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "pharmacovigilance", "search_death_reports"), "results": []}
+        return raise_or_return_error(exc, "pharmacovigilance", "search_death_reports", results=[])
 
     if response.status_code != 200:
         return {
@@ -242,7 +242,7 @@ async def get_boxed_warnings(drug_name: str) -> dict:
     try:
         response = await resilient_get(OPENFDA_DRUG_LABEL_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "pharmacovigilance", "get_boxed_warnings"), "results": []}
+        return raise_or_return_error(exc, "pharmacovigilance", "get_boxed_warnings", results=[])
 
     if response.status_code != 200:
         return {

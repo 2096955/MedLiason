@@ -15,7 +15,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query, escape_soql
 from lifesci_common.constants import CDC_WONDER_BASE_URL
 
@@ -78,7 +78,7 @@ async def search_disease_data(disease: str, max_results: int = 20) -> dict:
     try:
         response = await resilient_get(url, params=params, headers=_base_headers())
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "cdc", "search_disease_data"), "results": []}
+        return raise_or_return_error(exc, "cdc", "search_disease_data", results=[])
 
     if response.status_code != 200:
         return {
@@ -135,7 +135,7 @@ async def get_mortality_data(
     try:
         response = await resilient_get(url, params=params, headers=_base_headers())
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "cdc", "get_mortality_data"), "results": []}
+        return raise_or_return_error(exc, "cdc", "get_mortality_data", results=[])
 
     if response.status_code != 200:
         return {
@@ -188,7 +188,7 @@ async def get_vaccination_data(
     try:
         response = await resilient_get(url, params=params, headers=_base_headers())
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "cdc", "get_vaccination_data"), "results": []}
+        return raise_or_return_error(exc, "cdc", "get_vaccination_data", results=[])
 
     if response.status_code != 200:
         return {
@@ -244,7 +244,7 @@ async def get_surveillance_data(condition: str, max_results: int = 20) -> dict:
     try:
         response = await resilient_get(url, params=params, headers=_base_headers())
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "cdc", "get_surveillance_data"), "results": []}
+        return raise_or_return_error(exc, "cdc", "get_surveillance_data", results=[])
 
     if response.status_code != 200:
         return {

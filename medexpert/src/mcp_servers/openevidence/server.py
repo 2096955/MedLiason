@@ -22,7 +22,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import CircuitOpenError, RetryExhaustedError, resilient_get, resilient_post, structured_error_response
+from mcp_servers._http import CircuitOpenError, RetryExhaustedError, resilient_get, resilient_post, raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -258,7 +258,7 @@ async def ask_openevidence(
             timeout=30.0,
         )
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "openevidence", "ask_openevidence"), "question": safe_question}
+        return raise_or_return_error(exc, "openevidence", "ask_openevidence", question=safe_question)
     except Exception as exc:
         log.error("Failed to submit question to OpenEvidence: %s", exc)
         return {"error": f"Failed to submit question: {exc}", "question": safe_question}
@@ -301,11 +301,7 @@ async def ask_openevidence(
                 )
                 break
         except (CircuitOpenError, RetryExhaustedError) as exc:
-            return {
-                **structured_error_response(exc, "openevidence", "ask_openevidence"),
-                "article_id": str(article_id),
-                "question": safe_question,
-            }
+            return raise_or_return_error(exc, "openevidence", "ask_openevidence", article_id=str(article_id), question=safe_question)
         except Exception as exc:
             log.warning("Poll error for article %s: %s", article_id, exc)
             break
@@ -367,7 +363,7 @@ async def get_openevidence_article(article_id: str) -> dict:
             timeout=15.0,
         )
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "openevidence", "get_openevidence_article"), "article_id": article_id}
+        return raise_or_return_error(exc, "openevidence", "get_openevidence_article", article_id=article_id)
     except Exception as exc:
         log.error("Failed to fetch article %s: %s", article_id, exc)
         return {"error": f"Failed to fetch article: {exc}", "article_id": article_id}
@@ -435,7 +431,7 @@ async def search_openevidence_history(
             timeout=15.0,
         )
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "openevidence", "search_openevidence_history"), "query": safe_query, "results": []}
+        return raise_or_return_error(exc, "openevidence", "search_openevidence_history", query=safe_query, results=[])
     except Exception as exc:
         log.error("Failed to search OpenEvidence history: %s", exc)
         return {

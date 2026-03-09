@@ -284,7 +284,9 @@ class ReflectionAnalyzerTool(DynamicTool):
         return (
             "Analyzes collected evidence for logical gaps, contradictions, and "
             "missing perspectives. Suggests follow-up queries to specialist agents. "
-            "Supports shallow (quick scan) and deep (thorough) analysis depths."
+            "Supports shallow (quick scan) and deep (thorough) analysis depths. "
+            "Used at STEP 3 (COLLECT) to find what is MISSING in the evidence. "
+            "NOT for synthesizing advisory perspectives — use deliberation_synthesizer for that."
         )
 
     @property

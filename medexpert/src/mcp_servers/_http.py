@@ -6,6 +6,7 @@ after repeated failures and probes after a recovery timeout.
 """
 
 import asyncio
+import json
 import logging
 import random
 import time
@@ -14,6 +15,7 @@ from enum import Enum
 from urllib.parse import urlparse
 
 import httpx
+from fastmcp.exceptions import ToolError
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +147,20 @@ _circuit_breaker = CircuitBreaker()
 
 
 # ---------------------------------------------------------------------------
+# Validation exception (defined before structured_error_response)
+# ---------------------------------------------------------------------------
+
+
+class ValidationError(Exception):
+    """Raised for invalid input (HTTP 400/422 equivalent)."""
+
+    def __init__(self, message: str):
+        self.error_category = "validation_error"
+        self.is_retryable = False
+        super().__init__(message)
+
+
+# ---------------------------------------------------------------------------
 # Status-to-category mapping
 # ---------------------------------------------------------------------------
 
@@ -157,6 +173,8 @@ def _status_to_category(status_code: int) -> str:
         return "service_unavailable"
     if status_code == 404:
         return "not_found"
+    if status_code in (400, 422):
+        return "validation_error"
     if status_code in (401, 403):
         return "auth_error"
     if status_code == 0:
@@ -201,6 +219,12 @@ def structured_error_response(
             "last_status": exc.last_status,
             "attempts": exc.attempts,
         })
+    elif isinstance(exc, ValidationError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+        })
     elif isinstance(exc, httpx.HTTPError):
         base.update({
             "error": str(exc),
@@ -217,6 +241,50 @@ def structured_error_response(
     return base
 
 
+# Categories where the MCP isError flag should be set — these are
+# unambiguously server-side failures that the LLM should not attempt
+# to interpret as partial data.
+_FATAL_ERROR_CATEGORIES = frozenset({
+    "circuit_open",
+    "rate_limited",
+    "service_unavailable",
+    "network_error",
+    "auth_error",
+})
+
+
+def raise_or_return_error(
+    exc: Exception,
+    server_name: str,
+    tool_name: str,
+    **extra_fields: object,
+) -> dict:
+    """Build a structured error and raise ``ToolError`` for fatal categories.
+
+    For fatal errors (circuit_open, rate_limited, service_unavailable,
+    network_error, auth_error), raises ``fastmcp.exceptions.ToolError``
+    with the structured JSON as the message.  This sets ``isError=True``
+    on the MCP ``CallToolResult`` so the LLM immediately knows the tool
+    call failed — it does not have to parse the JSON to detect failure.
+
+    For non-fatal errors (not_found, validation_error, api_error), returns
+    the structured dict as a normal tool result.  These represent expected
+    boundary conditions the LLM should reason about (e.g. "no results
+    found" or "invalid input").
+
+    *extra_fields* are merged into the dict before raising/returning,
+    allowing callers to include domain-specific keys like ``"results": []``.
+    """
+    err = structured_error_response(exc, server_name, tool_name)
+    if extra_fields:
+        err.update(extra_fields)
+
+    if err.get("error_category") in _FATAL_ERROR_CATEGORIES:
+        raise ToolError(json.dumps(err))
+
+    return err
+
+
 # ---------------------------------------------------------------------------
 # Retry exceptions
 # ---------------------------------------------------------------------------
@@ -230,7 +298,7 @@ class RetryExhaustedError(Exception):
         self.last_status = last_status
         self.attempts = attempts
         self.error_category = _status_to_category(last_status)
-        self.is_retryable = last_status in RETRYABLE_STATUS_CODES
+        self.is_retryable = last_status in RETRYABLE_STATUS_CODES or last_status == 0
         super().__init__(
             f"All {attempts} retries exhausted for {url} (last status: {last_status})"
         )

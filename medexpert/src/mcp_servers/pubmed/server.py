@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import (
     PUBMED_ESEARCH_URL,
@@ -166,7 +166,7 @@ async def search_pubmed(query: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(PUBMED_ESEARCH_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "pubmed", "search_pubmed"), "results": []}
+        return raise_or_return_error(exc, "pubmed", "search_pubmed", results=[])
 
     if response.status_code != 200:
         return {"error": f"PubMed API returned {response.status_code}", "results": []}
@@ -216,7 +216,7 @@ async def get_article_abstract(pmid: str) -> dict:
     try:
         response = await resilient_get(PUBMED_EFETCH_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "pubmed", "get_article_abstract")
+        return raise_or_return_error(exc, "pubmed", "get_article_abstract")
 
     if response.status_code != 200:
         return {"error": f"PubMed efetch returned {response.status_code}"}
@@ -242,7 +242,7 @@ async def get_article_metadata(pmid: str) -> dict:
     try:
         response = await resilient_get(PUBMED_ESUMMARY_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "pubmed", "get_article_metadata")
+        return raise_or_return_error(exc, "pubmed", "get_article_metadata")
 
     if response.status_code != 200:
         return {"error": f"PubMed esummary returned {response.status_code}"}

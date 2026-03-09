@@ -12,10 +12,16 @@ import pytest
 # Ensure the MCP servers package is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+import json
+
+from fastmcp.exceptions import ToolError
+
 from mcp_servers._http import (
     CircuitOpenError,
     RetryExhaustedError,
+    ValidationError,
     _status_to_category,
+    raise_or_return_error,
     structured_error_response,
 )
 
@@ -45,7 +51,11 @@ class TestStatusToCategory:
     def test_network_error(self):
         assert _status_to_category(0) == "network_error"
 
-    @pytest.mark.parametrize("status", [400, 405, 408, 418, 422, 451])
+    @pytest.mark.parametrize("status", [400, 422])
+    def test_validation_error(self, status):
+        assert _status_to_category(status) == "validation_error"
+
+    @pytest.mark.parametrize("status", [405, 408, 418, 451])
     def test_default_api_error(self, status):
         assert _status_to_category(status) == "api_error"
 
@@ -96,7 +106,7 @@ class TestRetryExhaustedErrorAttributes:
     def test_network_error_status(self):
         exc = RetryExhaustedError("https://example.com/api", 0, 4)
         assert exc.error_category == "network_error"
-        assert exc.is_retryable is False  # 0 not in RETRYABLE_STATUS_CODES
+        assert exc.is_retryable is True  # Pure network failure is retryable
 
     def test_server_error_status(self):
         exc = RetryExhaustedError("https://example.com/api", 503, 3)
@@ -219,3 +229,95 @@ class TestFirecrawlCircuitOpenErrorAttributes:
         assert exc.error_category == "circuit_open"
         assert exc.is_retryable is True
         assert exc.retry_after_seconds == 60
+
+
+# ---------------------------------------------------------------------------
+# raise_or_return_error
+# ---------------------------------------------------------------------------
+
+
+class TestRaiseOrReturnError:
+    """Verify raise_or_return_error raises ToolError for fatal categories
+    and returns dicts for non-fatal categories."""
+
+    def test_circuit_open_raises_tool_error(self):
+        exc = CircuitOpenError("https://api.example.com")
+        with pytest.raises(ToolError) as exc_info:
+            raise_or_return_error(exc, "pubmed", "search_pubmed")
+        payload = json.loads(exc_info.value.args[0])
+        assert payload["error_category"] == "circuit_open"
+        assert payload["is_retryable"] is True
+        assert payload["server"] == "pubmed"
+        assert payload["tool"] == "search_pubmed"
+
+    def test_rate_limited_raises_tool_error(self):
+        exc = RetryExhaustedError("https://api.example.com", 429, 4)
+        with pytest.raises(ToolError) as exc_info:
+            raise_or_return_error(exc, "openfda", "search_drug_events")
+        payload = json.loads(exc_info.value.args[0])
+        assert payload["error_category"] == "rate_limited"
+
+    def test_service_unavailable_raises_tool_error(self):
+        exc = RetryExhaustedError("https://api.example.com", 503, 3)
+        with pytest.raises(ToolError):
+            raise_or_return_error(exc, "cdc", "search_disease_data")
+
+    def test_network_error_raises_tool_error(self):
+        import httpx
+        exc = httpx.ConnectError("Connection refused")
+        with pytest.raises(ToolError) as exc_info:
+            raise_or_return_error(exc, "regulatory", "search_510k")
+        payload = json.loads(exc_info.value.args[0])
+        assert payload["error_category"] == "network_error"
+        assert payload["is_retryable"] is True
+
+    def test_auth_error_raises_tool_error(self):
+        exc = RetryExhaustedError("https://api.example.com", 401, 1)
+        with pytest.raises(ToolError):
+            raise_or_return_error(exc, "regulatory", "search_510k")
+
+    def test_not_found_returns_dict(self):
+        exc = RetryExhaustedError("https://api.example.com", 404, 4)
+        result = raise_or_return_error(exc, "clinicaltrials", "get_trial_details")
+        assert isinstance(result, dict)
+        assert result["error_category"] == "not_found"
+        assert result["success"] is False
+
+    def test_validation_error_returns_dict(self):
+        exc = ValidationError("Invalid PMID format")
+        result = raise_or_return_error(exc, "pubmed", "get_article_abstract")
+        assert isinstance(result, dict)
+        assert result["error_category"] == "validation_error"
+        assert result["is_retryable"] is False
+
+    def test_generic_exception_returns_dict(self):
+        exc = ValueError("something broke")
+        result = raise_or_return_error(exc, "genomic", "search_variants")
+        assert isinstance(result, dict)
+        assert result["error_category"] == "api_error"
+
+    def test_extra_fields_merged_into_raised_error(self):
+        exc = CircuitOpenError("https://api.example.com")
+        with pytest.raises(ToolError) as exc_info:
+            raise_or_return_error(exc, "pubmed", "search_pubmed", results=[])
+        payload = json.loads(exc_info.value.args[0])
+        assert payload["results"] == []
+        assert payload["error_category"] == "circuit_open"
+
+    def test_extra_fields_merged_into_returned_dict(self):
+        exc = RetryExhaustedError("https://api.example.com", 404, 4)
+        result = raise_or_return_error(
+            exc, "clinicaltrials", "search_trials", results=[], query="test"
+        )
+        assert result["results"] == []
+        assert result["query"] == "test"
+        assert result["error_category"] == "not_found"
+
+    def test_tool_error_payload_is_valid_json(self):
+        exc = CircuitOpenError("https://api.example.com")
+        with pytest.raises(ToolError) as exc_info:
+            raise_or_return_error(exc, "test", "test_tool")
+        # Must be parseable JSON
+        payload = json.loads(exc_info.value.args[0])
+        assert "error" in payload
+        assert "error_category" in payload

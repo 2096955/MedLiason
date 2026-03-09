@@ -17,7 +17,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import escape_sql_string, validate_numeric, sanitize_query
 from lifesci_common.constants import CMS_OPEN_PAYMENTS_URL, CMS_PROVIDER_URL
 
@@ -113,7 +113,7 @@ async def search_providers(
             }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "provider_intel", "search_providers"), "results": []}
+        return raise_or_return_error(exc, "provider_intel", "search_providers", results=[])
     except Exception as exc:
         log.error("Provider search failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -170,7 +170,7 @@ async def get_provider_quality(provider_id: str) -> dict:
             }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "provider_intel", "get_provider_quality")
+        return raise_or_return_error(exc, "provider_intel", "get_provider_quality")
     except Exception as exc:
         log.error("Provider quality lookup failed: %s", exc)
         return {"error": str(exc)}
@@ -287,7 +287,7 @@ async def search_open_payments(
             }
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "provider_intel", "search_open_payments"), "results": []}
+        return raise_or_return_error(exc, "provider_intel", "search_open_payments", results=[])
     except Exception as exc:
         log.error("Open Payments search failed: %s", exc)
         return {"error": str(exc), "results": []}

@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import CLINICALTRIALS_STUDIES_URL
 
@@ -114,7 +114,7 @@ async def search_trials(query: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "clinicaltrials", "search_trials"), "results": []}
+        return raise_or_return_error(exc, "clinicaltrials", "search_trials", results=[])
 
     if response.status_code != 200:
         return {
@@ -156,7 +156,7 @@ async def get_trial_details(nct_id: str) -> dict:
     try:
         response = await resilient_get(url, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "clinicaltrials", "get_trial_details")
+        return raise_or_return_error(exc, "clinicaltrials", "get_trial_details")
 
     if response.status_code == 404:
         return {"error": f"Trial {clean_id} not found"}
@@ -192,7 +192,7 @@ async def search_by_condition(condition: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "clinicaltrials", "search_by_condition"), "results": []}
+        return raise_or_return_error(exc, "clinicaltrials", "search_by_condition", results=[])
 
     if response.status_code != 200:
         return {
@@ -237,7 +237,7 @@ async def search_by_intervention(intervention: str, max_results: int = 10) -> di
     try:
         response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "clinicaltrials", "search_by_intervention"), "results": []}
+        return raise_or_return_error(exc, "clinicaltrials", "search_by_intervention", results=[])
 
     if response.status_code != 200:
         return {

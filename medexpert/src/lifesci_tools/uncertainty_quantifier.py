@@ -197,7 +197,9 @@ class UncertaintyQuantifierTool(DynamicTool):
             "(multiple_rcts, single_study, expert_opinion, etc.), caveats per "
             "claim, and what_would_change_this. On the heuristic fallback path "
             "(no model), per_claim_confidence and what_would_change_this are "
-            "empty. Call after evidence collection and before report generation."
+            "empty. Call after evidence collection and before report generation. "
+            "Assesses the COMPLETE research answer, NOT individual studies. "
+            "For per-study GRADE scoring, use evidence_grader instead."
         )
 
     @property

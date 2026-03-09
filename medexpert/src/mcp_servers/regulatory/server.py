@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import (
     OPENFDA_DEVICE_510K_URL,
@@ -123,7 +123,7 @@ async def search_510k(query: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(OPENFDA_DEVICE_510K_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "regulatory", "search_510k"), "results": []}
+        return raise_or_return_error(exc, "regulatory", "search_510k", results=[])
 
     if response.status_code != 200:
         return {
@@ -164,7 +164,7 @@ async def search_pma(query: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(OPENFDA_DEVICE_PMA_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "regulatory", "search_pma"), "results": []}
+        return raise_or_return_error(exc, "regulatory", "search_pma", results=[])
 
     if response.status_code != 200:
         return {
@@ -207,7 +207,7 @@ async def get_device_classification(product_code: str) -> dict:
     try:
         response = await resilient_get(OPENFDA_DEVICE_CLASS_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return structured_error_response(exc, "regulatory", "get_device_classification")
+        return raise_or_return_error(exc, "regulatory", "get_device_classification")
 
     if response.status_code != 200:
         return {
@@ -251,7 +251,7 @@ async def search_guidance_documents(query: str, max_results: int = 10) -> dict:
     try:
         response = await resilient_get(FDA_GUIDANCE_URL, params=params)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "regulatory", "search_guidance_documents"), "results": []}
+        return raise_or_return_error(exc, "regulatory", "search_guidance_documents", results=[])
 
     if response.status_code != 200:
         return {

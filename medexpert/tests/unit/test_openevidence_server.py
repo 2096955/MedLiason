@@ -9,6 +9,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastmcp.exceptions import ToolError
 
 import mcp_servers.openevidence.server as oe_mod
 
@@ -157,9 +158,13 @@ class TestAskOpenevidence:
         with (
             _patch_cookies_available(),
             patch("mcp_servers.openevidence.server.resilient_post", new_callable=AsyncMock, side_effect=oe_mod.CircuitOpenError("https://www.openevidence.com")),
+            pytest.raises(ToolError) as exc_info,
         ):
-            resp = await ask_openevidence("test")
-        assert "circuit breaker" in resp["error"].lower()
+            await ask_openevidence("test")
+        err = json.loads(str(exc_info.value))
+        assert err["error_category"] == "circuit_open"
+        assert err["is_retryable"] is True
+        assert err["server"] == "openevidence"
 
     async def test_cache_hit(self):
         with (

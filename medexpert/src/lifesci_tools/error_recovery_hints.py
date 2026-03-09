@@ -86,6 +86,14 @@ _RECOVERY_HINTS: Dict[Tuple[str, str], str] = {
         "This data source returned no results for your query. "
         "Try broadening your search terms."
     ),
+    ("*", "validation_error"): (
+        "Invalid input for this data source. "
+        "Check query parameters — a required field may be missing or malformed."
+    ),
+    ("*", "business_error"): (
+        "This query was rejected by the data source's policy rules. "
+        "Try rephrasing without personal identifiers or restricted terms."
+    ),
 }
 
 

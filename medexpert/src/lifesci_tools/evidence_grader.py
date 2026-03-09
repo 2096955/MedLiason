@@ -162,7 +162,9 @@ class EvidenceGraderTool(DynamicTool):
         return (
             "Grades evidence quality using the GRADE methodology. Takes study type, "
             "sample size, methodology descriptors, and effect size. Returns a score, "
-            "grade level (High/Moderate/Low/Very Low), rationale, and factors applied."
+            "grade level (High/Moderate/Low/Very Low), rationale, and factors applied. "
+            "Scores INDIVIDUAL studies, NOT the overall research answer. "
+            "For answer-level confidence profiling, use uncertainty_quantifier instead."
         )
 
     @property

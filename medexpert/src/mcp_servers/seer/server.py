@@ -14,7 +14,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query, escape_soql
 from lifesci_common.constants import SEER_API_URL
 
@@ -94,7 +94,7 @@ async def get_cancer_statistics(
         else:
             log.warning("SEER incidence API returned %d", resp.status_code)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "seer", "get_cancer_statistics"), "incidence": [], "mortality": []}
+        return raise_or_return_error(exc, "seer", "get_cancer_statistics", incidence=[], mortality=[])
     except Exception as exc:
         log.error("Failed to fetch incidence data: %s", exc)
 
@@ -105,7 +105,7 @@ async def get_cancer_statistics(
         else:
             log.warning("SEER mortality API returned %d", resp.status_code)
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "seer", "get_cancer_statistics"), "incidence": incidence_results, "mortality": []}
+        return raise_or_return_error(exc, "seer", "get_cancer_statistics", incidence=incidence_results, mortality=[])
     except Exception as exc:
         log.error("Failed to fetch mortality data: %s", exc)
 
@@ -171,7 +171,7 @@ async def search_cancer_incidence(
                 "results": [],
             }
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "seer", "search_cancer_incidence"), "results": []}
+        return raise_or_return_error(exc, "seer", "search_cancer_incidence", results=[])
     except Exception as exc:
         log.error("Failed to search cancer incidence: %s", exc)
         return {

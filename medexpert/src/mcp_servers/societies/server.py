@@ -18,7 +18,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, structured_error_response
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ async def search_society_guidelines(
             return _not_implemented_response(safe_society, safe_query)
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "societies", "search_society_guidelines"), "results": []}
+        return raise_or_return_error(exc, "societies", "search_society_guidelines", results=[])
     except Exception as exc:
         log.error("Society guidelines search failed: %s", exc)
         return _not_implemented_response(safe_society, safe_query)
@@ -220,7 +220,7 @@ async def get_guideline_recommendations(
             return _not_implemented_response(safe_society, safe_topic)
 
     except (CircuitOpenError, RetryExhaustedError) as exc:
-        return {**structured_error_response(exc, "societies", "get_guideline_recommendations"), "recommendations": []}
+        return raise_or_return_error(exc, "societies", "get_guideline_recommendations", recommendations=[])
     except Exception as exc:
         log.error("Society recommendations lookup failed: %s", exc)
         return _not_implemented_response(safe_society, safe_topic)
