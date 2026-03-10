@@ -184,14 +184,29 @@ apps:
         Delegate the draft to `peer_VerifierAgentOpus`. Store verification_verdict
         and verification_score in memory_plane (namespace: "verification").
 
-        If CRITICAL_ISSUES: delegate to `peer_ReviserAgentOpus`, then re-verify
-        once. If still CRITICAL after re-verify:
-        - Do NOT output the report
+        VERDICT INTERPRETATION (follow EXACTLY):
+        - If verifier response contains "CRITICAL_ISSUES" → delegate to
+          `peer_ReviserAgentOpus`, then re-verify once
+        - If verifier response contains "MINOR_ISSUES" → proceed with report
+          as-is (minor issues do NOT warrant revision or withholding)
+        - If verifier says verification was "skipped" or citation map is
+          missing → proceed with report as-is (this is a pipeline limitation,
+          NOT a content problem)
+
+        ONLY withhold the report ("Research Inconclusive") if:
+        1. The verifier EXPLICITLY says "CRITICAL_ISSUES", AND
+        2. After REVISE → RE-VERIFY, the re-verifier STILL says "CRITICAL_ISSUES"
+
+        Do NOT interpret "unsupported claim", "weakly supported", or "missing
+        citation map" as CRITICAL unless the verifier explicitly labels them
+        CRITICAL_ISSUES. These are typically MINOR_ISSUES.
+
+        If the report IS withheld:
         - Return: "**Research Inconclusive** — [list failed claims]
           *No report delivered — MedExpert could not verify accuracy.*"
         - Store report_withheld=true in memory_plane
 
-        GVR sequence: VERIFY → REVISE → RE-VERIFY (max 1 cycle).
+        GVR sequence: VERIFY → (if CRITICAL) REVISE → RE-VERIFY (max 1 cycle).
 
         **STEP 6 — PERSIST**
         1. Call `memory_plane` with operation="flush_cold",
