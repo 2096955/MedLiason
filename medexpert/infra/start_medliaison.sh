@@ -118,27 +118,11 @@ for entry in "${MCP_SERVERS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
-# 4b. Start Memgraph MCP server (streamable-http on port 8000)
-# Connects to Memgraph sidecar at bolt://localhost:7687
+# 4b. Memgraph MCP server — SKIPPED for medliaison (no Memgraph sidecar).
+# Only medexpert-v2 has a Memgraph sidecar container. The knowledge_graph
+# MCP server (port 9011) handles Memgraph queries via bolt:// directly.
 # ---------------------------------------------------------------------------
-echo "[MedLiaison] Starting Memgraph MCP server..."
-MCP_TRANSPORT=streamable-http python -m mcp_memgraph &
-MCP_PIDS+=($!)
-
-# Health check Memgraph MCP (port 8000)
-ready=false
-for i in $(seq 1 30); do
-  if python -c "import socket; s=socket.create_connection(('localhost',8000),timeout=2); s.close()" 2>/dev/null; then
-    ready=true
-    break
-  fi
-  sleep 1
-done
-if [ "$ready" = true ]; then
-  echo "[MedLiaison]   Port 8000 ready (memgraph-mcp)"
-else
-  echo "[MedLiaison]   WARNING: Port 8000 not ready (memgraph-mcp) — continuing (graceful degradation)"
-fi
+echo "[MedLiaison] Skipping mcp-memgraph (no Memgraph sidecar on this service)"
 
 # ---------------------------------------------------------------------------
 # 5. Graceful shutdown handler
