@@ -76,11 +76,13 @@ function getNodeLabel(node: GraphNode): string {
         return node.name.replace("Specialist", "").trim() || node.name;
     }
     if (label === "Study") {
-        const pmid = node.properties.pmid as string;
-        const nctId = node.properties.nct_id as string;
+        const pmid = (node.properties.pmid as string) || "";
+        const nctId = (node.properties.nct_id as string) || "";
+        const title = (node.properties.title as string) || "";
         if (pmid) return `PMID:${pmid}`;
         if (nctId) return nctId;
-        return node.name;
+        if (title) return title.length > 25 ? title.slice(0, 25) + "..." : title;
+        return node.name || "Study";
     }
     return node.name;
 }
@@ -155,9 +157,13 @@ function layoutNodes(nodes: GraphNode[], edges: GraphEdge[]): PositionedNode[] {
             // Sort by computed Y
             yValues.sort((a, b) => a.y - b.y);
 
-            // Overlap sweep: push apart nodes closer than minGap
+            // Overlap sweep: push apart nodes closer than sum of radii + padding
             for (let i = 1; i < yValues.length; i++) {
-                const minGap = NODE_SPACING_Y;
+                const prevLabel = yValues[i - 1].node.labels[0] || "";
+                const currLabel = yValues[i].node.labels[0] || "";
+                const prevRadius = getNodeRadius(prevLabel, degreeMap[yValues[i - 1].node.id] ?? 0);
+                const currRadius = getNodeRadius(currLabel, degreeMap[yValues[i].node.id] ?? 0);
+                const minGap = prevRadius + currRadius + 30;
                 if (yValues[i].y - yValues[i - 1].y < minGap) {
                     yValues[i].y = yValues[i - 1].y + minGap;
                 }
@@ -177,16 +183,26 @@ function layoutNodes(nodes: GraphNode[], edges: GraphEdge[]): PositionedNode[] {
                 };
             }
         } else {
-            // Space evenly
+            // Space evenly with radius-aware gaps
+            let yPos = CANVAS_PADDING_TOP;
             for (let i = 0; i < colNodes.length; i++) {
                 const node = colNodes[i];
                 const degree = degreeMap[node.id] ?? 0;
                 const nodeLabel = node.labels[0] || "";
+                const radius = getNodeRadius(nodeLabel, degree);
+                if (i > 0) {
+                    const prevNode = colNodes[i - 1];
+                    const prevRadius = getNodeRadius(
+                        prevNode.labels[0] || "",
+                        degreeMap[prevNode.id] ?? 0,
+                    );
+                    yPos += prevRadius + radius + 30;
+                }
                 positioned[node.id] = {
                     ...node,
                     x,
-                    y: CANVAS_PADDING_TOP + i * NODE_SPACING_Y,
-                    radius: getNodeRadius(nodeLabel, degree),
+                    y: yPos,
+                    radius,
                     degree,
                     displayLabel: getNodeLabel(node),
                     column: colKey,

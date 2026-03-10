@@ -172,13 +172,27 @@ async def get_graph_stats_endpoint():
     return JSONResponse(content=result, status_code=status)
 
 
-async def _fetch_edges_between_nodes(node_ids: list[str]) -> list[dict]:
-    """Fetch all edges between a set of node element IDs via a single Cypher pass.
+async def _fetch_edges_between_nodes(
+    node_ids: list[str],
+    id_to_element_id: dict[int, str] | None = None,
+) -> list[dict]:
+    """Fetch all edges between a set of nodes via a single Cypher pass.
 
-    Note: Uses Memgraph's elementId() which returns string IDs consistent with
-    the explore query's node.element_id. If migrating to Neo4j 5.x+, elementId()
-    behaviour differs (deprecated, returns internal refs). The node_ids coming
-    from the explore query are element IDs from that same driver, so they match.
+    Uses Memgraph's ``id()`` function (returns integer internal IDs) because
+    Memgraph does NOT support Neo4j 5.x's ``elementId()`` Cypher function.
+    The neo4j Python driver's ``node.element_id`` property works (it is a
+    client-side convenience), but the Cypher function does not exist in
+    Memgraph, causing silent query failures.
+
+    Args:
+        node_ids: Element-ID strings from node.element_id (used as frontend
+            node ``id`` fields).  Converted to integers for the Cypher query
+            via ``id_to_element_id`` or by parsing the strings directly.
+        id_to_element_id: Optional mapping from Memgraph internal int IDs to
+            element_id strings.  When provided (from the explore endpoint),
+            this avoids lossy int↔string round-trips.  When absent, the
+            element_id strings are parsed as integers (works for Memgraph
+            where element_id == str(internal_id)).
     """
     if not node_ids:
         return []
@@ -189,10 +203,23 @@ async def _fetch_edges_between_nodes(node_ids: list[str]) -> list[dict]:
         if driver is None:
             return []
 
+        # Build the int→element_id mapping if not provided.
+        if id_to_element_id is None:
+            id_to_element_id = {}
+            for eid in node_ids:
+                try:
+                    id_to_element_id[int(eid)] = eid
+                except (ValueError, TypeError):
+                    pass  # Skip non-numeric element IDs
+
+        int_ids = list(id_to_element_id.keys())
+        if not int_ids:
+            return []
+
         cypher = (
             "MATCH (a)-[r]->(b) "
-            "WHERE elementId(a) IN $ids AND elementId(b) IN $ids "
-            "RETURN elementId(a) AS src, elementId(b) AS tgt, type(r) AS label "
+            "WHERE id(a) IN $ids AND id(b) IN $ids "
+            "RETURN id(a) AS src, id(b) AS tgt, type(r) AS label "
             "LIMIT 500"
         )
 
@@ -202,15 +229,17 @@ async def _fetch_edges_between_nodes(node_ids: list[str]) -> list[dict]:
             edges = []
             seen = set()
             with driver.session() as session:
-                result = session.run(cypher, {"ids": node_ids})
+                result = session.run(cypher, {"ids": int_ids})
                 for record in result:
-                    edge_id = f"{record['src']}-{record['label']}-{record['tgt']}"
+                    src_eid = id_to_element_id.get(record["src"], str(record["src"]))
+                    tgt_eid = id_to_element_id.get(record["tgt"], str(record["tgt"]))
+                    edge_id = f"{src_eid}-{record['label']}-{tgt_eid}"
                     if edge_id not in seen:
                         seen.add(edge_id)
                         edges.append({
                             "id": edge_id,
-                            "source": record["src"],
-                            "target": record["tgt"],
+                            "source": src_eid,
+                            "target": tgt_eid,
                             "label": record["label"],
                         })
             return edges
@@ -245,21 +274,59 @@ async def explore_graph(
     _STRIP_KEYS = {"id", "labels", "name", "description", "type", "label", "properties"}
     nodes = []
     node_ids = []
+    # Mapping from Memgraph internal int id → element_id string for edge query.
+    id_to_element_id: dict[int, str] = {}
     for idx, item in enumerate(raw_results):
         if isinstance(item, dict):
             node_id = item.get("id") or item.get("name") or f"node-{idx}"
             node_labels = item.get("labels") or [item.get("type") or item.get("label") or "Entity"]
+            if not isinstance(node_labels, list):
+                node_labels = [node_labels]
+
+            # Derive a display name — Study nodes may lack a `name` property
+            # but have `pmid`, `nct_id`, or `title` in their properties.
+            display_name = item.get("name", "")
+            props = item.get("properties", {})
+            if not display_name and isinstance(props, dict):
+                display_name = (
+                    props.get("pmid", "")
+                    or props.get("nct_id", "")
+                    or props.get("title", "")
+                )
+            if not display_name:
+                # Fallback: check top-level keys for Study-style properties
+                display_name = (
+                    item.get("pmid", "")
+                    or item.get("nct_id", "")
+                    or item.get("title", "")
+                    or ""
+                )
+
+            extra_props = {k: v for k, v in item.items() if k not in _STRIP_KEYS}
+            # Merge nested `properties` dict so the frontend can access
+            # Study-specific fields (pmid, nct_id, title) consistently.
+            if isinstance(props, dict):
+                for pk, pv in props.items():
+                    if pk not in extra_props:
+                        extra_props[pk] = pv
+
             nodes.append({
                 "id": node_id,
-                "name": item.get("name", ""),
-                "labels": node_labels if isinstance(node_labels, list) else [node_labels],
+                "name": display_name,
+                "labels": node_labels,
                 "description": item.get("description", ""),
-                "properties": {k: v for k, v in item.items() if k not in _STRIP_KEYS},
+                "properties": extra_props,
             })
             node_ids.append(node_id)
 
+            # Build int→element_id mapping for the Cypher id() function
+            try:
+                id_to_element_id[int(node_id)] = node_id
+            except (ValueError, TypeError):
+                pass  # Non-numeric element_id — edge query will skip
+
     # Fetch real edges between the returned nodes
-    edges = await _fetch_edges_between_nodes(node_ids)
+    edges = await _fetch_edges_between_nodes(node_ids, id_to_element_id)
 
     return JSONResponse(content={
         "success": True,

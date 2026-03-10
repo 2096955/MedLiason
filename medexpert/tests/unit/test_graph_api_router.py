@@ -13,17 +13,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 @patch("graph_api.router._fetch_edges_between_nodes", new_callable=AsyncMock)
 @patch("graph_api.router._call_tool", new_callable=AsyncMock)
 async def test_explore_endpoint_fetches_edges(mock_call_tool, mock_fetch_edges):
-    """Explore endpoint should fetch real edges between returned nodes."""
+    """Explore endpoint should fetch real edges between returned nodes.
+
+    Uses numeric string IDs matching Memgraph element_id format (str(internal_id)).
+    """
     mock_call_tool.return_value = {
         "success": True,
         "results": [
-            {"id": "e1", "labels": ["Disease"], "name": "Diabetes", "description": ""},
-            {"id": "e2", "labels": ["Drug"], "name": "Metformin", "description": ""},
+            {"id": "10", "labels": ["Disease"], "name": "Diabetes", "description": ""},
+            {"id": "20", "labels": ["Drug"], "name": "Metformin", "description": ""},
         ],
         "total_results": 2,
     }
     mock_fetch_edges.return_value = [
-        {"id": "e1-FOUND-e2", "source": "e1", "target": "e2", "label": "FOUND"},
+        {"id": "10-FOUND-20", "source": "10", "target": "20", "label": "FOUND"},
     ]
 
     from graph_api.router import explore_graph
@@ -40,8 +43,8 @@ async def test_explore_endpoint_fetches_edges(mock_call_tool, mock_fetch_edges):
     assert len(parsed["edges"]) == 1
     assert parsed["edges"][0]["label"] == "FOUND"
 
-    # Verify edge fetch was called with node IDs
-    mock_fetch_edges.assert_called_once_with(["e1", "e2"])
+    # Verify edge fetch was called with node IDs and int→element_id mapping.
+    mock_fetch_edges.assert_called_once_with(["10", "20"], {10: "10", 20: "20"})
 
 
 @pytest.mark.asyncio
@@ -66,8 +69,8 @@ async def test_explore_endpoint_no_edges_on_empty_nodes(mock_call_tool, mock_fet
     assert parsed["success"] is True
     assert len(parsed["nodes"]) == 0
     assert len(parsed["edges"]) == 0
-    # _fetch_edges_between_nodes should still be called with empty list
-    mock_fetch_edges.assert_called_once_with([])
+    # _fetch_edges_between_nodes should still be called with empty list + empty mapping
+    mock_fetch_edges.assert_called_once_with([], {})
 
 
 @pytest.mark.asyncio
@@ -109,11 +112,16 @@ async def test_fetch_edges_no_driver():
 
 @pytest.mark.asyncio
 async def test_fetch_edges_success():
-    """_fetch_edges_between_nodes returns edges from Memgraph."""
+    """_fetch_edges_between_nodes returns edges from Memgraph.
+
+    Uses numeric string IDs (matching Memgraph element_id format) and
+    Memgraph's id() function (returns ints) via the id_to_element_id mapping.
+    """
     from graph_api.router import _fetch_edges_between_nodes
 
-    mock_record1 = {"src": "n1", "tgt": "n2", "label": "FOUND"}
-    mock_record2 = {"src": "n2", "tgt": "n3", "label": "EVIDENCED_BY"}
+    # Memgraph id() returns integers; edge query maps them back to element_id strings
+    mock_record1 = {"src": 1, "tgt": 2, "label": "FOUND"}
+    mock_record2 = {"src": 2, "tgt": 3, "label": "EVIDENCED_BY"}
 
     mock_result = MagicMock()
     mock_result.__iter__ = MagicMock(
@@ -128,13 +136,16 @@ async def test_fetch_edges_success():
     mock_drv = MagicMock()
     mock_drv.session.return_value = mock_session
 
+    id_map = {1: "1", 2: "2", 3: "3"}
     with patch(
         "mcp_servers.knowledge_graph.server._get_driver", return_value=mock_drv
     ):
-        result = await _fetch_edges_between_nodes(["n1", "n2", "n3"])
+        result = await _fetch_edges_between_nodes(["1", "2", "3"], id_map)
 
     assert len(result) == 2
     assert result[0]["label"] == "FOUND"
+    assert result[0]["source"] == "1"
+    assert result[0]["target"] == "2"
     assert result[1]["label"] == "EVIDENCED_BY"
 
 
@@ -143,8 +154,8 @@ async def test_fetch_edges_deduplicates():
     """_fetch_edges_between_nodes deduplicates edges by id."""
     from graph_api.router import _fetch_edges_between_nodes
 
-    # Same edge returned twice
-    mock_record = {"src": "n1", "tgt": "n2", "label": "FOUND"}
+    # Same edge returned twice (Memgraph id() returns integers)
+    mock_record = {"src": 1, "tgt": 2, "label": "FOUND"}
     mock_result = MagicMock()
     mock_result.__iter__ = MagicMock(
         return_value=iter([mock_record, mock_record])
@@ -158,10 +169,11 @@ async def test_fetch_edges_deduplicates():
     mock_drv = MagicMock()
     mock_drv.session.return_value = mock_session
 
+    id_map = {1: "1", 2: "2"}
     with patch(
         "mcp_servers.knowledge_graph.server._get_driver", return_value=mock_drv
     ):
-        result = await _fetch_edges_between_nodes(["n1", "n2"])
+        result = await _fetch_edges_between_nodes(["1", "2"], id_map)
 
     assert len(result) == 1
 
