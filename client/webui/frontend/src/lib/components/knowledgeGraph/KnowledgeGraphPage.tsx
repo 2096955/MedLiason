@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Network, RefreshCw, Database, Loader2 } from "lucide-react";
 
@@ -30,6 +30,7 @@ const KnowledgeGraphPage: React.FC = () => {
     const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
     const [stats, setStats] = useState<GraphStats | null>(null);
     const [statsLoading, setStatsLoading] = useState(false);
+    const nlqTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { nodes, edges, isLoading, error, isEmpty, refetch } = useGraphData({
         sessionId: sessionIdFromUrl || undefined,
@@ -65,6 +66,11 @@ const KnowledgeGraphPage: React.FC = () => {
     }, [sessionIdFromUrl, nodes]);
 
     const handleNodeClick = useCallback((node: GraphNode) => {
+        // Clear any pending NLQ highlight timeout so it doesn't override manual selection
+        if (nlqTimeoutRef.current) {
+            clearTimeout(nlqTimeoutRef.current);
+            nlqTimeoutRef.current = null;
+        }
         setSelectedNode({
             id: node.id,
             data: {
@@ -84,11 +90,16 @@ const KnowledgeGraphPage: React.FC = () => {
     }, []);
 
     const handleNLQResult = useCallback((nodeIds: string[]) => {
+        if (nlqTimeoutRef.current) {
+            clearTimeout(nlqTimeoutRef.current);
+        }
         if (nodeIds.length > 0) {
             setHighlightedNodeId(nodeIds[0]);
         }
-        // Clear highlight after 5 seconds
-        setTimeout(() => setHighlightedNodeId(null), 5000);
+        nlqTimeoutRef.current = setTimeout(() => {
+            setHighlightedNodeId(null);
+            nlqTimeoutRef.current = null;
+        }, 5000);
     }, []);
 
     return (

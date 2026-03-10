@@ -9,6 +9,8 @@ const EDGE_STYLES: Record<string, { color: string; dash: string; width: number }
     FOUND: { color: "#7c3aed", dash: "", width: 2 },
     EVIDENCED_BY: { color: "#64748b", dash: "6,3", width: 1.5 },
     CITED: { color: "#d97706", dash: "4,4", width: 1.8 },
+    // Legacy fallback: graph_writer uses ABOUT edges when DAG attribution unavailable.
+    // Kept so old Memgraph data renders gracefully instead of falling to DEFAULT_EDGE_STYLE.
     ABOUT: { color: "#c084fc", dash: "3,3", width: 1.5 },
 };
 
@@ -202,7 +204,6 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
     // Same-column edges (e.g. Study-CITED->Study): curve outward to the right
     if (Math.abs(x1 - x2) < 20) {
         const bulge = 60;
-        const midY = (y1 + y2) / 2;
         return `M ${x1} ${y1} C ${x1 + bulge} ${y1}, ${x2 + bulge} ${y2}, ${x2} ${y2}`;
     }
     // Cross-column edges: horizontal bezier

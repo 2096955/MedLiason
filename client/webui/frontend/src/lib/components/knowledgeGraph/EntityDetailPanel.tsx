@@ -44,6 +44,8 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
     const rawPmid = nodeData.pmid as string | undefined;
     const rawNctId = nodeData.nct_id as string | undefined;
     const pmid = rawPmid && /^\d+$/.test(rawPmid) ? rawPmid : null;
+    // Assumes NCT-prefixed IDs only. ISRCTN/EUCTR identifiers from other registries
+    // may appear in nct_id if source collection expands — extend regex if needed.
     const nctId = rawNctId && /^NCT\d+$/i.test(rawNctId) ? rawNctId : null;
     const isPartial = nodeData.partial === true;
 
