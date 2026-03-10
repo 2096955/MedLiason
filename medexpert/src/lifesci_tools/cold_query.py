@@ -484,7 +484,7 @@ class ColdQueryTool(DynamicTool):
         """Auto-collect session signals from hot store and enqueue to cold worker."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "flushed": False, "reason": "Cold store not available — session data not persisted"}
 
         auto_signals = await self._collect_session_signals(session_id)
 
@@ -544,7 +544,7 @@ class ColdQueryTool(DynamicTool):
         """Load learned strategies from cold store into hot learning namespace."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "seeded": False, "reason": "Cold store not available — proceeding without historical intelligence"}
         query_text = args.get("query", "")
         try:
             from lifesci_tools.strategy_seeder import build_seed_payload
@@ -566,7 +566,7 @@ class ColdQueryTool(DynamicTool):
         """Look up historical intelligence from the cold store."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "results": [], "reason": "Cold store not available"}
         query_text = args.get("query", "")
 
         def _sync_query():
@@ -603,7 +603,7 @@ class ColdQueryTool(DynamicTool):
         """Fetch a specific learned strategy by type and key."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "strategy": None, "reason": "Cold store not available — no historical routing"}
         if not key:
             return {
                 "success": False,

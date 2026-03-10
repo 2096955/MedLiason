@@ -473,8 +473,9 @@ class TestColdQuerySeedSession:
         result = await cold_tool_no_config._run_async_impl(
             {"operation": "seed_session", "query": "test"}, ctx
         )
-        assert result["success"] is False
-        assert "not configured" in result["error"]
+        assert result["success"] is True
+        assert result["seeded"] is False
+        assert "not available" in result["reason"]
 
     async def test_seed_session_empty_db(self, cold_tool, ctx):
         from lifesci_tools import cold_store
@@ -494,8 +495,9 @@ class TestColdQueryFlushCold:
         result = await cold_tool_no_config._run_async_impl(
             {"operation": "flush_cold"}, ctx
         )
-        assert result["success"] is False
-        assert "not configured" in result["error"]
+        assert result["success"] is True
+        assert result["flushed"] is False
+        assert "not available" in result["reason"]
 
     async def test_flush_cold_enqueues(self, cold_tool, ctx):
         import lifesci_tools.cold_worker as cw
@@ -525,8 +527,9 @@ class TestColdQueryQueryCold:
         result = await cold_tool_no_config._run_async_impl(
             {"operation": "query_cold", "query": "test"}, ctx
         )
-        assert result["success"] is False
-        assert "not configured" in result["error"]
+        assert result["success"] is True
+        assert result["results"] == []
+        assert "not available" in result["reason"]
 
     async def test_query_cold_empty_db(self, cold_tool, ctx):
         from lifesci_tools import cold_store
@@ -547,8 +550,9 @@ class TestColdQueryGetStrategy:
             {"operation": "get_strategy", "key": "drugs", "strategy_type": "routing"},
             ctx,
         )
-        assert result["success"] is False
-        assert "not configured" in result["error"]
+        assert result["success"] is True
+        assert result["strategy"] is None
+        assert "not available" in result["reason"]
 
     async def test_get_strategy_requires_key(self, cold_tool, ctx):
         result = await cold_tool._run_async_impl(

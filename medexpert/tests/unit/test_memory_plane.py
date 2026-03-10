@@ -410,8 +410,9 @@ async def test_flush_cold_no_config(tool, ctx):
     result = await tool._run_async_impl(
         {"operation": "flush_cold"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["flushed"] is False
+    assert "not available" in result["reason"]
 
 
 async def test_flush_cold_enqueues_with_auto_collection(cold_tool, ctx):
@@ -584,8 +585,9 @@ async def test_seed_session_no_config(tool, ctx):
     result = await tool._run_async_impl(
         {"operation": "seed_session", "query": "test question"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["seeded"] is False
+    assert "not available" in result["reason"]
 
 
 async def test_seed_session_empty_db(cold_tool, ctx):
@@ -653,8 +655,9 @@ async def test_query_cold_no_config(tool, ctx):
     result = await tool._run_async_impl(
         {"operation": "query_cold", "query": "test"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["results"] == []
+    assert "not available" in result["reason"]
 
 
 async def test_query_cold_empty_db(cold_tool, ctx):
@@ -702,8 +705,9 @@ async def test_get_strategy_no_config(tool, ctx):
     result = await tool._run_async_impl(
         {"operation": "get_strategy", "key": "drugs", "strategy_type": "routing"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["strategy"] is None
+    assert "not available" in result["reason"]
 
 
 async def test_get_strategy_requires_key(cold_tool, ctx):
