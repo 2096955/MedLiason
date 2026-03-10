@@ -9,6 +9,7 @@ const EDGE_STYLES: Record<string, { color: string; dash: string; width: number }
     FOUND: { color: "#7c3aed", dash: "", width: 2 },
     EVIDENCED_BY: { color: "#64748b", dash: "6,3", width: 1.5 },
     CITED: { color: "#d97706", dash: "4,4", width: 1.8 },
+    ABOUT: { color: "#c084fc", dash: "3,3", width: 1.5 },
 };
 
 const DEFAULT_EDGE_STYLE = { color: "#94a3b8", dash: "", width: 1 };

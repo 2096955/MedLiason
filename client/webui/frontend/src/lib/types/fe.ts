@@ -284,7 +284,7 @@ export interface GraphNode {
     properties: Record<string, unknown>;
 }
 
-export type GraphEdgeType = "QUERIED" | "FOUND" | "EVIDENCED_BY" | "CITED";
+export type GraphEdgeType = "QUERIED" | "FOUND" | "EVIDENCED_BY" | "CITED" | "ABOUT";
 
 export interface GraphEdge {
     id: string;

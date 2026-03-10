@@ -379,6 +379,7 @@ async def get_session_graph(session_id: str) -> dict:
                     "id": n.element_id,
                     "labels": list(n.labels),
                     "name": n.get("name", fallback_name),
+                    "description": n.get("description", ""),
                     "properties": dict(n),
                 }
 
@@ -437,6 +438,20 @@ async def get_session_graph(session_id: str) -> dict:
                 _add_node(rec["st"])
                 _add_node(rec["st2"])
                 _add_edge(rec["st"], rec["r"], rec["st2"])
+
+            # Hop 5: Fallback ABOUT edges (legacy star topology).
+            # graph_writer falls back to Session-ABOUT->Entity when DAG
+            # attribution data is unavailable. Without this hop, those
+            # sessions would render as isolated Session nodes.
+            r5 = session.run(
+                "MATCH (s:Session {session_id: $sid})-[r:ABOUT]->(e) "
+                "RETURN DISTINCT s, r, e LIMIT 200",
+                params,
+            )
+            for rec in r5:
+                _add_node(rec["s"], safe_id)
+                _add_node(rec["e"])
+                _add_edge(rec["s"], rec["r"], rec["e"])
 
         return {
             "success": True,

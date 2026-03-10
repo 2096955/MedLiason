@@ -300,14 +300,15 @@ async def test_get_session_graph_pipeline_dag_edges(mock_driver):
     r_found = _make_mock_rel("FOUND")
     r_evidenced = _make_mock_rel("EVIDENCED_BY")
 
-    # 4 hop queries return separate results
+    # 5 hop queries return separate results (hop 5 = ABOUT fallback)
     hop1 = _make_iter_result([_make_hop_record({"s": session_node, "r": r_queried, "sp": spec_node})])
     hop2 = _make_iter_result([_make_hop_record({"sp": spec_node, "r": r_found, "e": entity_node})])
     hop3 = _make_iter_result([_make_hop_record({"e": entity_node, "r": r_evidenced, "st": study_node})])
     hop4 = _make_iter_result([])  # no CITED edges
+    hop5 = _make_iter_result([])  # no ABOUT fallback edges
 
     mock_session = MagicMock()
-    mock_session.run.side_effect = [hop1, hop2, hop3, hop4]
+    mock_session.run.side_effect = [hop1, hop2, hop3, hop4, hop5]
     mock_session.__enter__ = MagicMock(return_value=mock_session)
     mock_session.__exit__ = MagicMock(return_value=False)
 
@@ -325,8 +326,8 @@ async def test_get_session_graph_pipeline_dag_edges(mock_driver):
     assert "FOUND" in edge_labels
     assert "EVIDENCED_BY" in edge_labels
 
-    # Verify 4 separate hop queries were made
-    assert mock_session.run.call_count == 4
+    # Verify 5 separate hop queries were made (4 DAG + 1 ABOUT fallback)
+    assert mock_session.run.call_count == 5
     all_cyphers = [call[0][0] for call in mock_session.run.call_args_list]
     assert any("QUERIED" in c for c in all_cyphers)
     assert any("FOUND" in c for c in all_cyphers)
@@ -352,9 +353,10 @@ async def test_get_session_graph_cited_cross_refs(mock_driver):
     hop2 = _make_iter_result([_make_hop_record({"sp": spec_node, "r": r_found, "e": entity_node})])
     hop3 = _make_iter_result([_make_hop_record({"e": entity_node, "r": r_evidenced, "st": study1})])
     hop4 = _make_iter_result([_make_hop_record({"st": study1, "r": r_cited, "st2": study2})])
+    hop5 = _make_iter_result([])  # no ABOUT fallback edges
 
     mock_session = MagicMock()
-    mock_session.run.side_effect = [hop1, hop2, hop3, hop4]
+    mock_session.run.side_effect = [hop1, hop2, hop3, hop4, hop5]
     mock_session.__enter__ = MagicMock(return_value=mock_session)
     mock_session.__exit__ = MagicMock(return_value=False)
 
