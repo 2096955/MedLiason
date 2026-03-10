@@ -37,9 +37,14 @@ COPY frontend-static/ /usr/local/lib/python3.12/site-packages/solace_agent_mesh/
 
 # Patch: inject knowledgeGraph feature flag into the config endpoint response.
 # SAM's Pydantic config model strips unknown keys from frontend_feature_enablement.
-# This sed inserts the flag after the dict is populated, before the response is built.
-RUN sed -i '/feature_enablement\["taskLogging"\] = True/a\        feature_enablement["knowledgeGraph"] = True' \
-    /usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/routers/config.py
+RUN python -c "\
+f='/usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/routers/config.py'; \
+t=open(f).read(); \
+t=t.replace(\
+  'feature_enablement = component.get_config(\"frontend_feature_enablement\", {})\n\n        identity_service_config',\
+  'feature_enablement = component.get_config(\"frontend_feature_enablement\", {})\n        feature_enablement[\"knowledgeGraph\"] = True\n\n        identity_service_config'\
+); \
+open(f,'w').write(t)"
 
 ENV PORT=8080
 ENV SOLACE_DEV_MODE=true
