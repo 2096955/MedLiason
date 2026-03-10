@@ -7,6 +7,7 @@ non-existent HTTP endpoint issue with FastMCP SSE transport.
 Mounted at /api/v1/graph by the gateway's main.py (guarded import).
 """
 
+import asyncio
 import logging
 import time
 
@@ -194,21 +195,27 @@ async def _fetch_edges_between_nodes(node_ids: list[str]) -> list[dict]:
             "RETURN elementId(a) AS src, elementId(b) AS tgt, type(r) AS label "
             "LIMIT 500"
         )
-        edges = []
-        seen = set()
-        with driver.session() as session:
-            result = session.run(cypher, {"ids": node_ids})
-            for record in result:
-                edge_id = f"{record['src']}-{record['label']}-{record['tgt']}"
-                if edge_id not in seen:
-                    seen.add(edge_id)
-                    edges.append({
-                        "id": edge_id,
-                        "source": record["src"],
-                        "target": record["tgt"],
-                        "label": record["label"],
-                    })
-        return edges
+
+        # neo4j Python driver is synchronous — run in thread to avoid
+        # blocking the async event loop and stalling other requests.
+        def _blocking_query():
+            edges = []
+            seen = set()
+            with driver.session() as session:
+                result = session.run(cypher, {"ids": node_ids})
+                for record in result:
+                    edge_id = f"{record['src']}-{record['label']}-{record['tgt']}"
+                    if edge_id not in seen:
+                        seen.add(edge_id)
+                        edges.append({
+                            "id": edge_id,
+                            "source": record["src"],
+                            "target": record["tgt"],
+                            "label": record["label"],
+                        })
+            return edges
+
+        return await asyncio.to_thread(_blocking_query)
     except Exception as exc:
         log.warning("Edge fetch failed (non-fatal): %s", exc)
         return []

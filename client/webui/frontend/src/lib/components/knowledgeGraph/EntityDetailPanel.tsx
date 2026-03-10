@@ -41,8 +41,10 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
         .filter(([key]) => !HIDDEN_KEYS.has(key) && key !== "description")
         .filter(([, value]) => value !== "" && value !== null && value !== undefined);
 
-    const pmid = nodeData.pmid as string | undefined;
-    const nctId = nodeData.nct_id as string | undefined;
+    const rawPmid = nodeData.pmid as string | undefined;
+    const rawNctId = nodeData.nct_id as string | undefined;
+    const pmid = rawPmid && /^\d+$/.test(rawPmid) ? rawPmid : null;
+    const nctId = rawNctId && /^NCT\d+$/i.test(rawNctId) ? rawNctId : null;
     const isPartial = nodeData.partial === true;
 
     return (
