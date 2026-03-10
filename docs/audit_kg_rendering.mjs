@@ -120,8 +120,17 @@ async function main() {
   // ── Step 2: Navigate to KG page and audit ───────────────────────
   try {
     console.log("\n2. Navigating to Knowledge Graph page...");
-    await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(5000); // Let graph render + API calls
+    // Try clicking the nav link first (more reliable for hash router SPAs)
+    const kgNavLink = page.locator('a[href*="knowledge-graph"], button:has-text("Knowledge Graph")');
+    if (await kgNavLink.count() > 0) {
+      console.log("  Found KG nav link — clicking...");
+      await kgNavLink.first().click();
+      await page.waitForTimeout(5000);
+    } else {
+      console.log("  No KG nav link found — navigating directly...");
+      await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "networkidle" });
+      await page.waitForTimeout(8000);
+    }
 
     // Take screenshot
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, "01-kg-initial.png"), fullPage: false });
