@@ -288,20 +288,20 @@ async def get_data_sources_health(
 
     # Known MCP data sources with their ports (from medexpert config)
     mcp_sources = [
-        {"name": "PubMed", "url": "http://localhost:9001/sse", "type": "mcp", "description": "Medical literature search"},
-        {"name": "ClinicalTrials", "url": "http://localhost:9002/sse", "type": "mcp", "description": "Clinical trial registry"},
-        {"name": "OpenFDA", "url": "http://localhost:9003/sse", "type": "mcp", "description": "Drug & device data"},
-        {"name": "CDC WONDER", "url": "http://localhost:9004/sse", "type": "mcp", "description": "Epidemiology data"},
-        {"name": "FDA Regulatory", "url": "http://localhost:9005/sse", "type": "mcp", "description": "Regulatory filings"},
-        {"name": "Census/SDOH", "url": "http://localhost:9006/sse", "type": "mcp", "description": "Social determinants"},
-        {"name": "Genomic", "url": "http://localhost:9007/sse", "type": "mcp", "description": "Genomic databases"},
-        {"name": "Environmental", "url": "http://localhost:9008/sse", "type": "mcp", "description": "Environmental health"},
-        {"name": "SEER Cancer", "url": "http://localhost:9009/sse", "type": "mcp", "description": "Cancer statistics"},
-        {"name": "Provider Intel", "url": "http://localhost:9010/sse", "type": "mcp", "description": "Provider/NPI data"},
-        {"name": "Knowledge Graph", "url": "http://localhost:9011/sse", "type": "mcp", "description": "Memgraph knowledge graph"},
-        {"name": "NHS 111", "url": "http://localhost:9016/sse", "type": "mcp", "description": "NHS clinical guidance"},
-        {"name": "BMA Library", "url": "http://localhost:9017/sse", "type": "mcp", "description": "UK clinical guidelines"},
-        {"name": "OpenEvidence", "url": "http://localhost:9018/sse", "type": "mcp", "description": "AI-synthesised clinical evidence"},
+        {"name": "PubMed", "url": "http://127.0.0.1:9001/sse", "type": "mcp", "description": "Medical literature search"},
+        {"name": "ClinicalTrials", "url": "http://127.0.0.1:9002/sse", "type": "mcp", "description": "Clinical trial registry"},
+        {"name": "OpenFDA", "url": "http://127.0.0.1:9003/sse", "type": "mcp", "description": "Drug & device data"},
+        {"name": "CDC WONDER", "url": "http://127.0.0.1:9004/sse", "type": "mcp", "description": "Epidemiology data"},
+        {"name": "FDA Regulatory", "url": "http://127.0.0.1:9005/sse", "type": "mcp", "description": "Regulatory filings"},
+        {"name": "Census/SDOH", "url": "http://127.0.0.1:9006/sse", "type": "mcp", "description": "Social determinants"},
+        {"name": "Genomic", "url": "http://127.0.0.1:9007/sse", "type": "mcp", "description": "Genomic databases"},
+        {"name": "Environmental", "url": "http://127.0.0.1:9008/sse", "type": "mcp", "description": "Environmental health"},
+        {"name": "SEER Cancer", "url": "http://127.0.0.1:9009/sse", "type": "mcp", "description": "Cancer statistics"},
+        {"name": "Provider Intel", "url": "http://127.0.0.1:9010/sse", "type": "mcp", "description": "Provider/NPI data"},
+        {"name": "Knowledge Graph", "url": "http://127.0.0.1:9011/sse", "type": "mcp", "description": "Memgraph knowledge graph"},
+        {"name": "NHS 111", "url": "http://127.0.0.1:9016/sse", "type": "mcp", "description": "NHS clinical guidance"},
+        {"name": "BMA Library", "url": "http://127.0.0.1:9017/sse", "type": "mcp", "description": "UK clinical guidelines"},
+        {"name": "OpenEvidence", "url": "http://127.0.0.1:9018/sse", "type": "mcp", "description": "AI-synthesised clinical evidence"},
     ]
 
     # Also add web search as a source
@@ -310,12 +310,15 @@ async def get_data_sources_health(
         {"name": "DuckDuckGo", "url": None, "type": "search", "description": "Web search (no key needed)"},
     ]
 
-    # Check MCP server health in parallel
+    # Check MCP server health in parallel.
+    # SSE endpoints stream forever so a normal GET hangs until timeout.
+    # Use stream=True to check just the response headers (status code),
+    # then close immediately without reading the body.
     async def check_mcp(source):
         try:
             async with httpx.AsyncClient(verify=False, timeout=3.0) as client:
-                resp = await client.get(source["url"])
-                return {**source, "status": "online" if resp.status_code < 500 else "offline"}
+                async with client.stream("GET", source["url"]) as resp:
+                    return {**source, "status": "online" if resp.status_code < 500 else "offline"}
         except Exception:
             return {**source, "status": "offline"}
 
