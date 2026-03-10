@@ -194,7 +194,7 @@ async def _fetch_edges_between_nodes(
             element_id strings are parsed as integers (works for Memgraph
             where element_id == str(internal_id)).
     """
-    if not node_ids:
+    if not node_ids and not id_to_element_id:
         return []
     try:
         from mcp_servers.knowledge_graph.server import _get_driver

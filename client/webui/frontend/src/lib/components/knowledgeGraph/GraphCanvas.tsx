@@ -184,7 +184,8 @@ function layoutNodes(nodes: GraphNode[], edges: GraphEdge[]): PositionedNode[] {
             }
         } else {
             // Space evenly with radius-aware gaps
-            let yPos = CANVAS_PADDING_TOP;
+            // Offset first node by its radius so it doesn't clip the top edge
+            let yPos = CANVAS_PADDING_TOP + getNodeRadius(colNodes[0]?.labels[0] || "", degreeMap[colNodes[0]?.id] ?? 0);
             for (let i = 0; i < colNodes.length; i++) {
                 const node = colNodes[i];
                 const degree = degreeMap[node.id] ?? 0;

@@ -316,7 +316,7 @@ async def get_data_sources_health(
     # then close immediately without reading the body.
     async def check_mcp(source):
         try:
-            async with httpx.AsyncClient(verify=False, timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 async with client.stream("GET", source["url"]) as resp:
                     return {**source, "status": "online" if resp.status_code < 500 else "offline"}
         except Exception:
