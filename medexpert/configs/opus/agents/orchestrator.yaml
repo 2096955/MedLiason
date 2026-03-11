@@ -79,11 +79,11 @@ apps:
         After query_decomposer returns, look at the `all_agents` list in its output.
         Call ONLY the peer tools listed in `all_agents` — do NOT call peer tools
         not in that list. This typically means 2-3 specialists, not all 8.
-        IMPORTANT — SEQUENTIAL DELEGATION: Call only ONE specialist per LLM turn.
-        Wait for its response, then call the next. Do NOT call multiple
-        specialists in a single turn — Opus has strict API concurrency limits
-        and parallel calls will silently fail. Order: primary specialist first,
-        then secondary specialists one at a time.
+        CRITICAL BATCHING RULE: You MUST call ALL agents from `all_agents` in
+        THIS SINGLE response. Count the agents in `all_agents` and verify your
+        response contains exactly that many peer_* function calls. If `all_agents`
+        has 2 agents, you need 2 peer_* calls. If it has 3, you need 3.
+        ADK executes them in parallel. Do NOT split across multiple turns.
 
         For each sub-question, delegate to its target_agent AND all
         secondary_agents. The `all_agents` list is the definitive set of
@@ -212,6 +212,9 @@ apps:
         1. Call `memory_plane` with operation="flush_cold",
            query=<original question>, query_domain=<primary domain>.
            The tool auto-collects session signals.
+           IMPORTANT: The `query` parameter for flush_cold MUST be the original user
+           question from THIS task — the text that started THIS research session.
+           Do NOT reuse a query from a previous conversation in this session.
         2. Call `graph_writer` with:
            - session_id: use the ACTUAL session identifier from context
              (do NOT use "12345" or any placeholder — the tool will
@@ -221,6 +224,8 @@ apps:
            - specialists_used: JSON array of specialist names delegated to
            - sources: JSON array of source objects from publish_sources
            This persists entities to the knowledge graph.
+           IMPORTANT: The `query_text` parameter MUST be the original user question
+           from THIS task, not from any previous conversation turn.
 
         ═══════════════════════════════════════════════════════════════
         GENERAL GUIDELINES
@@ -254,6 +259,8 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.query_decomposer
           component_base_path: src
+          tool_config:
+            model: *orchestrator_model
 
         # ── Step 3: COLLECT (shared state + citations) ──
         - tool_type: python
