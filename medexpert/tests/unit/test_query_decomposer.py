@@ -308,3 +308,29 @@ async def test_max_sub_questions_clamp_low(tool, ctx):
         ctx,
     )
     assert result["count"] >= 1
+
+
+def test_split_preserves_relative_clause_with_which():
+    """Comma + 'which' in a relative clause should NOT split the question."""
+    q = "When considering an ERPC for a patient with haemophilia, which plan for anesthesia would likely be safest?"
+    parts = _split_question(q, 5)
+    assert len(parts) == 1
+    assert "haemophilia" in parts[0]
+    assert "anesthesia" in parts[0]
+
+
+def test_split_preserves_relative_clause_with_what():
+    """Comma + 'what' in a dependent clause should NOT split."""
+    q = "For patients with chronic kidney disease, what medication adjustments are recommended for metformin?"
+    parts = _split_question(q, 5)
+    assert len(parts) == 1
+    assert "kidney" in parts[0]
+    assert "metformin" in parts[0]
+
+
+def test_split_does_split_genuine_long_multi_topic():
+    """Genuine long multi-topic questions with comma+question word SHOULD still split if both parts are substantial."""
+    q = "What are the cardiovascular side effects of long-term statin therapy in elderly patients with diabetes, what alternative lipid-lowering approaches exist for patients who cannot tolerate statins due to myopathy?"
+    parts = _split_question(q, 5)
+    # This is >150 chars and both fragments are >40 chars
+    assert len(parts) >= 2

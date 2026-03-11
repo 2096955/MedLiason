@@ -152,10 +152,18 @@ def _split_question(question: str, max_sub: int) -> list[str]:
             if len(parts) > 1:
                 sub_questions = [p.strip() for p in parts if p.strip()]
             else:
-                # Split on commas between clauses (only if question is long)
-                if len(question) > 100:
-                    parts = re.split(r",\s+(?:what|how|why|which|where|when|who)\s+", question, flags=re.IGNORECASE)
-                    if len(parts) > 1:
+                # Split on commas between clauses (only if question is long
+                # AND both fragments are substantial — avoid splitting
+                # relative clauses like "X, which Y?" where the comma
+                # introduces a dependent clause about the same topic)
+                if len(question) > 150:
+                    parts = re.split(
+                        r",\s+(?:what|how|why|which|where|when|who)\s+",
+                        question,
+                        flags=re.IGNORECASE,
+                    )
+                    # Only accept split if BOTH fragments are substantial
+                    if len(parts) > 1 and all(len(p.strip()) >= 40 for p in parts):
                         sub_questions = [p.strip() for p in parts if p.strip()]
 
     # If no splitting occurred, treat the whole question as one sub-question
