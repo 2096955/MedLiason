@@ -337,9 +337,9 @@ class QueryDecomposerTool(DynamicTool):
     async def _llm_decompose(self, question: str, max_sub: int) -> dict | None:
         """Use LLM to decompose and route the question.
 
-        Returns a formatted result dict on success, or ``None`` on any
-        failure (parse error, invalid agents, LLM exception).  The caller
-        falls back to keyword heuristics when ``None`` is returned.
+        Returns a formatted result dict on success, or ``None`` on
+        parse/validation failure.  Raises on LLM transport errors — the
+        caller catches exceptions and falls back to keyword heuristics.
         """
         user_prompt = _DECOMPOSE_USER_PROMPT.replace("{question}", question)
 
