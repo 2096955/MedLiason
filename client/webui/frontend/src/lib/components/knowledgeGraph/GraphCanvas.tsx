@@ -17,7 +17,7 @@ const EDGE_STYLES: Record<string, { color: string; dash: string; width: number }
 const DEFAULT_EDGE_STYLE = { color: "#94a3b8", dash: "", width: 1 };
 
 const NODE_STYLES: Record<string, { fill: string; stroke: string; text: string }> = {
-    Session: { fill: "#7c3aed", stroke: "#a78bfa", text: "#fff" },
+    Session: { fill: "#7c3aed", stroke: "#a78bfa", text: "#1e293b" },
     Specialist: { fill: "#f8fafc", stroke: "#0e7490", text: "#0e7490" },
     Disease: { fill: "#f8fafc", stroke: "#64748b", text: "#1e293b" },
     Drug: { fill: "#f8fafc", stroke: "#3b82f6", text: "#1e293b" },

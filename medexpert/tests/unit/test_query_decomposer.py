@@ -311,7 +311,12 @@ async def test_max_sub_questions_clamp_low(tool, ctx):
 
 
 def test_split_preserves_relative_clause_with_which():
-    """Comma + 'which' in a relative clause should NOT split the question."""
+    """Comma + 'which' in a context clause should NOT split the question.
+
+    The first fragment ('When considering an ERPC for a patient with
+    haemophilia') starts with a context opener and has no question word,
+    so the context-clause guard prevents splitting.
+    """
     q = "When considering an ERPC for a patient with haemophilia, which plan for anesthesia would likely be safest?"
     parts = _split_question(q, 5)
     assert len(parts) == 1
@@ -332,5 +337,41 @@ def test_split_does_split_genuine_long_multi_topic():
     """Genuine long multi-topic questions with comma+question word SHOULD still split if both parts are substantial."""
     q = "What are the cardiovascular side effects of long-term statin therapy in elderly patients with diabetes, what alternative lipid-lowering approaches exist for patients who cannot tolerate statins due to myopathy?"
     parts = _split_question(q, 5)
-    # This is >150 chars and both fragments are >40 chars
+    # Both fragments are substantial and the first starts with a question word
     assert len(parts) >= 2
+
+
+def test_split_context_clause_guard_independent():
+    """Context-clause guard prevents split even when both fragments are substantial.
+
+    This question is >100 chars and both fragments are >= 30 chars, but the
+    first fragment is a context clause (starts with 'Given' and has no question
+    word), so the split must be suppressed.
+    """
+    q = (
+        "Given the high prevalence of antibiotic resistance in hospital settings, "
+        "what infection control strategies have proven most effective in reducing MRSA transmission rates?"
+    )
+    assert len(q) > 100  # sanity-check: length gate passes
+    parts = _split_question(q, 5)
+    assert len(parts) == 1
+    assert "antibiotic resistance" in parts[0]
+    assert "MRSA" in parts[0]
+
+
+def test_split_genuine_compound_in_100_150_range():
+    """A genuine compound question between 100-150 chars that SHOULD split.
+
+    Both fragments are substantial and the first fragment contains a question
+    word ('What'), so it is NOT a context clause.
+    """
+    q = (
+        "What are the primary risk factors for pancreatic cancer in adults, "
+        "how effective is early screening for high-risk individuals?"
+    )
+    length = len(q)
+    assert 100 < length < 150, f"Expected 100-150 chars, got {length}"
+    parts = _split_question(q, 5)
+    assert len(parts) >= 2
+    assert any("risk factors" in p for p in parts)
+    assert any("screening" in p for p in parts)

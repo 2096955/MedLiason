@@ -24,6 +24,24 @@ log = logging.getLogger(__name__)
 # Session state key read by protocol_step_validator to restrict peer tools
 _SELECTED_AGENTS_KEY = "_selected_agents"
 
+# Minimum character length for each fragment produced by comma-clause splitting.
+# Prevents splitting relative/dependent clauses that happen to contain a
+# question word (e.g., "for a patient with X, which plan …").
+_MIN_COMMA_SPLIT_FRAGMENT = 30
+
+# Context-setting clause openers.  When the first fragment starts with one of
+# these AND contains no question word of its own, the comma introduces a
+# *dependent* clause — not a second topic — so we must not split.
+_CONTEXT_OPENERS = (
+    "when ",
+    "for ",
+    "in ",
+    "given ",
+    "if ",
+    "regarding ",
+    "considering ",
+)
+
 
 def _score_domain(text: str, domain_info: dict) -> float:
     """Score how well a text matches a domain based on keyword overlap.
@@ -152,19 +170,51 @@ def _split_question(question: str, max_sub: int) -> list[str]:
             if len(parts) > 1:
                 sub_questions = [p.strip() for p in parts if p.strip()]
             else:
-                # Split on commas between clauses (only if question is long
-                # AND both fragments are substantial — avoid splitting
-                # relative clauses like "X, which Y?" where the comma
-                # introduces a dependent clause about the same topic)
-                if len(question) > 150:
+                # Split on commas followed by a question word (what/how/…).
+                # Guards:
+                #  1. Length gate — only attempt on questions > 100 chars.
+                #  2. Fragment size — every fragment must be >= _MIN_COMMA_SPLIT_FRAGMENT.
+                #  3. Context-clause — if the first fragment is a context-setting
+                #     clause (starts with When/For/In/… and contains no question
+                #     word), the comma introduces a dependent clause, not a
+                #     second topic.
+                if len(question) > 100:
                     parts = re.split(
                         r",\s+(?:what|how|why|which|where|when|who)\s+",
                         question,
                         flags=re.IGNORECASE,
                     )
-                    # Only accept split if BOTH fragments are substantial
-                    if len(parts) > 1 and all(len(p.strip()) >= 40 for p in parts):
-                        sub_questions = [p.strip() for p in parts if p.strip()]
+                    if len(parts) > 1 and all(
+                        len(p.strip()) >= _MIN_COMMA_SPLIT_FRAGMENT for p in parts
+                    ):
+                        first = parts[0].strip().lower()
+                        # Identify which opener (if any) the fragment starts with
+                        matched_opener = next(
+                            (op for op in _CONTEXT_OPENERS if first.startswith(op)),
+                            None,
+                        )
+                        if matched_opener is not None:
+                            # Strip the opener itself before searching for
+                            # question words — "When considering X" uses
+                            # "when" as a temporal conjunction, not an
+                            # interrogative.
+                            remainder = first[len(matched_opener):]
+                            has_question_word = bool(
+                                re.search(
+                                    r"\b(?:what|how|why|which|where|when|who)\b",
+                                    remainder,
+                                )
+                            )
+                            is_context_clause = not has_question_word
+                        else:
+                            # First fragment doesn't start with a context
+                            # opener — treat as a genuine question topic.
+                            is_context_clause = False
+
+                        if not is_context_clause:
+                            sub_questions = [
+                                p.strip() for p in parts if p.strip()
+                            ]
 
     # If no splitting occurred, treat the whole question as one sub-question
     if not sub_questions:
