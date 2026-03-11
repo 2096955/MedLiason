@@ -494,3 +494,39 @@ def test_init_without_model():
     """No model config → empty model string."""
     tool = ReportGeneratorTool()
     assert tool.model == ""
+
+
+# ── research_brief conclusion quality ────────────────────────
+
+
+async def test_research_brief_conclusion_not_generic(tool, ctx, sample_evidence):
+    """research_brief conclusion should NOT be the generic 'Further investigation' text."""
+    result = await tool._run_async_impl(
+        {
+            "question": "What is the safest anesthesia for hemophilia patients?",
+            "evidence_json": json.dumps(sample_evidence),
+            "mode": "research_brief",
+        },
+        ctx,
+    )
+    report = result["report"]
+    assert "preliminary findings are presented above" not in report
+    assert "Further investigation may be warranted" not in report
+    assert "## Conclusion" in report
+    assert "clinical" in report.lower()  # Should reference clinical context
+
+
+async def test_research_brief_single_source_conclusion(tool, ctx):
+    """Single source should get a cautionary conclusion."""
+    single = [{"title": "Only Study", "snippet": "Only finding", "cite_id": "s0r0"}]
+    result = await tool._run_async_impl(
+        {
+            "question": "Test question?",
+            "evidence_json": json.dumps(single),
+            "mode": "research_brief",
+        },
+        ctx,
+    )
+    report = result["report"]
+    assert "single source" in report.lower()
+    assert "caution" in report.lower()

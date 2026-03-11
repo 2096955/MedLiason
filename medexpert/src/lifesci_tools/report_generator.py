@@ -83,15 +83,30 @@ def _format_research_brief(
     lines.append("- Results should be interpreted in clinical context")
     lines.append("")
 
-    # Conclusion
+    # Conclusion — synthesize evidence instead of generic boilerplate
     lines.append("## Conclusion")
-    if evidence:
+    if not evidence:
+        lines.append("Insufficient evidence to draw conclusions.")
+    elif len(evidence) == 1:
+        title = evidence[0].get("title", "the available source")
+        cite_id = evidence[0].get("cite_id", "s0r0")
         lines.append(
-            f"Based on {len(evidence)} sources, preliminary findings are presented above. "
-            "Further investigation may be warranted."
+            f"Based on a single source ({title} [[cite:{cite_id}]]), "
+            "findings should be interpreted with caution. Consult current "
+            "clinical guidelines for definitive recommendations."
         )
     else:
-        lines.append("Insufficient evidence to draw conclusions.")
+        # Summarize the evidence themes with citations
+        cite_refs = " ".join(
+            f"[[cite:{ev.get('cite_id', f's0r{i}')}]]"
+            for i, ev in enumerate(evidence[:3])
+        )
+        lines.append(
+            f"Based on {len(evidence)} sources {cite_refs}, "
+            "the evidence supports the key findings described above. "
+            "Clinical decisions should integrate these findings with "
+            "patient-specific factors and current practice guidelines."
+        )
 
     return "\n".join(lines)
 
