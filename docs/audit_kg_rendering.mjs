@@ -121,14 +121,15 @@ async function main() {
   try {
     console.log("\n2. Navigating to Knowledge Graph page...");
     // Try clicking the nav link first (more reliable for hash router SPAs)
-    const kgNavLink = page.locator('a[href*="knowledge-graph"], button:has-text("Knowledge Graph")');
+    const kgNavLink = page.locator('a[href*="knowledge-graph"]').or(page.getByText("Knowledge", { exact: true }));
     if (await kgNavLink.count() > 0) {
       console.log("  Found KG nav link — clicking...");
       await kgNavLink.first().click();
       await page.waitForTimeout(5000);
     } else {
       console.log("  No KG nav link found — navigating directly...");
-      await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "networkidle" });
+      // Use domcontentloaded — networkidle never fires due to SSE connections
+      await page.goto(`${BASE_URL}/#/knowledge-graph`, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(8000);
     }
 
