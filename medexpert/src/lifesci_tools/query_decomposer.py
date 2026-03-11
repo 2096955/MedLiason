@@ -199,10 +199,14 @@ def _split_question(question: str, max_sub: int) -> list[str]:
                             # "when" as a temporal conjunction, not an
                             # interrogative.
                             remainder = first[len(matched_opener):]
+                            # Only check the first ~3 words — interrogative question words appear
+                            # at the start ("what medication..."), while relative pronouns like
+                            # "who/which" appear mid-phrase ("patients who are...").
+                            first_words = " ".join(remainder.split()[:3])
                             has_question_word = bool(
                                 re.search(
                                     r"\b(?:what|how|why|which|where|when|who)\b",
-                                    remainder,
+                                    first_words,
                                 )
                             )
                             is_context_clause = not has_question_word

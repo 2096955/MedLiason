@@ -375,3 +375,12 @@ def test_split_genuine_compound_in_100_150_range():
     assert len(parts) >= 2
     assert any("risk factors" in p for p in parts)
     assert any("screening" in p for p in parts)
+
+
+def test_split_preserves_context_with_relative_pronoun():
+    """Relative pronoun 'who' in context clause should NOT trigger question-word detection."""
+    q = "In patients with severe asthma who are refractory to standard therapy, what biologic agents have demonstrated efficacy in reducing exacerbation rates?"
+    parts = _split_question(q, 5)
+    assert len(parts) == 1
+    assert "asthma" in parts[0]
+    assert "biologic" in parts[0]
