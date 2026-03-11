@@ -159,8 +159,7 @@ DOMAIN_AGENT_ROUTING = {
             "hemophilia",
             "coagulopathy",
             "bleeding disorder",
-            "ERPC",
-            "perioperative management",
+            "erpc",
         ],
     },
     "drugs": {
@@ -189,7 +188,6 @@ DOMAIN_AGENT_ROUTING = {
             "sedation",
             "haemophilia",
             "hemophilia",
-            "factor replacement",
             "factor VIII",
             "factor IX",
             "desmopressin",
