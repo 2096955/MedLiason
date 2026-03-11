@@ -1,7 +1,9 @@
 """Research Question Decomposer — breaks questions into domain-routed sub-questions.
 
-Uses keyword-based heuristics to split compound research questions and
-route each sub-question to the appropriate specialist agent.
+Uses LLM-powered decomposition (when a model is configured via ``tool_config``)
+to intelligently route questions to specialist agents, understanding implicit
+medical relationships. Falls back to keyword-based heuristics when the LLM is
+not configured or fails.
 
 Also stores the selected agent list in session state (``_selected_agents``)
 so that the protocol_step_validator callback can restrict DELEGATE-step
@@ -14,10 +16,14 @@ from typing import Optional
 
 from google.adk.tools import ToolContext
 from google.genai import types as adk_types
+from litellm import acompletion as _litellm_acompletion
 
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 
 from lifesci_common.constants import DOMAIN_AGENT_ROUTING
+from lifesci_common.llm_utils import json_mode_kwargs
+from lifesci_common.observability import log_tokens
+from lifesci_common.triage_utils import extract_json_from_text
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +47,55 @@ _CONTEXT_OPENERS = (
     "regarding ",
     "considering ",
 )
+
+# ---------------------------------------------------------------------------
+# LLM decomposition prompts
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_SYSTEM_PROMPT = """You are a medical research query router. Given a user's medical question, decompose it into focused sub-questions and route each to the most appropriate specialist agent.
+
+Available specialists:
+- LiteratureSpecialist: PubMed biomedical literature, systematic reviews, guidelines, meta-analyses
+- ClinicalTrialsSpecialist: ClinicalTrials.gov, ongoing/completed trials, trial designs, endpoints
+- DrugSpecialist: OpenFDA drug safety, labeling, interactions, dosing, pharmacology, factor replacement
+- RegulatorySpecialist: FDA regulatory pathways, device clearances, 510(k), PMA
+- EpidemiologySpecialist: CDC/SEER surveillance data, prevalence, incidence, mortality, demographics
+- GenomicsSpecialist: ClinVar/dbSNP genetic variants, mutations, pathogenicity
+- EnvironmentalSpecialist: EPA environmental health, air/water quality, toxin exposure
+- ProviderIntelSpecialist: CMS provider/payment data, hospital quality, Medicare
+
+Rules:
+1. Most questions need 2-4 specialists, not all 8
+2. Always include LiteratureSpecialist for clinical questions (it has the broadest evidence base)
+3. Consider implicit medical relationships:
+   - Haemophilia/coagulation disorders → DrugSpecialist (factor replacement) + LiteratureSpecialist
+   - Anaesthesia/surgical planning → ClinicalTrialsSpecialist + LiteratureSpecialist
+   - Drug safety questions → DrugSpecialist + LiteratureSpecialist
+   - Genetic conditions → GenomicsSpecialist + LiteratureSpecialist
+4. Do NOT split a single coherent question into fragments. Only decompose genuinely multi-part questions.
+5. Return 1-3 sub-questions maximum.
+
+Return JSON:
+{
+  "sub_questions": [
+    {
+      "question": "the sub-question text (or the full question if no decomposition needed)",
+      "target_agent": "PrimarySpecialist",
+      "secondary_agents": ["SecondarySpecialist1"]
+    }
+  ],
+  "all_agents": ["Agent1", "Agent2", "Agent3"],
+  "reasoning": "brief explanation of routing decisions"
+}"""
+
+_DECOMPOSE_USER_PROMPT = """Decompose and route this medical research question:
+
+{question}
+
+Return JSON only."""
+
+# Set of valid agent names derived from the routing map at import time
+_VALID_AGENTS = {info["agent"] for info in DOMAIN_AGENT_ROUTING.values()}
 
 
 def _score_domain(text: str, domain_info: dict) -> float:
@@ -236,7 +291,125 @@ def _split_question(question: str, max_sub: int) -> list[str]:
 
 
 class QueryDecomposerTool(DynamicTool):
-    """Decomposes research questions into domain-routed sub-questions."""
+    """Decomposes research questions into domain-routed sub-questions.
+
+    When ``tool_config`` provides a ``model`` key, uses LLM-powered
+    decomposition that understands implicit medical relationships (e.g.
+    haemophilia → factor replacement → DrugSpecialist).  Falls back to
+    keyword heuristics when no model is configured or the LLM fails.
+    """
+
+    def __init__(self, tool_config: Optional[dict] = None, **kwargs):
+        super().__init__(tool_config=tool_config, **kwargs)
+        cfg = tool_config or {}
+        raw_model = cfg.get("model")
+        if isinstance(raw_model, dict):
+            self._model: str = raw_model.get("model", "")
+            self._vertex_kwargs: dict = {
+                k: raw_model[k]
+                for k in ("vertex_project", "vertex_location")
+                if k in raw_model
+            }
+        elif raw_model:
+            self._model = raw_model
+            self._vertex_kwargs = {}
+        else:
+            self._model = ""
+            self._vertex_kwargs = {}
+        self._temperature: float = float(cfg.get("temperature", 0.1))
+
+    # ------------------------------------------------------------------
+    # Helper: agent name → domain key
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _agent_to_domain(agent_name: str) -> str:
+        """Map an agent name back to its domain key."""
+        for domain, info in DOMAIN_AGENT_ROUTING.items():
+            if info["agent"] == agent_name:
+                return domain
+        return "literature"
+
+    # ------------------------------------------------------------------
+    # LLM decomposition
+    # ------------------------------------------------------------------
+
+    async def _llm_decompose(self, question: str, max_sub: int) -> dict | None:
+        """Use LLM to decompose and route the question.
+
+        Returns a formatted result dict on success, or ``None`` on any
+        failure (parse error, invalid agents, LLM exception).  The caller
+        falls back to keyword heuristics when ``None`` is returned.
+        """
+        user_prompt = _DECOMPOSE_USER_PROMPT.replace("{question}", question)
+
+        response = await _litellm_acompletion(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": _DECOMPOSE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=self._temperature,
+            max_tokens=2048,
+            **json_mode_kwargs(self._model),
+            **self._vertex_kwargs,
+        )
+
+        # Token logging
+        usage = getattr(response, "usage", None)
+        if usage:
+            log_tokens(
+                session_id="",
+                model=self._model,
+                prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                completion_tokens=getattr(usage, "completion_tokens", 0),
+            )
+
+        raw = response.choices[0].message.content
+        parsed = extract_json_from_text(raw)
+
+        if not parsed or "sub_questions" not in parsed:
+            log.warning("LLM decomposition returned unparseable result")
+            return None
+
+        # Validate and normalize
+        sub_questions = parsed["sub_questions"][:max_sub]
+        all_agents = sorted(
+            {a for a in parsed.get("all_agents", []) if a in _VALID_AGENTS}
+        )
+
+        if not all_agents:
+            log.warning("LLM decomposition returned no valid agents")
+            return None
+
+        # Format sub_questions to match existing output schema
+        formatted_subs = []
+        for i, sq in enumerate(sub_questions):
+            target = sq.get("target_agent", "LiteratureSpecialist")
+            if target not in _VALID_AGENTS:
+                target = "LiteratureSpecialist"
+            secondaries = [
+                {"agent": a, "domain": self._agent_to_domain(a)}
+                for a in sq.get("secondary_agents", [])
+                if a in _VALID_AGENTS and a != target
+            ]
+            formatted_subs.append({
+                "question": sq.get("question", question),
+                "domain": self._agent_to_domain(target),
+                "target_agent": target,
+                "secondary_agents": secondaries,
+                "priority": i + 1,
+                "routing_confidence": 0.85,
+            })
+
+        return {
+            "original_question": question,
+            "sub_questions": formatted_subs,
+            "routing_confidence": 0.85,
+            "count": len(formatted_subs),
+            "all_agents": all_agents,
+            "routing_method": "llm",
+        }
 
     @property
     def tool_name(self) -> str:
@@ -269,6 +442,37 @@ class QueryDecomposerTool(DynamicTool):
             required=["question"],
         )
 
+    # ------------------------------------------------------------------
+    # Session state helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _store_selected_agents(tool_context: ToolContext, agents: list[str]) -> None:
+        """Persist selected agents in session state for the protocol validator.
+
+        The ``protocol_step_validator`` callback reads ``_selected_agents`` to
+        restrict DELEGATE-step peer tools to only those the decomposer
+        selected, reducing tool-selection noise from 10 peer tools to 3-5.
+        """
+        try:
+            inv = getattr(tool_context, "_invocation_context", None)
+            session_obj = getattr(inv, "session", None) if inv else None
+            if session_obj and hasattr(session_obj, "state"):
+                session_obj.state[_SELECTED_AGENTS_KEY] = agents
+                log.info(
+                    "[QueryDecomposer] Stored _selected_agents in session state: %s",
+                    agents,
+                )
+        except Exception:
+            # Don't break decomposition if session state is unavailable
+            log.debug(
+                "[QueryDecomposer] Could not store _selected_agents in session state"
+            )
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
     async def _run_async_impl(
         self,
         args: dict,
@@ -286,6 +490,24 @@ class QueryDecomposerTool(DynamicTool):
         elif max_sub > 10:
             max_sub = 10
 
+        # ── LLM decomposition (preferred when model is configured) ────
+        if self._model:
+            try:
+                result = await self._llm_decompose(question, max_sub)
+                if result:
+                    self._store_selected_agents(tool_context, result["all_agents"])
+                    log.info(
+                        "[QueryDecomposer] LLM routing: %s → %s",
+                        question[:60],
+                        result["all_agents"],
+                    )
+                    return result
+            except Exception as exc:
+                log.warning(
+                    "LLM decomposition failed, falling back to keywords: %s", exc
+                )
+
+        # ── Keyword fallback (no model, or LLM returned None/raised) ──
         sub_questions_text = _split_question(question, max_sub)
 
         sub_questions = []
@@ -317,26 +539,7 @@ class QueryDecomposerTool(DynamicTool):
 
         sorted_agents = sorted(all_agents)
 
-        # ── Store selected agents in session state for protocol validator ──
-        # The protocol_step_validator callback reads _selected_agents to
-        # restrict DELEGATE-step peer tools to only those the decomposer
-        # selected, reducing tool-selection noise from 10 peer tools to 3-5.
-        # Uses the same _invocation_context.session.state pattern as
-        # memory_plane.py (lines 507-512).
-        try:
-            inv = getattr(tool_context, "_invocation_context", None)
-            session_obj = getattr(inv, "session", None) if inv else None
-            if session_obj and hasattr(session_obj, "state"):
-                session_obj.state[_SELECTED_AGENTS_KEY] = sorted_agents
-                log.info(
-                    "[QueryDecomposer] Stored _selected_agents in session state: %s",
-                    sorted_agents,
-                )
-        except Exception:
-            # Don't break decomposition if session state is unavailable
-            log.debug(
-                "[QueryDecomposer] Could not store _selected_agents in session state"
-            )
+        self._store_selected_agents(tool_context, sorted_agents)
 
         return {
             "original_question": question,
@@ -344,4 +547,5 @@ class QueryDecomposerTool(DynamicTool):
             "routing_confidence": avg_confidence,
             "count": len(sub_questions),
             "all_agents": sorted_agents,
+            "routing_method": "keyword",
         }

@@ -1,6 +1,7 @@
 """Tests for the QueryDecomposerTool — question decomposition + domain routing."""
 
-from unittest.mock import MagicMock
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -405,3 +406,272 @@ def test_split_preserves_context_with_relative_pronoun():
     assert len(parts) == 1
     assert "asthma" in parts[0]
     assert "biologic" in parts[0]
+
+
+# ── LLM decomposition tests ─────────────────────────────────
+
+
+def _make_llm_response(content_dict):
+    """Build a mock litellm response object from a dict."""
+    resp = MagicMock()
+    resp.choices = [MagicMock()]
+    resp.choices[0].message.content = json.dumps(content_dict)
+    resp.usage = MagicMock(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_erpc_haemophilia():
+    """LLM decomposition should route ERPC+haemophilia to multiple specialists."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    mock_response = _make_llm_response({
+        "sub_questions": [{
+            "question": (
+                "When considering an ERPC for a patient with haemophilia, "
+                "which plan for anesthesia would likely be safest?"
+            ),
+            "target_agent": "LiteratureSpecialist",
+            "secondary_agents": ["ClinicalTrialsSpecialist", "DrugSpecialist"],
+        }],
+        "all_agents": [
+            "LiteratureSpecialist",
+            "ClinicalTrialsSpecialist",
+            "DrugSpecialist",
+        ],
+        "reasoning": (
+            "Haemophilia requires factor replacement (Drug), "
+            "procedure evidence (ClinicalTrials), and guidelines (Literature)"
+        ),
+    })
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=mock_response,
+    ):
+        result = await tool._llm_decompose(
+            "When considering an ERPC for a patient with haemophilia, "
+            "which plan for anesthesia would likely be safest?",
+            5,
+        )
+
+    assert result is not None
+    assert "DrugSpecialist" in result["all_agents"]
+    assert "ClinicalTrialsSpecialist" in result["all_agents"]
+    assert "LiteratureSpecialist" in result["all_agents"]
+    assert result["routing_method"] == "llm"
+    assert result["routing_confidence"] == 0.85
+    assert result["count"] == 1
+    sq = result["sub_questions"][0]
+    assert sq["target_agent"] == "LiteratureSpecialist"
+    assert sq["domain"] == "literature"
+    assert len(sq["secondary_agents"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_propagates_exception():
+    """When LLM raises, _llm_decompose should propagate the exception.
+
+    The caller (_run_async_impl) catches it and falls back to keywords.
+    """
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        side_effect=Exception("LLM error"),
+    ):
+        with pytest.raises(Exception, match="LLM error"):
+            await tool._llm_decompose("What causes diabetes?", 5)
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_validates_agent_names():
+    """LLM decomposition should reject invalid agent names."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    mock_response = _make_llm_response({
+        "sub_questions": [{
+            "question": "test question",
+            "target_agent": "FakeAgent",
+            "secondary_agents": ["LiteratureSpecialist"],
+        }],
+        "all_agents": ["FakeAgent", "LiteratureSpecialist"],
+    })
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=mock_response,
+    ):
+        result = await tool._llm_decompose("test question", 5)
+
+    # FakeAgent should be filtered out of all_agents
+    assert "FakeAgent" not in result["all_agents"]
+    assert "LiteratureSpecialist" in result["all_agents"]
+    # target_agent should fall back to LiteratureSpecialist
+    assert result["sub_questions"][0]["target_agent"] == "LiteratureSpecialist"
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_returns_none_on_unparseable():
+    """Unparseable LLM output should return None."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    resp = MagicMock()
+    resp.choices = [MagicMock()]
+    resp.choices[0].message.content = "This is not JSON at all."
+    resp.usage = MagicMock(prompt_tokens=50, completion_tokens=20, total_tokens=70)
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=resp,
+    ):
+        result = await tool._llm_decompose("What is aspirin?", 5)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_returns_none_when_all_agents_invalid():
+    """If every agent name is invalid, _llm_decompose should return None."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    mock_response = _make_llm_response({
+        "sub_questions": [{
+            "question": "test",
+            "target_agent": "BogusAgent",
+            "secondary_agents": ["AnotherFake"],
+        }],
+        "all_agents": ["BogusAgent", "AnotherFake"],
+    })
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=mock_response,
+    ):
+        result = await tool._llm_decompose("test", 5)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_run_async_uses_llm_when_model_configured():
+    """_run_async_impl should use LLM path when a model is configured."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+    ctx = MagicMock()
+
+    mock_response = _make_llm_response({
+        "sub_questions": [{
+            "question": "What are the side effects of metformin?",
+            "target_agent": "DrugSpecialist",
+            "secondary_agents": ["LiteratureSpecialist"],
+        }],
+        "all_agents": ["DrugSpecialist", "LiteratureSpecialist"],
+        "reasoning": "Drug safety question",
+    })
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=mock_response,
+    ):
+        result = await tool._run_async_impl(
+            {"question": "What are the side effects of metformin?"}, ctx
+        )
+
+    assert result["routing_method"] == "llm"
+    assert "DrugSpecialist" in result["all_agents"]
+
+
+@pytest.mark.asyncio
+async def test_run_async_falls_back_to_keyword_on_llm_failure():
+    """When LLM fails, _run_async_impl should fall back to keyword routing."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+    ctx = MagicMock()
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        side_effect=Exception("LLM unavailable"),
+    ):
+        result = await tool._run_async_impl(
+            {"question": "What are the side effects of metformin?"}, ctx
+        )
+
+    assert result["routing_method"] == "keyword"
+    assert result["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_run_async_keyword_when_no_model():
+    """Without a model configured, should use keyword routing directly."""
+    tool = QueryDecomposerTool()  # No tool_config → no model
+    ctx = MagicMock()
+
+    result = await tool._run_async_impl(
+        {"question": "What are the side effects of metformin?"}, ctx
+    )
+
+    assert result["routing_method"] == "keyword"
+
+
+@pytest.mark.asyncio
+async def test_llm_decompose_respects_max_sub():
+    """LLM decomposition should respect max_sub_questions limit."""
+    tool = QueryDecomposerTool(tool_config={"model": "test-model"})
+
+    mock_response = _make_llm_response({
+        "sub_questions": [
+            {"question": "Q1", "target_agent": "LiteratureSpecialist", "secondary_agents": []},
+            {"question": "Q2", "target_agent": "DrugSpecialist", "secondary_agents": []},
+            {"question": "Q3", "target_agent": "GenomicsSpecialist", "secondary_agents": []},
+        ],
+        "all_agents": ["LiteratureSpecialist", "DrugSpecialist", "GenomicsSpecialist"],
+    })
+
+    with patch(
+        "lifesci_tools.query_decomposer._litellm_acompletion",
+        return_value=mock_response,
+    ):
+        result = await tool._llm_decompose("complex multi-part question", 2)
+
+    assert result is not None
+    assert len(result["sub_questions"]) <= 2
+
+
+def test_agent_to_domain_mapping():
+    """_agent_to_domain should map known agents to their domain keys."""
+    assert QueryDecomposerTool._agent_to_domain("LiteratureSpecialist") == "literature"
+    assert QueryDecomposerTool._agent_to_domain("DrugSpecialist") == "drugs"
+    assert QueryDecomposerTool._agent_to_domain("GenomicsSpecialist") == "genomics"
+    assert QueryDecomposerTool._agent_to_domain("UnknownAgent") == "literature"
+
+
+def test_init_with_model_string():
+    """Constructor should accept a plain model string."""
+    tool = QueryDecomposerTool(tool_config={"model": "vertex_ai/gemini-2.5-flash"})
+    assert tool._model == "vertex_ai/gemini-2.5-flash"
+    assert tool._vertex_kwargs == {}
+    assert tool._temperature == 0.1
+
+
+def test_init_with_model_dict():
+    """Constructor should accept a model dict (from YAML anchor expansion)."""
+    tool = QueryDecomposerTool(tool_config={
+        "model": {
+            "model": "vertex_ai/gemini-2.5-flash",
+            "vertex_project": "my-project",
+            "vertex_location": "us-central1",
+        },
+        "temperature": 0.2,
+    })
+    assert tool._model == "vertex_ai/gemini-2.5-flash"
+    assert tool._vertex_kwargs == {
+        "vertex_project": "my-project",
+        "vertex_location": "us-central1",
+    }
+    assert tool._temperature == 0.2
+
+
+def test_init_no_config():
+    """Constructor with no config should set empty model (keyword-only mode)."""
+    tool = QueryDecomposerTool()
+    assert tool._model == ""
+    assert tool._vertex_kwargs == {}
