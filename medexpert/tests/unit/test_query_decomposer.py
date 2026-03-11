@@ -310,6 +310,27 @@ async def test_max_sub_questions_clamp_low(tool, ctx):
     assert result["count"] >= 1
 
 
+def test_route_haemophilia_erpc_gets_multiple_specialists():
+    """ERPC + haemophilia should route to Literature + ClinicalTrials + Drug."""
+    routes = _route_question(
+        "When considering an ERPC for a patient with haemophilia, "
+        "which plan for anesthesia would likely be safest?"
+    )
+    agents = {r["agent"] for r in routes}
+    assert "LiteratureSpecialist" in agents
+    assert len(agents) >= 2, f"Expected >= 2 specialists, got {agents}"
+    assert "ClinicalTrialsSpecialist" in agents or "DrugSpecialist" in agents
+
+
+def test_route_coagulation_disorder_gets_drug_specialist():
+    """Coagulation/bleeding disorder questions need DrugSpecialist for factor replacement."""
+    routes = _route_question(
+        "What factor replacement protocol is recommended for hemophilia A patients undergoing surgery?"
+    )
+    agents = {r["agent"] for r in routes}
+    assert "DrugSpecialist" in agents
+
+
 def test_split_preserves_relative_clause_with_which():
     """Comma + 'which' in a context clause should NOT split the question.
 
