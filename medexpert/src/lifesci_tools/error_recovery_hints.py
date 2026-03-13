@@ -57,6 +57,14 @@ _RECOVERY_HINTS: Dict[Tuple[str, str], str] = {
         "Census Bureau rate limit hit. "
         "SDOH data queries may be available through CDC WONDER."
     ),
+    ("knowledge_graph", "service_unavailable"): (
+        "Knowledge graph (Memgraph) is not running. "
+        "KG search results will be skipped — research continues with live sources."
+    ),
+    ("knowledge_graph", "circuit_open"): (
+        "Knowledge graph circuit breaker open. "
+        "KG search skipped — research continues with live sources."
+    ),
     # Wildcard hints (match any server)
     ("*", "circuit_open"): (
         "This data source is temporarily unavailable (circuit breaker triggered "

@@ -83,3 +83,15 @@ class TestEnrichMcpFailures:
     def test_empty_list(self):
         result = enrich_mcp_failures([])
         assert result == []
+
+
+class TestKnowledgeGraphRecoveryHints:
+    def test_service_unavailable_hint(self):
+        hint = get_recovery_hint("knowledge_graph", "service_unavailable")
+        assert hint is not None
+        assert "Memgraph" in hint
+
+    def test_circuit_open_hint(self):
+        hint = get_recovery_hint("knowledge_graph", "circuit_open")
+        assert hint is not None
+        assert "circuit breaker" in hint

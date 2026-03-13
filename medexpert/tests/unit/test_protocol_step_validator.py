@@ -613,3 +613,27 @@ class TestDynamicPeerFilteringCallback:
 
         result = protocol_step_validator_callback(ctx, llm_resp, comp)
         assert result is None  # All valid — fallback allows all peer_*
+
+
+# ── kg_search protocol step tests ────────────────────────────────────
+
+
+class TestKgSearchProtocolStep:
+    """kg_search should be allowed at step 1 (PLAN) only."""
+
+    def test_kg_search_allowed_at_step_1(self):
+        from lifesci_tools.protocol_step_validator import _is_tool_allowed
+        assert _is_tool_allowed("kg_search", 1) is True
+
+    def test_kg_search_rejected_at_step_0(self):
+        from lifesci_tools.protocol_step_validator import _is_tool_allowed
+        assert _is_tool_allowed("kg_search", 0) is False
+
+    def test_kg_search_rejected_at_step_2(self):
+        from lifesci_tools.protocol_step_validator import _is_tool_allowed
+        assert _is_tool_allowed("kg_search", 2) is False
+
+    def test_kg_search_rejected_at_step_3_through_6(self):
+        from lifesci_tools.protocol_step_validator import _is_tool_allowed
+        for step in (3, 4, 5, 6):
+            assert _is_tool_allowed("kg_search", step) is False, f"Failed at step {step}"
