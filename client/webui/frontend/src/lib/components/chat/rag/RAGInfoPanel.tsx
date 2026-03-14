@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink, AlertTriangle } from "lucide-react";
+import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink, AlertTriangle, Network } from "lucide-react";
 // Web-only version - enterprise icons removed
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/lib/components/ui/select";
@@ -723,6 +723,26 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                                     {totalSources} source{totalSources !== 1 ? "s" : ""} found across {ragData.length} search{ragData.length !== 1 ? "es" : ""}
                                 </p>
                             </div>
+
+                            {/* Knowledge Graph sources — rendered before web sources */}
+                            {ragData?.some(r => r.searchType === "kb_search") && (
+                                <div className="mb-3">
+                                    <div className="flex items-center gap-2 mb-2 text-sm font-medium text-purple-400">
+                                        <Network className="h-4 w-4" />
+                                        Knowledge Graph
+                                    </div>
+                                    <div className="space-y-2">
+                                        {ragData
+                                            .filter(r => r.searchType === "kb_search")
+                                            .flatMap(r => r.sources)
+                                            .map((source) => (
+                                                <div key={source.citationId} className="border-l-2 border-purple-500/40 pl-2">
+                                                    <SourceCard source={source} isHighlighted={highlightedSourceId === source.citationId} />
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <VirtualizedSourceCardList ragData={ragData} highlightedSourceId={highlightedSourceId} sortMode={sortMode} />
                         </div>
