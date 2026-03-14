@@ -89,6 +89,13 @@ const KnowledgeGraphPage: React.FC = () => {
         setHighlightedNodeId(null);
     }, []);
 
+    const handleViewSource = useCallback(({ type, value }: { type: string; value: string }) => {
+        const url = type === "pmid" ? `https://pubmed.ncbi.nlm.nih.gov/${value}/`
+            : type === "nct_id" ? `https://clinicaltrials.gov/study/${value}`
+            : `https://doi.org/${value}`;
+        window.open(url, "_blank");
+    }, []);
+
     const handleNLQResult = useCallback((nodeIds: string[]) => {
         if (nlqTimeoutRef.current) {
             clearTimeout(nlqTimeoutRef.current);
@@ -195,7 +202,7 @@ const KnowledgeGraphPage: React.FC = () => {
 
                 {/* Entity detail panel (right side) */}
                 {selectedNode && (
-                    <EntityDetailPanel nodeId={selectedNode.id} nodeData={selectedNode.data} onClose={handleCloseDetail} />
+                    <EntityDetailPanel nodeId={selectedNode.id} nodeData={selectedNode.data} onClose={handleCloseDetail} onViewSource={handleViewSource} />
                 )}
             </div>
 

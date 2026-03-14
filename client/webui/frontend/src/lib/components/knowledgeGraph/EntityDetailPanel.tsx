@@ -19,6 +19,7 @@ interface EntityDetailPanelProps {
     nodeId: string;
     nodeData: Record<string, unknown>;
     onClose: () => void;
+    onViewSource?: (identifier: { type: "pmid" | "nct_id" | "doi"; value: string }) => void;
 }
 
 function formatValue(value: unknown): string {
@@ -30,7 +31,7 @@ function formatValue(value: unknown): string {
 
 const HIDDEN_KEYS = new Set(["id", "label", "nodeLabel"]);
 
-const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData, onClose }) => {
+const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData, onClose, onViewSource }) => {
     const name = (nodeData.label as string) || nodeId;
     const nodeLabel = (nodeData.nodeLabel as string) || "Unknown";
     const labels = nodeLabel.split(",").map((l) => l.trim());
@@ -100,6 +101,19 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
                         >
                             View on ClinicalTrials.gov
                         </a>
+                    )}
+                    {onViewSource && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-3"
+                            onClick={() => onViewSource({
+                                type: pmid ? "pmid" : "nct_id",
+                                value: (pmid || nctId)!,
+                            })}
+                        >
+                            View in Sources
+                        </Button>
                     )}
                 </div>
             )}
