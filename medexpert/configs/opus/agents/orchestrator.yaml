@@ -75,6 +75,11 @@ apps:
         - all_agents: every specialist to delegate to
         Immediately proceed to STEP 2 — do NOT deliberate.
 
+        Before calling `query_decomposer`, call `kg_search` with the user's
+        question to check for prior knowledge in the graph. If results found,
+        include the KG findings in your planning context — they may reduce
+        the number of specialists needed.
+
         **STEP 2 — DELEGATE (PARALLEL)**
         After query_decomposer returns, look at the `all_agents` list in its output.
         Call ONLY the peer tools listed in `all_agents` — do NOT call peer tools
@@ -261,6 +266,10 @@ apps:
           component_base_path: src
           tool_config:
             model: *orchestrator_model
+
+        - tool_type: python
+          component_module: lifesci_tools.kg_search
+          component_base_path: src
 
         # ── Step 3: COLLECT (shared state + citations) ──
         - tool_type: python
