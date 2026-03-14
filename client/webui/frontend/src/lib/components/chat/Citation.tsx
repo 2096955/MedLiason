@@ -77,6 +77,13 @@ function extractFilename(filename: string): string {
  * Get display text for citation (filename or URL)
  */
 function getCitationDisplayText(citation: CitationType, maxLength: number = 30): string {
+    if (citation.type === "kg") {
+        const name = citation.source?.metadata?.title || citation.source?.filename || "KG Entity";
+        const labels = citation.source?.metadata?.labels;
+        const labelStr = Array.isArray(labels) ? labels[0] : "";
+        return labelStr ? `KG: ${labelStr} - ${name}` : `KG: ${name}`;
+    }
+
     // For web search citations, try to extract domain name even without full source data
     const isWebSearch = citation.source?.metadata?.type === "web_search" || citation.type === "search";
 
@@ -426,7 +433,7 @@ interface TextWithCitationsProps {
  * - s{turn}r{index} (e.g., "s0r0", "s1r2") -> type: "search"
  * - research{N} (e.g., "research0") -> type: "research"
  */
-function parseCitationIdLocal(citationId: string): { type: "search" | "research"; sourceId: number } | null {
+function parseCitationIdLocal(citationId: string): { type: "search" | "research" | "kg"; sourceId: number } | null {
     // Try sTrN format first
     const searchMatch = citationId.match(/^s(\d+)r(\d+)$/);
     if (searchMatch) {
@@ -445,6 +452,15 @@ function parseCitationIdLocal(citationId: string): { type: "search" | "research"
         };
     }
 
+    // Try kg format: kg{turn}r{index}
+    const kgMatch = citationId.match(/^kg(\d+)r(\d+)$/);
+    if (kgMatch) {
+        return {
+            type: "kg",
+            sourceId: parseInt(kgMatch[2], 10),
+        };
+    }
+
     return null;
 }
 
@@ -452,8 +468,8 @@ function parseCitationIdLocal(citationId: string): { type: "search" | "research"
  * Parse individual citations from a comma-separated content string
  * Supports: s0r0, s1r2, research0, research1
  */
-function parseMultiCitationIds(content: string): Array<{ type: "search" | "research"; sourceId: number; citationId: string }> {
-    const results: Array<{ type: "search" | "research"; sourceId: number; citationId: string }> = [];
+function parseMultiCitationIds(content: string): Array<{ type: "search" | "research" | "kg"; sourceId: number; citationId: string }> {
+    const results: Array<{ type: "search" | "research" | "kg"; sourceId: number; citationId: string }> = [];
     let individualMatch;
 
     INDIVIDUAL_CITATION_PATTERN.lastIndex = 0;
@@ -478,7 +494,7 @@ function parseMultiCitationIds(content: string): Array<{ type: "search" | "resea
  * This ensures we process them in order of appearance
  * Supports: s0r0, s1r2, research0, research1
  */
-const COMBINED_CITATION_PATTERN = /\[?\[cite:((?:s\d+r\d+|research\d+)(?:\s*,\s*(?:cite:)?(?:s\d+r\d+|research\d+))*)\]\]?/g;
+const COMBINED_CITATION_PATTERN = /\[?\[cite:((?:s\d+r\d+|research\d+|kg\d+r\d+)(?:\s*,\s*(?:cite:)?(?:s\d+r\d+|research\d+|kg\d+r\d+))*)\]\]?/g;
 
 /**
  * Process text node content to replace citation markers with React components
