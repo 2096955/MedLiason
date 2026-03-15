@@ -744,7 +744,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                                 </div>
                             )}
 
-                            <VirtualizedSourceCardList ragData={ragData} highlightedSourceId={highlightedSourceId} sortMode={sortMode} />
+                            <VirtualizedSourceCardList ragData={ragData?.filter(r => r.searchType !== "kb_search")} highlightedSourceId={highlightedSourceId} sortMode={sortMode} />
                         </div>
                     </TabsContent>
                 </Tabs>

@@ -4,6 +4,7 @@ import { Network, RefreshCw, Database, Loader2 } from "lucide-react";
 
 import { Button } from "@/lib/components/ui";
 import { cn } from "@/lib/utils";
+import { useChatContext } from "@/lib/hooks";
 import { useGraphData } from "@/lib/hooks/useGraphData";
 import GraphCanvas from "./GraphCanvas";
 import EntityDetailPanel from "./EntityDetailPanel";
@@ -31,6 +32,8 @@ const KnowledgeGraphPage: React.FC = () => {
     const [stats, setStats] = useState<GraphStats | null>(null);
     const [statsLoading, setStatsLoading] = useState(false);
     const nlqTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const { ragData } = useChatContext();
 
     const { nodes, edges, isLoading, error, isEmpty, refetch } = useGraphData({
         sessionId: sessionIdFromUrl || undefined,
@@ -89,11 +92,23 @@ const KnowledgeGraphPage: React.FC = () => {
         setHighlightedNodeId(null);
     }, []);
 
+    // MVP: always opens external URL. ragData is wired here for future cross-page
+    // bridge (e.g., navigate to /chat and highlight source in the Sources panel).
     const handleViewSource = useCallback(({ type, value }: { type: string; value: string }) => {
+        // Check if source exists in current session ragData (informational for now)
+        const _matchInRag = ragData
+            ?.flatMap(r => r.sources)
+            .find(s => s.sourceUrl?.includes(value));
         const url = type === "pmid" ? `https://pubmed.ncbi.nlm.nih.gov/${value}/`
             : type === "nct_id" ? `https://clinicaltrials.gov/study/${value}`
             : `https://doi.org/${value}`;
         window.open(url, "_blank");
+    }, [ragData]);
+
+    const handleSearchSources = useCallback((entityName: string) => {
+        // MVP: open PubMed search for the entity
+        const encoded = encodeURIComponent(entityName);
+        window.open(`https://pubmed.ncbi.nlm.nih.gov/?term=${encoded}`, "_blank");
     }, []);
 
     const handleNLQResult = useCallback((nodeIds: string[]) => {
@@ -202,7 +217,7 @@ const KnowledgeGraphPage: React.FC = () => {
 
                 {/* Entity detail panel (right side) */}
                 {selectedNode && (
-                    <EntityDetailPanel nodeId={selectedNode.id} nodeData={selectedNode.data} onClose={handleCloseDetail} onViewSource={handleViewSource} />
+                    <EntityDetailPanel nodeId={selectedNode.id} nodeData={selectedNode.data} onClose={handleCloseDetail} onViewSource={handleViewSource} onSearchSources={handleSearchSources} />
                 )}
             </div>
 

@@ -66,6 +66,7 @@ async def _call_kg_tool(tool_name: str, arguments: dict) -> dict:
 
 def _build_url_from_props(props: dict) -> str:
     """Construct a URL from node properties (pmid, nct_id, doi)."""
+    # Priority order: pmid > nct_id > doi (dict insertion order)
     for id_type, template in _ID_URL_TEMPLATES.items():
         value = props.get(id_type)
         if value:
@@ -75,6 +76,8 @@ def _build_url_from_props(props: dict) -> str:
 
 def _node_to_rag_source(node: dict, index: int) -> dict[str, Any]:
     """Convert a KG node dict into a RAG source via create_rag_source."""
+    # kg0 = fixed turn counter for MVP (one kg_search call per session at step 1).
+    # Future: increment per call.
     citation_id = f"kg0r{index}"
     labels = node.get("labels", [])
     props = node.get("properties", {})
@@ -97,6 +100,7 @@ def _node_to_rag_source(node: dict, index: int) -> dict[str, Any]:
         source_url=url or None,
         url=url or None,
         content_preview=content_preview,
+        # relevance_score=1.0: KG entities are from verified prior sessions
         relevance_score=1.0,
         source_type="kb_search",
         retrieved_at=datetime.now(timezone.utc).isoformat(),
@@ -160,6 +164,15 @@ class KgSearchTool(DynamicTool):
         query = args.get("query", "").strip()
 
         if not query:
+            return {"status": "invalid_query", "rag_metadata": None, "num_sources": 0}
+
+        # Sanitize query input — KG MCP server also validates internally
+        try:
+            from mcp_servers._security import sanitize_query
+            query = sanitize_query(query)
+        except ImportError:
+            pass  # Security module not available — KG MCP server validates internally
+        except ValueError:
             return {"status": "invalid_query", "rag_metadata": None, "num_sources": 0}
 
         session_id = args.get("session_id")

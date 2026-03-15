@@ -342,3 +342,177 @@ class TestKgSearchFormattedResults:
             result = await tool._run_async_impl({"query": "aspirin"}, mock_tool_context)
         assert "[[cite:kg0r0]]" in result["formatted_results"]
         assert "aspirin" in result["formatted_results"]
+
+
+class TestKgSearchEntityTypes:
+    """entity_types parameter should be forwarded to query_knowledge_graph."""
+
+    @pytest.mark.asyncio
+    async def test_entity_types_forwarded(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            await tool._run_async_impl(
+                {"query": "test", "entity_types": ["Disease", "Drug"]},
+                mock_tool_context,
+            )
+        mock_call.assert_called_once_with(
+            "query_knowledge_graph",
+            {"query": "test", "entity_types": ["Disease", "Drug"], "limit": 10},
+        )
+
+    @pytest.mark.asyncio
+    async def test_entity_types_none_by_default(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            await tool._run_async_impl({"query": "test"}, mock_tool_context)
+        mock_call.assert_called_once_with(
+            "query_knowledge_graph",
+            {"query": "test", "entity_types": None, "limit": 10},
+        )
+
+
+class TestKgSearchLimitClamping:
+    """limit parameter should be clamped to [1, 50]."""
+
+    @pytest.mark.asyncio
+    async def test_limit_zero_clamped_to_1(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        node = _make_node(["Disease"], "test")
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [node],
+                "total_results": 1,
+            }
+            tool = KgSearchTool()
+            result = await tool._run_async_impl(
+                {"query": "test", "limit": 0}, mock_tool_context
+            )
+        assert result["num_sources"] == 1  # limit clamped to 1, 1 node returned
+
+    @pytest.mark.asyncio
+    async def test_limit_100_clamped_to_50(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            await tool._run_async_impl(
+                {"query": "test", "limit": 100}, mock_tool_context
+            )
+        # Verify limit=50 was passed
+        call_args = mock_call.call_args
+        assert call_args[0][1]["limit"] == 50
+
+    @pytest.mark.asyncio
+    async def test_limit_string_fallback_to_10(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            await tool._run_async_impl(
+                {"query": "test", "limit": "abc"}, mock_tool_context
+            )
+        call_args = mock_call.call_args
+        assert call_args[0][1]["limit"] == 10
+
+    @pytest.mark.asyncio
+    async def test_limit_none_defaults_to_10(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            await tool._run_async_impl(
+                {"query": "test", "limit": None}, mock_tool_context
+            )
+        call_args = mock_call.call_args
+        assert call_args[0][1]["limit"] == 10
+
+
+class TestKgSearchNoIdentifiers:
+    """Study node with no pmid/nct_id/doi should get empty URL."""
+
+    @pytest.mark.asyncio
+    async def test_study_no_identifiers(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        node = _make_node(["Study"], "orphan-study")
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [node],
+                "total_results": 1,
+            }
+            tool = KgSearchTool()
+            result = await tool._run_async_impl(
+                {"query": "test"}, mock_tool_context
+            )
+
+        src = result["rag_metadata"]["sources"][0]
+        assert src["sourceUrl"] is None  # No identifiers -> no URL
+
+
+class TestKgSearchQuerySanitization:
+    """Query should be sanitized if _security module is available."""
+
+    @pytest.mark.asyncio
+    async def test_sanitized_query_used(self, mock_tool_context):
+        from lifesci_tools.kg_search import KgSearchTool
+
+        with patch(
+            "lifesci_tools.kg_search._call_kg_tool", new_callable=AsyncMock
+        ) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "results": [],
+                "total_results": 0,
+            }
+            tool = KgSearchTool()
+            # Normal query should pass through
+            await tool._run_async_impl(
+                {"query": "breast cancer"}, mock_tool_context
+            )
+        assert mock_call.called

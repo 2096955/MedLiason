@@ -20,6 +20,7 @@ interface EntityDetailPanelProps {
     nodeData: Record<string, unknown>;
     onClose: () => void;
     onViewSource?: (identifier: { type: "pmid" | "nct_id" | "doi"; value: string }) => void;
+    onSearchSources?: (entityName: string) => void;
 }
 
 function formatValue(value: unknown): string {
@@ -31,7 +32,7 @@ function formatValue(value: unknown): string {
 
 const HIDDEN_KEYS = new Set(["id", "label", "nodeLabel"]);
 
-const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData, onClose, onViewSource }) => {
+const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData, onClose, onViewSource, onSearchSources }) => {
     const name = (nodeData.label as string) || nodeId;
     const nodeLabel = (nodeData.nodeLabel as string) || "Unknown";
     const labels = nodeLabel.split(",").map((l) => l.trim());
@@ -115,6 +116,19 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
                             View in Sources
                         </Button>
                     )}
+                </div>
+            )}
+
+            {/* Search Sources action for entity nodes (Disease, Drug, Gene) */}
+            {onSearchSources && !pmid && !nctId && (
+                <div className="border-b border-border px-4 py-3">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onSearchSources(name)}
+                    >
+                        Search Sources
+                    </Button>
                 </div>
             )}
 
