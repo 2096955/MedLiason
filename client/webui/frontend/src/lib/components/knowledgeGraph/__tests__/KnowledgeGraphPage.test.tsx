@@ -12,10 +12,7 @@ vi.mock("react-router-dom", () => ({
     useNavigate: () => vi.fn(),
 }));
 
-// Mock useChatContext — KnowledgeGraphPage uses it for ragData access
-vi.mock("@/lib/hooks", () => ({
-    useChatContext: () => ({ ragData: [] }),
-}));
+
 
 // Mock fetch globally
 const mockFetch = vi.fn();

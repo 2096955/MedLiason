@@ -424,6 +424,8 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         const isDeepResearch = ragData.some(search => search.searchType === "deep_research");
 
         ragData.forEach(search => {
+            // Skip kb_search — rendered in dedicated KG section
+            if (search.searchType === "kb_search") return;
             search.sources.forEach(source => {
                 const sourceType = source.sourceType || "web";
 
@@ -472,29 +474,6 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         const snippets = Array.from(snippetMap.values());
         const all = [...fullyRead, ...snippets];
 
-        console.log("[RAGInfoPanel] Source filtering:", {
-            isWebSearch,
-            isDeepResearch,
-            totalSourcesBeforeFilter: ragData.reduce((sum, s) => sum + s.sources.length, 0),
-            fullyReadSources: fullyRead.length,
-            snippetSources: snippets.length,
-            sampleFullyRead: fullyRead.slice(0, 3).map(s => ({
-                url: s.url,
-                title: s.title,
-                fetched: s.metadata?.fetched,
-                fetch_status: s.metadata?.fetch_status,
-                contentPreview: s.contentPreview?.substring(0, 100),
-                hasMarker: s.contentPreview?.includes("[Full Content Fetched]"),
-            })),
-            sampleSnippets: snippets.slice(0, 3).map(s => ({
-                url: s.url,
-                title: s.title,
-                fetched: s.metadata?.fetched,
-                fetch_status: s.metadata?.fetch_status,
-                contentPreview: s.contentPreview?.substring(0, 100),
-                hasMarker: s.contentPreview?.includes("[Full Content Fetched]"),
-            })),
-        });
 
         return { fullyReadSources: fullyRead, snippetSources: snippets, allUniqueSources: all };
     })();
