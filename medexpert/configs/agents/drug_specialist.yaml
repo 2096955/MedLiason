@@ -102,9 +102,10 @@ apps:
             timeout: 30
 
 
-        # -- Web Search Fallback (DuckDuckGo) --
-        - tool_type: builtin-group
-          group_name: "web_search"
+        # -- Web Search (Firecrawl primary, Brave fallback) --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
         - tool_type: builtin-group
           group_name: "web"
         - tool_type: python

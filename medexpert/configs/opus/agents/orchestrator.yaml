@@ -373,4 +373,4 @@ apps:
           - "ProviderIntelSpecialistOpus"
           - "VerifierAgentOpus"
           - "ReviserAgentOpus"
-        request_timeout_seconds: 2000
+        request_timeout_seconds: 120

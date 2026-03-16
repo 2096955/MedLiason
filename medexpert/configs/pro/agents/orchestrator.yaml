@@ -367,4 +367,4 @@ apps:
           - "ProviderIntelSpecialistPro"
           - "VerifierAgentPro"
           - "ReviserAgentPro"
-        request_timeout_seconds: 2000
+        request_timeout_seconds: 120
