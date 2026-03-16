@@ -124,8 +124,6 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
-        - tool_type: builtin-group
-          group_name: "web"
         - tool_type: python
           component_module: lifesci_tools.evidence_grader
           component_base_path: src
