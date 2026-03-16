@@ -328,10 +328,3 @@ export function getCitationTooltip(citation: Citation): string {
     const score = (citation.source.relevanceScore * 100).toFixed(1);
     return `${citation.source.filename} (${score}% relevance)`;
 }
-
-/**
- * Get citation link URL (for kb_search with source URLs)
- */
-export function getCitationLink(citation: Citation): string | undefined {
-    return citation.source?.sourceUrl;
-}
