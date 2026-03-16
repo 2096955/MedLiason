@@ -27,7 +27,7 @@ const KnowledgeGraphPage: React.FC = () => {
     const sessionIdFromUrl = searchParams.get("session");
 
     const [entityFilter, setEntityFilter] = useState<EntityFilter>("All");
-    const [selectedNode, setSelectedNode] = useState<{ id: string; data: Record<string, unknown> } | null>(null);
+    const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
     const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
     const [stats, setStats] = useState<GraphStats | null>(null);
     const [statsLoading, setStatsLoading] = useState(false);
@@ -74,16 +74,7 @@ const KnowledgeGraphPage: React.FC = () => {
             clearTimeout(nlqTimeoutRef.current);
             nlqTimeoutRef.current = null;
         }
-        setSelectedNode({
-            id: node.id,
-            data: {
-                ...node.properties,
-                id: node.id,
-                label: node.name,
-                nodeLabel: node.labels[0] || "Unknown",
-                description: node.description,
-            },
-        });
+        setSelectedNode(node);
         setHighlightedNodeId(node.id);
     }, []);
 
@@ -217,7 +208,7 @@ const KnowledgeGraphPage: React.FC = () => {
 
                 {/* Entity detail panel (right side) */}
                 {selectedNode && (
-                    <EntityDetailPanel nodeId={selectedNode.id} nodeData={selectedNode.data} onClose={handleCloseDetail} onViewSource={handleViewSource} onSearchSources={handleSearchSources} />
+                    <EntityDetailPanel node={selectedNode} onClose={handleCloseDetail} onViewSource={handleViewSource} onSearchSources={handleSearchSources} />
                 )}
             </div>
 

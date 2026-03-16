@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 
 import { Button } from "@/lib/components/ui";
 import { cn } from "@/lib/utils";
+import type { GraphNode } from "@/lib/types";
 
 const LABEL_COLORS: Record<string, string> = {
     Disease: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -15,9 +16,8 @@ const LABEL_COLORS: Record<string, string> = {
 
 const DEFAULT_LABEL_COLOR = "bg-gray-500/20 text-gray-400 border-gray-500/30";
 
-interface EntityDetailPanelProps {
-    nodeId: string;
-    nodeData: Record<string, unknown>;
+export interface EntityDetailPanelProps {
+    node: GraphNode;
     onClose: () => void;
     onViewSource?: (identifier: { type: "pmid" | "nct_id" | "doi"; value: string }) => void;
     onSearchSources?: (entityName: string) => void;
@@ -30,26 +30,26 @@ function formatValue(value: unknown): string {
     return String(value);
 }
 
-const HIDDEN_KEYS = new Set(["id", "label", "nodeLabel"]);
+const HIDDEN_KEYS = new Set(["name", "description"]);
 
-const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData, onClose, onViewSource, onSearchSources }) => {
-    const name = (nodeData.label as string) || nodeId;
-    const nodeLabel = (nodeData.nodeLabel as string) || "Unknown";
-    const labels = nodeLabel.split(",").map((l) => l.trim());
-    const description = nodeData.description as string | undefined;
+const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ node, onClose, onViewSource, onSearchSources }) => {
+    const name = node.name || node.id;
+    const labels = node.labels;
+    const nodeLabel = labels[0] || "Unknown";
+    const description = node.description;
 
     // Filter out internal keys and empty values to show user-relevant properties
-    const properties = Object.entries(nodeData)
-        .filter(([key]) => !HIDDEN_KEYS.has(key) && key !== "description")
+    const properties = Object.entries(node.properties)
+        .filter(([key]) => !HIDDEN_KEYS.has(key))
         .filter(([, value]) => value !== "" && value !== null && value !== undefined);
 
-    const rawPmid = nodeData.pmid as string | undefined;
-    const rawNctId = nodeData.nct_id as string | undefined;
+    const rawPmid = node.properties.pmid as string | undefined;
+    const rawNctId = node.properties.nct_id as string | undefined;
     const pmid = rawPmid && /^\d+$/.test(rawPmid) ? rawPmid : null;
     // Assumes NCT-prefixed IDs only. ISRCTN/EUCTR identifiers from other registries
     // may appear in nct_id if source collection expands — extend regex if needed.
     const nctId = rawNctId && /^NCT\d+$/i.test(rawNctId) ? rawNctId : null;
-    const isPartial = nodeData.partial === true;
+    const isPartial = node.properties.partial === true;
 
     return (
         <div className="flex h-full w-80 flex-col border-l border-border bg-background">
@@ -158,7 +158,7 @@ const EntityDetailPanel: React.FC<EntityDetailPanelProps> = ({ nodeId, nodeData,
 
             {/* Footer */}
             <div className="border-t border-border px-4 py-2">
-                <p className="text-xs text-muted-foreground">ID: {nodeId}</p>
+                <p className="text-xs text-muted-foreground">ID: {node.id}</p>
             </div>
         </div>
     );
