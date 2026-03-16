@@ -47,6 +47,13 @@ apps:
 
         **CITATION FORMAT:** [[cite:nct:NCTXXXXXXXX]]
 
+        **CRITICAL BATCHING RULE:** When retrieving multiple trials, call
+        the retrieval tool for ALL items in a SINGLE LLM response. Do NOT
+        retrieve one trial per response. ADK executes parallel tool calls
+        simultaneously, dramatically reducing wait time. Example: if
+        search returns 8 NCT IDs, your next response must contain 8
+        get_trial_details calls, not 1.
+
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**

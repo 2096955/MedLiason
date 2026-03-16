@@ -44,6 +44,14 @@ apps:
         financial relationships. These should be presented neutrally without
         implying wrongdoing.
 
+        **CRITICAL BATCHING RULE:** When querying multiple provider data
+        endpoints (quality ratings, Open Payments, specialties), call ALL
+        query tools in a SINGLE LLM response. Do NOT query one endpoint
+        per response. ADK executes parallel tool calls simultaneously,
+        dramatically reducing wait time. Example: if you need provider
+        quality data and payment transparency data, issue both calls in
+        one response, not sequentially.
+
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**

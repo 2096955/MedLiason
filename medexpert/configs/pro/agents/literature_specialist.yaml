@@ -61,6 +61,13 @@ apps:
         - Flag retracted or corrected articles
         - Distinguish between primary research and review articles
 
+        **CRITICAL BATCHING RULE:** When retrieving multiple items (articles,
+        abstracts, guidelines), call the retrieval tool for ALL items in a
+        SINGLE LLM response. Do NOT retrieve one item per response. ADK
+        executes parallel tool calls simultaneously, dramatically reducing
+        wait time. Example: if search_pubmed returns 10 PMIDs, your next
+        response must contain 10 get_article_abstract calls, not 1.
+
         **UK CLINICAL GUIDELINES (NHS + BMA):**
         You also have access to UK clinical guideline tools via Firecrawl:
         - search_nhs_conditions -- search NHS condition pages for clinical guidance

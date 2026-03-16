@@ -45,6 +45,14 @@ apps:
         **SAFETY:** Never recommend specific dosages. Always note that
         prescribing decisions should be made by healthcare providers.
 
+        **CRITICAL BATCHING RULE:** When retrieving multiple items (drug
+        records, adverse event reports, labels), call the retrieval tool
+        for ALL items in a SINGLE LLM response. Do NOT retrieve one item
+        per response. ADK executes parallel tool calls simultaneously,
+        dramatically reducing wait time. Example: if you need adverse
+        events, label info, and recall data for a drug, issue all 3
+        OpenFDA calls in one response, not sequentially.
+
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**

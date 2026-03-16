@@ -46,6 +46,7 @@ shared_config:
       vertex_location: "global"
       temperature: 0.3
       max_tokens: 12000
+      parallel_tool_calls: true
       cache_strategy: "none"
       num_retries: 2
       fallbacks:

@@ -41,6 +41,14 @@ apps:
         - Environmental health disparities
         - Toxicology and contaminant data
 
+        **CRITICAL BATCHING RULE:** When querying multiple data sources
+        (EPA AQS, EJScreen, Census), call ALL query tools in a SINGLE
+        LLM response. Do NOT query one source per response. ADK executes
+        parallel tool calls simultaneously, dramatically reducing wait
+        time. Example: if you need air quality data, EJScreen scores,
+        and Census SDOH data, issue all 3 calls in one response, not
+        sequentially.
+
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**

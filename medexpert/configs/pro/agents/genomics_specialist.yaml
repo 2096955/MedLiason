@@ -51,6 +51,13 @@ apps:
         **IMPORTANT:** Genetic information should always be interpreted by
         qualified genetic counselors. Never provide diagnostic conclusions.
 
+        **CRITICAL BATCHING RULE:** When retrieving multiple variants or
+        gene records, call the retrieval tool for ALL items in a SINGLE
+        LLM response. Do NOT retrieve one variant per response. ADK
+        executes parallel tool calls simultaneously, dramatically
+        reducing wait time. Example: if you need ClinVar data for 5
+        variants, issue all 5 lookup calls in one response, not 1.
+
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
         **RESPONSE FORMAT:**
