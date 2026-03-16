@@ -338,7 +338,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         );
     }
 
-    const isAllDeepResearch = ragData.every(search => search.searchType === "deep_research" || search.searchType === "web_search");
+    const isAllDeepResearch = ragData.every(search => search.searchType === "deep_research" || search.searchType === "web_search" || search.searchType === "kb_search");
 
     // Calculate total sources across all searches (including images with valid source links)
     const totalSources = ragData.reduce((sum, search) => {
@@ -536,6 +536,26 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                         {panelTitle && (
                             <div className="border-border/50 mb-4 border-b pb-3">
                                 <h2 className="text-foreground text-base leading-tight font-semibold">{panelTitle}</h2>
+                            </div>
+                        )}
+
+                        {/* Knowledge Graph sources — rendered before grouped research sources */}
+                        {ragData?.some(r => r.searchType === "kb_search") && (
+                            <div className="mb-3">
+                                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-purple-400">
+                                    <Network className="h-4 w-4" />
+                                    Knowledge Graph
+                                </div>
+                                <div className="space-y-2">
+                                    {ragData
+                                        .filter(r => r.searchType === "kb_search")
+                                        .flatMap(r => r.sources)
+                                        .map((source) => (
+                                            <div key={source.citationId} className="border-l-2 border-purple-500/40 pl-2">
+                                                <SourceCard source={source} isHighlighted={highlightedSourceId === source.citationId} />
+                                            </div>
+                                        ))}
+                                </div>
                             </div>
                         )}
 
