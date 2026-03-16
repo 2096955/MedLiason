@@ -46,13 +46,15 @@ def _parse_id_list(xml_text: str) -> list[str]:
     return [id_elem.text for id_elem in id_list.findall("Id") if id_elem.text]
 
 
-def _parse_abstract(xml_text: str) -> dict:
-    """Parse efetch XML for a single article abstract and title."""
-    root = ET.fromstring(xml_text)
-    article = root.find(".//PubmedArticle")
-    if article is None:
-        return {"error": "Article not found in response"}
+MAX_BATCH_PMIDS = 20
 
+
+def _parse_article_element(article) -> dict:
+    """Parse a single PubmedArticle XML element into a dict.
+
+    Shared by ``_parse_abstract`` (single-article efetch) and
+    ``_parse_batch_xml`` (multi-article efetch).
+    """
     # Title
     title_elem = article.find(".//ArticleTitle")
     title = title_elem.text if title_elem is not None and title_elem.text else ""
@@ -97,6 +99,35 @@ def _parse_abstract(xml_text: str) -> dict:
         "journal": journal,
         "pub_date": f"{year} {month}".strip(),
     }
+
+
+def _parse_abstract(xml_text: str) -> dict:
+    """Parse efetch XML for a single article abstract and title."""
+    root = ET.fromstring(xml_text)
+    article = root.find(".//PubmedArticle")
+    if article is None:
+        return {"error": "Article not found in response"}
+    return _parse_article_element(article)
+
+
+def _parse_batch_xml(xml_text: str, requested_pmids: list[str]) -> list[dict]:
+    """Parse a multi-article efetch XML response.
+
+    Returns a list of article dicts (one per ``<PubmedArticle>`` element).
+    Gracefully returns an empty list on malformed XML.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        log.error("Failed to parse batch efetch XML")
+        return []
+
+    articles = []
+    for article_elem in root.findall(".//PubmedArticle"):
+        parsed = _parse_article_element(article_elem)
+        articles.append(parsed)
+
+    return articles
 
 
 def _parse_esummary(xml_text: str) -> dict:
@@ -248,6 +279,72 @@ async def get_article_metadata(pmid: str) -> dict:
         return {"error": f"PubMed esummary returned {response.status_code}"}
 
     return {**_parse_esummary(response.text), "success": True}
+
+
+@mcp.tool()
+async def get_articles_batch(pmids: str) -> dict:
+    """Retrieve abstracts for multiple PubMed articles in a single request.
+
+    Accepts a comma-separated string of PMIDs (e.g. "12345678,23456789,34567890").
+    Returns up to 20 articles per call. Far more efficient than calling
+    get_article_abstract() in a loop — one HTTP round-trip instead of N.
+
+    Returns {success, articles, count, missing_pmids} on success.
+    """
+    if not pmids or not pmids.strip():
+        return {
+            "success": False,
+            "error": "Empty PMIDs string: provide comma-separated numeric PMIDs",
+        }
+
+    # Parse, validate, and clamp to MAX_BATCH_PMIDS
+    raw_ids = [p.strip() for p in pmids.split(",") if p.strip()]
+    valid_ids = [p for p in raw_ids if p.isdigit()]
+    if not valid_ids:
+        return {
+            "success": False,
+            "error": "No valid numeric PMIDs found in input",
+        }
+
+    clamped_ids = valid_ids[:MAX_BATCH_PMIDS]
+    if len(valid_ids) > MAX_BATCH_PMIDS:
+        log.warning(
+            "Clamping batch request from %d to %d PMIDs",
+            len(valid_ids),
+            MAX_BATCH_PMIDS,
+        )
+
+    params = _base_params()
+    params.update({
+        "db": "pubmed",
+        "id": ",".join(clamped_ids),
+        "rettype": "abstract",
+    })
+
+    try:
+        response = await resilient_get(PUBMED_EFETCH_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "pubmed", "get_articles_batch", articles=[])
+
+    if response.status_code != 200:
+        return {
+            "success": False,
+            "error": f"PubMed efetch returned {response.status_code}",
+            "articles": [],
+        }
+
+    articles = _parse_batch_xml(response.text, clamped_ids)
+
+    # Identify PMIDs that were requested but not returned
+    returned_pmids = {a["pmid"] for a in articles}
+    missing = [p for p in clamped_ids if p not in returned_pmids]
+
+    return {
+        "success": True,
+        "articles": articles,
+        "count": len(articles),
+        "missing_pmids": missing,
+    }
 
 
 if __name__ == "__main__":
