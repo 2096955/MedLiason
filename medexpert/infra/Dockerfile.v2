@@ -24,13 +24,10 @@ RUN pip install --no-cache-dir mcp-memgraph
 # Verified: gemini-2.5-flash works correctly under 1.82.0 (backward compatible).
 RUN pip install --force-reinstall --no-deps "litellm>=1.82.0,<2.0.0"
 
-# Override google-adk for Gemini 3.x thought_signature support.
-# SAM 1.16.4 pins google-adk==1.18.0 which predates thought_signature handling.
-# Gemini 3.x models (gemini-3.1-pro-preview) require thought_signatures in multi-turn
-# tool calls — without them, the model returns 400 BadRequest after multiple tool uses.
-# ADK 1.23.0+ preserves thought_signatures in FunctionCall conversions.
-# See: https://github.com/google/adk-python/issues/3705
-RUN pip install --force-reinstall --no-deps "google-adk>=1.23.0,<2.0.0"
+# NOTE: google-adk==1.18.0 stays as-is (pinned by SAM 1.16.4).
+# Upgrading to 1.23.0+ with --no-deps broke Pro entirely (0 tools, immediate error).
+# The thought_signature issue for gemini-3.1-pro-preview (see github.com/google/adk-python/issues/3705)
+# must be addressed by upgrading SAM itself, not force-installing ADK separately.
 
 # Cold store data directory
 RUN mkdir -p /app/data
