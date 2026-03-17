@@ -60,6 +60,12 @@ spec:
               value: "fc-2146c607264b4ea899e16c2a7bc951ec"
             - name: BRAVE_SEARCH_API_KEY
               value: "BSAywatPDpXvmOj72JwHZnVelu0jPHx"
+            - name: LANGFUSE_SECRET_KEY
+              value: "sk-lf-28b3e832-8257-4610-8d60-e51338e84c69"
+            - name: LANGFUSE_PUBLIC_KEY
+              value: "pk-lf-0026b3fa-acd0-4fb6-81c8-99e4b6686145"
+            - name: LANGFUSE_BASE_URL
+              value: "https://cloud.langfuse.com"
           startupProbe:
             httpGet:
               path: /health
