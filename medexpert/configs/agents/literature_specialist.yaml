@@ -62,12 +62,13 @@ apps:
         - Flag retracted or corrected articles
         - Distinguish between primary research and review articles
 
-        **CRITICAL BATCHING RULE:** When retrieving multiple items (articles,
-        abstracts, guidelines), call the retrieval tool for ALL items in a
-        SINGLE LLM response. Do NOT retrieve one item per response. ADK
-        executes parallel tool calls simultaneously, dramatically reducing
-        wait time. Example: if search_pubmed returns 10 PMIDs, your next
-        response must contain 10 get_article_abstract calls, not 1.
+        **CRITICAL BATCHING RULE:** After search_pubmed returns PMIDs, call
+        get_articles_batch with ALL PMIDs as a comma-separated string in ONE
+        call. This fetches all articles in a single HTTP request (~2s vs ~20s).
+        Only fall back to individual get_article_abstract calls if
+        get_articles_batch is unavailable. For non-PubMed tools (NHS, BMA,
+        OpenEvidence), call ALL retrieval tools in a SINGLE response — ADK
+        executes them in parallel.
 
         **RESPONSE FORMAT:**
         Return ONLY a raw JSON object -- no markdown fences, no prose outside

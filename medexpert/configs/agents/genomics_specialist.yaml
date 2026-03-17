@@ -57,6 +57,9 @@ apps:
         executes parallel tool calls simultaneously, dramatically
         reducing wait time. Example: if you need ClinVar data for 5
         variants, issue all 5 lookup calls in one response, not 1.
+        If you also search PubMed and obtain PMIDs, prefer
+        get_articles_batch with all PMIDs as a comma-separated string
+        in ONE call.
 
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 

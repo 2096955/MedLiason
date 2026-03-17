@@ -51,7 +51,9 @@ apps:
         per response. ADK executes parallel tool calls simultaneously,
         dramatically reducing wait time. Example: if you need adverse
         events, label info, and recall data for a drug, issue all 3
-        OpenFDA calls in one response, not sequentially.
+        OpenFDA calls in one response, not sequentially. If you also
+        search PubMed and obtain PMIDs, prefer get_articles_batch with
+        all PMIDs as a comma-separated string in ONE call.
 
         If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
 
