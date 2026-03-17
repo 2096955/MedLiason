@@ -197,12 +197,12 @@ class TestDetectStepAdvancement:
         )
         assert result == 3
 
-    def test_report_generator_advances_to_5(self):
-        """report_generator completes step 4, advances to step 5 (ready for VERIFY)."""
+    def test_report_generator_stays_at_4(self):
+        """report_generator stays at step 4 (SYNTHESIZE) — text answer emitted before VERIFY."""
         result = _detect_step_advancement(
             "report_generator", {}, current_step=4
         )
-        assert result == 5
+        assert result == 4
 
     def test_peer_verifier_advances_to_5(self):
         result = _detect_step_advancement(
@@ -327,6 +327,21 @@ class TestProtocolStepValidatorCallback:
 
         result = protocol_step_validator_callback(ctx, llm_resp, comp)
         assert result is None
+
+    def test_text_response_at_step_4_passes_persist_gate(self):
+        """After report_generator, orchestrator emits text at step 4 — must NOT be blocked by PERSIST enforcement."""
+        session_state = {_SESSION_STATE_KEY: 4}
+        ctx, _ = _make_callback_context(session_state)
+        comp = _make_host_component()
+        llm_resp = LlmResponse(
+            content=adk_types.Content(
+                role="model",
+                parts=[adk_types.Part(text="Here is the complete answer with citations...")],
+            ),
+            partial=False,
+        )
+        result = protocol_step_validator_callback(ctx, llm_resp, comp)
+        assert result is None  # PERSIST gate only fires at step >= 5
 
     def test_valid_tool_at_step_0_passes(self):
         """memory_plane at step 0 should pass through."""

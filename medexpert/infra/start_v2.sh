@@ -132,20 +132,11 @@ done
 TIER1_PORTS="9001 9002 9003 9004 9005"
 
 echo "[MedExpert-v2] Waiting for MCP servers..."
-for entry in "${MCP_SERVERS[@]}"; do
-  port="${entry##*:}"
-  module="${entry%%:*}"
-  ready=false
 
-  # Tier 1 gets more attempts (45s) and blocks on failure
-  if echo "$TIER1_PORTS" | grep -qw "$port"; then
-    max_attempts=45
-    tier="Tier1"
-  else
-    max_attempts=30
-    tier="Tier2"
-  fi
-
+# Function to check a single port
+check_port() {
+  local port=$1 module=$2 tier=$3 max_attempts=$4
+  local ready=false
   for i in $(seq 1 $max_attempts); do
     if python -c "import socket; s=socket.create_connection(('localhost',$port),timeout=2); s.close()" 2>/dev/null; then
       ready=true
@@ -153,16 +144,44 @@ for entry in "${MCP_SERVERS[@]}"; do
     fi
     sleep 1
   done
-
   if [ "$ready" = true ]; then
     echo "[MedExpert-v2]   [$tier] Port $port ready ($module)"
+    return 0
   elif [ "$tier" = "Tier1" ]; then
-    echo "[MedExpert-v2]   FATAL: $tier port $port not ready after ${max_attempts}s ($module) — aborting"
+    echo "[MedExpert-v2]   FATAL: $tier port $port not ready after ${max_attempts}s ($module)"
+    return 1
+  else
+    echo "[MedExpert-v2]   WARNING: $tier port $port not ready ($module) — continuing"
+    return 0
+  fi
+}
+
+# Launch all health checks in parallel
+TIER1_PIDS=()
+TIER2_PIDS=()
+for entry in "${MCP_SERVERS[@]}"; do
+  port="${entry##*:}"
+  module="${entry%%:*}"
+  if echo "$TIER1_PORTS" | grep -qw "$port"; then
+    check_port "$port" "$module" "Tier1" 45 &
+    TIER1_PIDS+=($!)
+  else
+    check_port "$port" "$module" "Tier2" 30 &
+    TIER2_PIDS+=($!)
+  fi
+done
+
+# Wait for Tier 1 (blocking — abort if any fail)
+for pid in "${TIER1_PIDS[@]}"; do
+  if ! wait "$pid"; then
     echo "[MedExpert-v2]   Tier 1 MCP servers are required for core research pipeline."
     exit 1
-  else
-    echo "[MedExpert-v2]   WARNING: $tier port $port not ready ($module) — continuing (graceful degradation)"
   fi
+done
+
+# Wait for Tier 2 (non-blocking — log warnings only)
+for pid in "${TIER2_PIDS[@]}"; do
+  wait "$pid" || true
 done
 
 # ---------------------------------------------------------------------------

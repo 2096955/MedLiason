@@ -12,6 +12,7 @@ URL construction rules:
   explicit URL → used as-is
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -442,14 +443,26 @@ class SourceCollectorTool(DynamicTool):
                 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
                 try:
                     import redis as _redis
-                    r = _redis.from_url(redis_url, decode_responses=False)
-                    redis_key = f"medexpert:{session_id}:evidence:citation_map_json"
-                    r.set(redis_key, citation_map_json.encode("utf-8"), ex=3600)
-                    # Also store the raw sources array (has pmid/nct_id/doi/title/year)
-                    # for graph_writer entity extraction at PERSIST step.
-                    raw_key = f"medexpert:{session_id}:evidence:published_sources_raw"
-                    r.set(raw_key, json.dumps(sources).encode("utf-8"), ex=3600)
-                    r.close()
+
+                    def _sync_redis_store():
+                        r = _redis.from_url(redis_url, decode_responses=False)
+                        try:
+                            r.set(
+                                f"medexpert:{session_id}:evidence:citation_map_json",
+                                citation_map_json.encode("utf-8"),
+                                ex=3600,
+                            )
+                            # Also store the raw sources array (has pmid/nct_id/doi/title/year)
+                            # for graph_writer entity extraction at PERSIST step.
+                            r.set(
+                                f"medexpert:{session_id}:evidence:published_sources_raw",
+                                json.dumps(sources).encode("utf-8"),
+                                ex=3600,
+                            )
+                        finally:
+                            r.close()
+
+                    await asyncio.to_thread(_sync_redis_store)
                     logger.info(
                         "%s Auto-stored citation_map_json + published_sources_raw in Redis (%d entries, session=%s)",
                         log_id,

@@ -37,6 +37,29 @@ MEMGRAPH_TIMEOUT = 5  # seconds
 _driver = None
 _driver_lock = threading.Lock()
 
+# ── Redis connection (lazy singleton) ────────────────────────────────
+_redis_client = None
+_redis_lock = threading.Lock()
+
+
+def _get_redis_client():
+    """Get a shared async Redis client (thread-safe lazy singleton)."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    with _redis_lock:
+        if _redis_client is not None:
+            return _redis_client
+        try:
+            import redis.asyncio as aioredis
+
+            redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+            _redis_client = aioredis.from_url(redis_url, decode_responses=True)
+            return _redis_client
+        except ImportError:
+            log.warning("graph_writer: redis.asyncio not available")
+            return None
+
 
 def _get_rw_driver():
     """Get the read-write Memgraph driver (thread-safe lazy singleton)."""
@@ -707,67 +730,60 @@ async def _read_session_data(session_id: str) -> dict[str, Any]:
     }
 
     try:
-        import redis.asyncio as aioredis
+        client = _get_redis_client()
+        if client is None:
+            return data
 
-        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-        client = aioredis.from_url(redis_url, decode_responses=True)
+        # Key prefix matches memory_plane._make_key(): "medexpert:{sid}:{ns}:{key}"
+        pfx = f"medexpert:{session_id}"
 
-        try:
-            # Key prefix matches memory_plane._make_key(): "medexpert:{sid}:{ns}:{key}"
-            pfx = f"medexpert:{session_id}"
+        # Read key session signals
+        specs = await client.get(f"{pfx}:intermediate:specialists_used")
+        if specs:
+            data["specialists_used"] = json.loads(specs) if isinstance(specs, str) else specs
 
-            # Read key session signals
-            specs = await client.get(f"{pfx}:intermediate:specialists_used")
-            if specs:
-                data["specialists_used"] = json.loads(specs) if isinstance(specs, str) else specs
+        domain = await client.get(f"{pfx}:intermediate:query_domain")
+        if domain:
+            data["domain"] = domain
 
-            domain = await client.get(f"{pfx}:intermediate:query_domain")
-            if domain:
-                data["domain"] = domain
+        query = await client.get(f"{pfx}:intermediate:query_text")
+        if query:
+            data["query_text"] = query
 
-            query = await client.get(f"{pfx}:intermediate:query_text")
-            if query:
-                data["query_text"] = query
+        # Prefer raw sources (has pmid/nct_id/doi/title/year for entity extraction)
+        raw_sources = await client.get(f"{pfx}:evidence:published_sources_raw")
+        if raw_sources:
+            try:
+                data["sources"] = json.loads(raw_sources)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-            # Prefer raw sources (has pmid/nct_id/doi/title/year for entity extraction)
-            raw_sources = await client.get(f"{pfx}:evidence:published_sources_raw")
-            if raw_sources:
+        # Fallback 1: citation_map_json (has id/title/snippet/url only)
+        if not data["sources"]:
+            citation_map_raw = await client.get(f"{pfx}:evidence:citation_map_json")
+            if citation_map_raw:
                 try:
-                    data["sources"] = json.loads(raw_sources)
+                    data["sources"] = json.loads(citation_map_raw)
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            # Fallback 1: citation_map_json (has id/title/snippet/url only)
-            if not data["sources"]:
-                citation_map_raw = await client.get(f"{pfx}:evidence:citation_map_json")
-                if citation_map_raw:
-                    try:
-                        data["sources"] = json.loads(citation_map_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+        # Fallback 2: try the old key path
+        if not data["sources"]:
+            sources_raw = await client.get(f"{pfx}:citations:published_sources")
+            if sources_raw:
+                try:
+                    data["sources"] = json.loads(sources_raw)
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
-            # Fallback 2: try the old key path
-            if not data["sources"]:
-                sources_raw = await client.get(f"{pfx}:citations:published_sources")
-                if sources_raw:
-                    try:
-                        data["sources"] = json.loads(sources_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+        # Collect all findings text for entity extraction
+        findings_parts = []
+        async for key in client.scan_iter(match=f"{pfx}:evidence:*", count=50):
+            val = await client.get(key)
+            if val:
+                findings_parts.append(val)
+        data["findings_text"] = "\n".join(findings_parts)
 
-            # Collect all findings text for entity extraction
-            findings_parts = []
-            async for key in client.scan_iter(match=f"{pfx}:evidence:*", count=50):
-                val = await client.get(key)
-                if val:
-                    findings_parts.append(val)
-            data["findings_text"] = "\n".join(findings_parts)
-
-        finally:
-            await client.aclose()
-
-    except ImportError:
-        log.warning("graph_writer: redis package not available, using provided params only")
     except Exception as exc:
         log.warning("graph_writer: Redis read failed (non-fatal): %s", exc)
 
@@ -1040,16 +1056,28 @@ class GraphWriterTool(DynamicTool):
         edges_created = 0
         errors = []
 
-        with driver.session() as db_session:
+        def _run_batch(tx):
+            """Execute all statements in a single transaction."""
+            n_created = 0
+            e_created = 0
+            errs = []
             for cypher, params in statements:
                 try:
-                    result = db_session.run(cypher, params)
+                    result = tx.run(cypher, params)
                     summary = result.consume()
-                    nodes_created += summary.counters.nodes_created
-                    edges_created += summary.counters.relationships_created
+                    n_created += summary.counters.nodes_created
+                    e_created += summary.counters.relationships_created
                 except Exception as exc:
-                    errors.append(str(exc)[:200])
+                    errs.append(str(exc)[:200])
                     log.warning("graph_writer: statement failed: %s", exc)
+            return n_created, e_created, errs
+
+        try:
+            with driver.session() as db_session:
+                nodes_created, edges_created, errors = db_session.execute_write(_run_batch)
+        except Exception as exc:
+            log.error("graph_writer: transaction failed: %s", exc)
+            errors = [str(exc)[:200]]
 
         return {
             "success": len(errors) == 0,

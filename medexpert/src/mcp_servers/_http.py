@@ -147,6 +147,36 @@ _circuit_breaker = CircuitBreaker()
 
 
 # ---------------------------------------------------------------------------
+# Module-level shared httpx client (lazy singleton with connection pooling)
+# ---------------------------------------------------------------------------
+
+_http_client: httpx.AsyncClient | None = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """Return the shared ``httpx.AsyncClient``, creating it on first use.
+
+    Uses double-checked locking to avoid creating multiple clients under
+    concurrent access.  The client is configured with connection pooling
+    (20 max connections, 10 keepalive) so that TCP + TLS setup costs are
+    amortised across MCP calls.  Per-request timeouts are passed at call
+    site, not on the client.
+    """
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        return _http_client
+    async with _http_client_lock:
+        if _http_client is not None and not _http_client.is_closed:
+            return _http_client
+        _http_client = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            timeout=DEFAULT_TIMEOUT,
+        )
+        return _http_client
+
+
+# ---------------------------------------------------------------------------
 # Validation exception (defined before structured_error_response)
 # ---------------------------------------------------------------------------
 
@@ -326,37 +356,39 @@ async def resilient_get(
         raise CircuitOpenError(url)
 
     last_response = None
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.get(url, params=params, headers=headers)
-                if response.status_code not in RETRYABLE_STATUS_CODES:
-                    _circuit_breaker.record_success(url)
-                    return response
-                last_response = response
-                log.warning(
-                    "Retryable status %d from GET %s (attempt %d/%d)",
-                    response.status_code,
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                )
-            except httpx.HTTPError as exc:
-                log.warning(
-                    "HTTP error on GET %s (attempt %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                    exc,
-                )
-                if attempt == max_retries:
-                    _circuit_breaker.record_failure(url)
-                    raise
+    client = await _get_http_client()
+    for attempt in range(max_retries + 1):
+        try:
+            response = await client.get(
+                url, params=params, headers=headers, timeout=timeout
+            )
+            if response.status_code not in RETRYABLE_STATUS_CODES:
+                _circuit_breaker.record_success(url)
+                return response
+            last_response = response
+            log.warning(
+                "Retryable status %d from GET %s (attempt %d/%d)",
+                response.status_code,
+                url,
+                attempt + 1,
+                max_retries + 1,
+            )
+        except httpx.HTTPError as exc:
+            log.warning(
+                "HTTP error on GET %s (attempt %d/%d): %s",
+                url,
+                attempt + 1,
+                max_retries + 1,
+                exc,
+            )
+            if attempt == max_retries:
+                _circuit_breaker.record_failure(url)
+                raise
 
-            if attempt < max_retries:
-                delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
-                log.debug("Backing off %.2fs before retry", delay)
-                await asyncio.sleep(delay)
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
+            log.debug("Backing off %.2fs before retry", delay)
+            await asyncio.sleep(delay)
 
     _circuit_breaker.record_failure(url)
     if last_response is not None:
@@ -381,37 +413,39 @@ async def resilient_post(
         raise CircuitOpenError(url)
 
     last_response = None
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(url, json=json, headers=headers)
-                if response.status_code not in RETRYABLE_STATUS_CODES:
-                    _circuit_breaker.record_success(url)
-                    return response
-                last_response = response
-                log.warning(
-                    "Retryable status %d from POST %s (attempt %d/%d)",
-                    response.status_code,
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                )
-            except httpx.HTTPError as exc:
-                log.warning(
-                    "HTTP error on POST %s (attempt %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                    exc,
-                )
-                if attempt == max_retries:
-                    _circuit_breaker.record_failure(url)
-                    raise
+    client = await _get_http_client()
+    for attempt in range(max_retries + 1):
+        try:
+            response = await client.post(
+                url, json=json, headers=headers, timeout=timeout
+            )
+            if response.status_code not in RETRYABLE_STATUS_CODES:
+                _circuit_breaker.record_success(url)
+                return response
+            last_response = response
+            log.warning(
+                "Retryable status %d from POST %s (attempt %d/%d)",
+                response.status_code,
+                url,
+                attempt + 1,
+                max_retries + 1,
+            )
+        except httpx.HTTPError as exc:
+            log.warning(
+                "HTTP error on POST %s (attempt %d/%d): %s",
+                url,
+                attempt + 1,
+                max_retries + 1,
+                exc,
+            )
+            if attempt == max_retries:
+                _circuit_breaker.record_failure(url)
+                raise
 
-            if attempt < max_retries:
-                delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
-                log.debug("Backing off %.2fs before retry", delay)
-                await asyncio.sleep(delay)
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
+            log.debug("Backing off %.2fs before retry", delay)
+            await asyncio.sleep(delay)
 
     _circuit_breaker.record_failure(url)
     if last_response is not None:

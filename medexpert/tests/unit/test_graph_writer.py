@@ -210,14 +210,18 @@ async def test_tool_returns_structured_error_when_memgraph_down(mock_redis, mock
 @patch("lifesci_tools.graph_writer._read_session_data")
 async def test_tool_succeeds_with_mock_driver(mock_redis, mock_driver, tool, ctx):
     """graph_writer writes nodes when Memgraph is available."""
-    # Mock the driver and session
+    # Mock the driver and session with execute_write support
     mock_session = MagicMock()
     mock_result = MagicMock()
     mock_summary = MagicMock()
     mock_summary.counters.nodes_created = 3
     mock_summary.counters.relationships_created = 2
     mock_result.consume.return_value = mock_summary
-    mock_session.run.return_value = mock_result
+
+    # execute_write passes a transaction to the callback; mock tx.run()
+    mock_tx = MagicMock()
+    mock_tx.run.return_value = mock_result
+    mock_session.execute_write.side_effect = lambda fn: fn(mock_tx)
     mock_session.__enter__ = MagicMock(return_value=mock_session)
     mock_session.__exit__ = MagicMock(return_value=False)
 
@@ -532,7 +536,7 @@ class TestReadSessionDataSourcePriority:
         mock_client.scan_iter = MagicMock(return_value=AsyncIteratorMock([]))
         mock_client.aclose = AsyncMock()
 
-        with patch("redis.asyncio.from_url", return_value=mock_client):
+        with patch("lifesci_tools.graph_writer._get_redis_client", return_value=mock_client):
             data = await _read_session_data("test-session-123")
 
         sources = data["sources"]
@@ -559,7 +563,7 @@ class TestReadSessionDataSourcePriority:
         mock_client.scan_iter = MagicMock(return_value=AsyncIteratorMock([]))
         mock_client.aclose = AsyncMock()
 
-        with patch("redis.asyncio.from_url", return_value=mock_client):
+        with patch("lifesci_tools.graph_writer._get_redis_client", return_value=mock_client):
             data = await _read_session_data("test-session-456")
 
         sources = data["sources"]

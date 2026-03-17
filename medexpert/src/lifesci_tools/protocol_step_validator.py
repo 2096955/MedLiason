@@ -60,7 +60,7 @@ STEP_ADVANCEMENT_TRIGGERS: Dict[str, int] = {
     # peer_* tools at step 2 keep us at step 2 (multiple peers in one turn)
     "publish_sources": 3,             # starts COLLECT (valid at step 3)
     "completeness_checker": 3,        # still in COLLECT
-    "report_generator": 5,            # synthesize done -> ready for VERIFY
+    "report_generator": 4,            # stay in SYNTHESIZE — text answer emitted before VERIFY
     "peer_VerifierAgent": 5,          # stays in VERIFY+REVISE
     "peer_ReviserAgent": 5,           # stays in VERIFY+REVISE
     "memory_plane:flush_cold": 6,     # PERSIST (terminal)

@@ -8,6 +8,7 @@ The tool reads ``model``, ``temperature``, and ``use_llm`` from ``tool_config``
 (passed via the agent YAML).
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -313,10 +314,15 @@ class ClaimVerifierTool(DynamicTool):
 
                 if fallback_session_id:
                     import redis as _redis
-                    r = _redis.from_url(redis_url, decode_responses=True)
-                    redis_key = f"medexpert:{fallback_session_id}:evidence:citation_map_json"
-                    stored = r.get(redis_key)
-                    r.close()
+
+                    def _sync_redis_get():
+                        r = _redis.from_url(redis_url, decode_responses=True)
+                        try:
+                            return r.get(f"medexpert:{fallback_session_id}:evidence:citation_map_json")
+                        finally:
+                            r.close()
+
+                    stored = await asyncio.to_thread(_sync_redis_get)
                     if stored:
                         fallback_citations = json.loads(stored)
                         for c in fallback_citations:
@@ -329,9 +335,9 @@ class ClaimVerifierTool(DynamicTool):
                                 ),
                             }
                         logger.info(
-                            "[claim_verifier] Recovered %d citations from Redis fallback (key=%s)",
+                            "[claim_verifier] Recovered %d citations from Redis fallback (session=%s)",
                             len(citation_map),
-                            redis_key,
+                            fallback_session_id[:12],
                         )
             except ImportError:
                 logger.warning("[claim_verifier] Redis not available for citation fallback")
