@@ -34,6 +34,7 @@ shared_config:
       max_tokens: 12000
       parallel_tool_calls: true
       cache_strategy: "none"
+      stream: false
       num_retries: 4
       fallbacks:
         - "vertex_ai/gemini-2.5-pro"
