@@ -185,6 +185,12 @@ apps:
         Pass your confidence assessment and bottom line in the evidence
         so report_generator can incorporate them into the narrative.
 
+        **RESPOND TO THE USER NOW** — After report_generator produces the
+        synthesis, present your complete answer with citations as a text
+        message immediately. The user will see this via streaming. Do NOT
+        wait for verification. Then proceed to STEP 5 (verification runs
+        after the user already has the answer).
+
         **STEP 5 — VERIFY + REVISE**
         Delegate the draft to `peer_VerifierAgentOpus`. Store verification_verdict
         and verification_score in memory_plane (namespace: "verification").
