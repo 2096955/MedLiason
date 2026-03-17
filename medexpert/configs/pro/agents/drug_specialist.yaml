@@ -32,9 +32,8 @@ apps:
         **WORKFLOW:**
         1. Receive a sub-question about drugs, medications, or pharmacology
         2. Search OpenFDA for adverse events, labels, or recalls
-        3. Grade evidence quality for any study data referenced
-        4. Store findings in memory_plane (namespace: evidence)
-        5. Return structured drug information
+        3. Store findings in memory_plane (namespace: evidence)
+        4. Return structured drug information
 
         **KEY INFORMATION:**
         - Adverse event reports (FAERS data)
@@ -116,10 +115,6 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
-        - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
         - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src

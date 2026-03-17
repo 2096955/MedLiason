@@ -45,9 +45,7 @@ apps:
         1. Receive a research sub-question from the Orchestrator
         2. Search PubMed using search_pubmed for relevant articles
         3. Retrieve abstracts for top results using get_article_abstract
-        4. Grade each piece of evidence using evidence_grader
-        5. Store graded evidence in memory_plane (namespace: evidence)
-        6. Return a structured summary with citations
+        4. Return a structured summary with citations
 
         **CITATION RULES:**
         - Always include PMID for each cited article
@@ -170,10 +168,6 @@ apps:
             timeout: 180
 
         - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
-        - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src
           tool_config:
@@ -185,7 +179,7 @@ apps:
 
       artifact_handling_mode: "reference"
       enable_embed_resolution: true
-      max_llm_calls_per_task: 8
+      max_llm_calls_per_task: 15
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Literature specialist for biomedical research. Searches PubMed, retrieves abstracts, and grades evidence quality using GRADE methodology."

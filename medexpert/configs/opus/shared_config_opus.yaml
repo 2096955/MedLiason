@@ -1,10 +1,13 @@
-# MedExpert Opus — shared config with ALL models on claude-opus-4-6
-# This is a standalone config that does NOT modify the original shared_config.yaml.
+# MedExpert Opus — hybrid config: Flash specialists, Opus synthesis/verification
+# Specialists (research + data gathering) use gemini-2.5-flash for cost efficiency.
+# Orchestrator, verifier, and reviser use claude-opus-4-6 for synthesis and reasoning.
 #
-# IMPORTANT: claude-opus-4-6 is the Anthropic Claude Opus 4.6 model via Vertex AI.
-# Requires LiteLLM >= 1.81.14 (same .venv-pro used for the Pro stack).
-# Vertex AI ADC configured via vertex_project and vertex_location.
-# Requires global Vertex AI endpoint (not regional like us-central1).
+# Rationale: specialists do structured tool calls / JSON formatting — Flash is equally
+# capable. Opus synthesises a *richer* memory plane (Flash can make more tool calls
+# within budget) and applies deep reasoning at the synthesis/verification layer only.
+#
+# IMPORTANT: claude-opus-4-6 requires LiteLLM >= 1.81.14 (.venv-pro) and the global
+# Vertex AI endpoint (not regional like us-central1).
 
 shared_config:
   - broker_connection: &broker_connection
@@ -21,7 +24,7 @@ shared_config:
     vertex_project: "gbg-neuro"
     vertex_location: "global"
 
-  # ── All tiers pinned to claude-opus-4-6 for evaluation ──
+  # ── Synthesis/reasoning tiers: claude-opus-4-6 | Research tier: gemini-2.5-flash ──
   # vertex_project and vertex_location are passed as kwargs to litellm.acompletion(),
   # overriding the VERTEXAI_LOCATION env var. This is required because the env var
   # defaults to us-central1 (for standard agents) but Opus needs the global endpoint.
@@ -31,29 +34,28 @@ shared_config:
       vertex_project: "gbg-neuro"
       vertex_location: "global"
       temperature: 0.2
-      max_tokens: 16000
+      max_tokens: 32000
       parallel_tool_calls: true
       cache_strategy: "none"
-      num_retries: 2
+      num_retries: 3
       fallbacks:
         - "vertex_ai/gemini-2.5-pro"
 
+    # Specialists use Flash — structured tool calls / JSON formatting don't need Opus.
+    # Flash specialists can make more tool calls within the same token budget, giving
+    # Opus a richer memory plane to synthesise from.
     specialist: &specialist_model
-      model: "vertex_ai/claude-opus-4-6"
-      vertex_project: "gbg-neuro"
-      vertex_location: "global"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.3
       max_tokens: 12000
       parallel_tool_calls: true
       cache_strategy: "none"
-      num_retries: 2
+      num_retries: 4
       fallbacks:
         - "vertex_ai/gemini-2.5-pro"
 
     advisory: &advisory_model
-      model: "vertex_ai/claude-opus-4-6"
-      vertex_project: "gbg-neuro"
-      vertex_location: "global"
+      model: "vertex_ai/gemini-2.5-flash"
       temperature: 0.7
       max_tokens: 12000
       cache_strategy: "none"
@@ -84,9 +86,7 @@ shared_config:
         - "vertex_ai/gemini-2.5-pro"
 
     general: &general_model
-      model: "vertex_ai/claude-opus-4-6"
-      vertex_project: "gbg-neuro"
-      vertex_location: "global"
+      model: "vertex_ai/gemini-2.5-flash"
       cache_strategy: "none"
 
     planning: &planning_model

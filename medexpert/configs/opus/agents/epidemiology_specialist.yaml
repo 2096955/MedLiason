@@ -45,9 +45,8 @@ apps:
         **WORKFLOW:**
         1. Query CDC, SEER, and census databases
         2. Analyze epidemiological trends
-        3. Grade the quality of surveillance data
-        4. Store findings in memory_plane
-        5. Return structured statistical summaries
+        3. Store findings in memory_plane
+        4. Return structured statistical summaries
 
         **CRITICAL BATCHING RULE:** When querying multiple data sources
         (CDC, SEER, Census), call ALL query tools in a SINGLE LLM
@@ -135,10 +134,6 @@ apps:
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
         - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
-        - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src
           tool_config:
@@ -147,7 +142,7 @@ apps:
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service
-      max_llm_calls_per_task: 8
+      max_llm_calls_per_task: 15
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Epidemiology specialist analyzing disease surveillance, mortality, cancer statistics, and social determinants of health."

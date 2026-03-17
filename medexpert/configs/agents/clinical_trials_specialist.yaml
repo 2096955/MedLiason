@@ -33,9 +33,8 @@ apps:
         1. Receive a sub-question about clinical trials
         2. Search trials by condition, intervention, or general query
         3. Retrieve detailed trial information for relevant results
-        4. Grade the evidence quality of trial designs
-        5. Store findings in memory_plane (namespace: evidence)
-        6. Return structured trial summaries
+        4. Store findings in memory_plane (namespace: evidence)
+        5. Return structured trial summaries
 
         **KEY INFORMATION TO EXTRACT:**
         - NCT ID, phase, status (recruiting/completed/terminated)
@@ -117,10 +116,6 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
-        - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
         - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src

@@ -44,9 +44,8 @@ apps:
         **WORKFLOW:**
         1. Search ClinVar/dbSNP for variant or gene information
         2. Assess clinical significance and supporting evidence
-        3. Grade evidence quality
-        4. Store findings in memory_plane
-        5. Return structured genomic summaries
+        3. Store findings in memory_plane
+        4. Return structured genomic summaries
 
         **IMPORTANT:** Genetic information should always be interpreted by
         qualified genetic counselors. Never provide diagnostic conclusions.
@@ -123,10 +122,6 @@ apps:
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
         - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
-        - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src
           tool_config:
@@ -135,7 +130,7 @@ apps:
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service
-      max_llm_calls_per_task: 8
+      max_llm_calls_per_task: 15
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Genomics specialist for genetic variant analysis, ClinVar interpretations, and gene-disease associations."

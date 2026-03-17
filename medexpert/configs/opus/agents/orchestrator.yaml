@@ -137,11 +137,29 @@ apps:
         3. Store the citation_map_json from publish_sources verbatim:
            memory_plane(operation="store", key="citation_map_json",
            value=<exact string>, namespace="evidence")
-        4. Call `completeness_checker` to verify coverage
-        5. If coverage < 70%, send ONE targeted follow-up delegation,
-           then proceed regardless
-        6. For comprehensive questions, call `reflection_analyzer` with
-           question and collected evidence (analysis_depth="deep") to
+        4. Call `completeness_checker` to verify coverage.
+        5. DIAGNOSE which specialists under-delivered. A specialist
+           under-delivered if ANY of:
+           - execution_status="failed" or "partial"
+           - sources_retrieved=0
+           - completeness_checker identifies its domain as a gap
+           Build a list: weak_specialists = [names of under-delivering agents]
+
+        6. If coverage < 70% OR weak_specialists is non-empty:
+           RE-DELEGATE to weak_specialists ONLY (not all specialists).
+           Craft a REFINED query per specialist that:
+             a) States the specific gap: "We need evidence on [X]. The
+                initial search found nothing / failed."
+             b) Lists identifiers already found to avoid duplication:
+                "We already have PMID:12345, NCT:xyz — find DIFFERENT sources."
+             c) Is narrower and more targeted than the original query.
+           Send these re-delegations in parallel (batch tool calls).
+           Wait for responses. Re-run `completeness_checker` once more.
+           Proceed to STEP 4 regardless of second-round outcome —
+           do NOT enter a third delegation round.
+
+        7. For comprehensive questions, call `reflection_analyzer` with
+           question and ALL collected evidence (analysis_depth="deep") to
            detect contradictions, gaps, and missing perspectives. Use
            its output to inform your SYNTHESIZE reasoning in STEP 4.
         Store coverage_pct in memory_plane (namespace: "intermediate").
@@ -260,7 +278,7 @@ apps:
       artifact_handling_mode: "reference"
       enable_embed_resolution: true
       enable_artifact_content_instruction: true
-      max_llm_calls_per_task: 25
+      max_llm_calls_per_task: 50
       protocol_enforcement: true
       specialist_response_validation: true
       context_compaction: true

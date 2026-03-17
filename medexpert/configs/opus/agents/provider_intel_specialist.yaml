@@ -114,10 +114,6 @@ apps:
           component_module: lifesci_tools.web_search_firecrawl
           component_base_path: src
         - tool_type: python
-          component_module: lifesci_tools.evidence_grader
-          component_base_path: src
-
-        - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src
           tool_config:
@@ -125,7 +121,7 @@ apps:
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service
-      max_llm_calls_per_task: 8
+      max_llm_calls_per_task: 15
 
       agent_card:
         description: "[Opus / claude-opus-4-6] Provider intelligence specialist for healthcare provider quality data and CMS Open Payments transparency."
