@@ -14,8 +14,9 @@ RUN pip install --no-cache-dir "solace-agent-mesh==1.16.4"
 # Install medexpert
 COPY pyproject.toml .
 COPY src/ src/
-# backoff is needed by litellm's OTel callback (imports proxy_server which requires it)
-RUN pip install --no-cache-dir -e ".[langfuse]" backoff
+# backoff: litellm's OTel callback imports proxy_server which requires it
+# opentelemetry-exporter-otlp-proto-grpc: litellm unconditionally imports gRPC exporter
+RUN pip install --no-cache-dir -e ".[langfuse]" backoff opentelemetry-exporter-otlp-proto-grpc
 
 # Memgraph MCP server (streamable-http transport, connects to Memgraph sidecar)
 RUN pip install --no-cache-dir mcp-memgraph
