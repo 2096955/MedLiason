@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir "solace-agent-mesh==1.16.4"
 # Install medexpert
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[langfuse]"
 
 # Memgraph MCP server (streamable-http transport, connects to Memgraph sidecar)
 RUN pip install --no-cache-dir mcp-memgraph
