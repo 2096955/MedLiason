@@ -130,6 +130,7 @@ apps:
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service
+      streaming_mode: "none"
       max_llm_calls_per_task: 15
 
       agent_card:

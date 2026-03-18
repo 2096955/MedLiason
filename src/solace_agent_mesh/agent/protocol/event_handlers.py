@@ -971,12 +971,17 @@ async def handle_a2a_request(component, message: SolaceMessage):
                     effective_session_id,
                 )
 
-            # Always use SSE streaming mode for the ADK runner.
-            # This ensures that real-time callbacks (e.g., for fenced artifact
-            # progress) can function correctly for all task types. The component's
-            # internal logic uses the 'is_run_based_session' flag to differentiate
-            # between aggregating a final response and streaming partial updates.
-            streaming_mode = StreamingMode.SSE
+            # Default to SSE streaming for the ADK runner so real-time
+            # callbacks (e.g., fenced artifact progress) work correctly.
+            # Agents can override with streaming_mode: "none" in their YAML
+            # to disable streaming — this allows litellm to cleanly retry
+            # and fall back on mid-stream connection failures.
+            cfg_streaming = component.get_config("streaming_mode", "sse")
+            streaming_mode = (
+                StreamingMode.NONE
+                if str(cfg_streaming).lower() == "none"
+                else StreamingMode.SSE
+            )
 
             max_llm_calls_per_task = component.get_config("max_llm_calls_per_task", 20)
             log.debug(

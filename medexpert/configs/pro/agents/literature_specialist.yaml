@@ -179,6 +179,7 @@ apps:
 
       artifact_handling_mode: "reference"
       enable_embed_resolution: true
+      streaming_mode: "none"
       max_llm_calls_per_task: 15
 
       agent_card:
