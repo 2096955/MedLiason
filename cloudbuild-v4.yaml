@@ -47,7 +47,7 @@ images:
   - "gcr.io/$PROJECT_ID/medexpert-v4:latest"
 
 substitutions:
-  _TAG: "e4063aeb"
+  _TAG: "cec7caf8"
 
 timeout: "1200s"
 
