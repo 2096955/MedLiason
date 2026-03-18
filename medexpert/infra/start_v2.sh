@@ -223,20 +223,15 @@ cleanup() {
 trap cleanup SIGTERM SIGINT EXIT
 
 # ---------------------------------------------------------------------------
-# 6. Bootstrap LLM observability tracing (Langfuse via LiteLLM OTel)
+# 6. Bootstrap LLM observability tracing (Langfuse)
 # ---------------------------------------------------------------------------
-# LiteLLM's built-in "otel" callback reads OTEL_EXPORTER_OTLP_* env vars.
-# We configure them to point at Langfuse's OTel ingestion endpoint.
-# The lifesci_common.__init__ also adds "otel" to litellm.callbacks at
-# DynamicTool import time (belt-and-suspenders).
-if [ -n "${LANGFUSE_SECRET_KEY:-}" ] && [ -n "${LANGFUSE_PUBLIC_KEY:-}" ]; then
-  LANGFUSE_URL="${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}"
-  LF_AUTH=$(python -c "import base64; print(base64.b64encode(b'${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}').decode())")
-  export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-  export OTEL_EXPORTER_OTLP_ENDPOINT="${LANGFUSE_URL}/api/public/otel"
-  export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LF_AUTH}"
-  export OTEL_SERVICE_NAME="medexpert"
-  echo "[MedExpert-v2] Langfuse OTel env configured → ${LANGFUSE_URL}"
+# LiteLLM has a native "langfuse_otel" callback that reads LANGFUSE_HOST,
+# LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY.  The lifesci_common.__init__
+# adds "langfuse_otel" to litellm.callbacks when DynamicTools are loaded.
+# We just need to map LANGFUSE_BASE_URL → LANGFUSE_HOST if needed.
+if [ -n "${LANGFUSE_BASE_URL:-}" ] && [ -z "${LANGFUSE_HOST:-}" ]; then
+  export LANGFUSE_HOST="${LANGFUSE_BASE_URL}"
+  echo "[MedExpert-v2] Langfuse: LANGFUSE_HOST=${LANGFUSE_HOST}"
 fi
 
 # ---------------------------------------------------------------------------
