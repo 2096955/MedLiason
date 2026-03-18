@@ -223,7 +223,24 @@ cleanup() {
 trap cleanup SIGTERM SIGINT EXIT
 
 # ---------------------------------------------------------------------------
-# 6. Start sam run (39 agents + 1 gateway)
+# 6. Bootstrap LLM observability tracing (Langfuse via LiteLLM OTel)
+# ---------------------------------------------------------------------------
+# LiteLLM's built-in "otel" callback reads OTEL_EXPORTER_OTLP_* env vars.
+# We configure them to point at Langfuse's OTel ingestion endpoint.
+# The lifesci_common.__init__ also adds "otel" to litellm.callbacks at
+# DynamicTool import time (belt-and-suspenders).
+if [ -n "${LANGFUSE_SECRET_KEY:-}" ] && [ -n "${LANGFUSE_PUBLIC_KEY:-}" ]; then
+  LANGFUSE_URL="${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}"
+  LF_AUTH=$(python -c "import base64; print(base64.b64encode(b'${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}').decode())")
+  export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+  export OTEL_EXPORTER_OTLP_ENDPOINT="${LANGFUSE_URL}/api/public/otel"
+  export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LF_AUTH}"
+  export OTEL_SERVICE_NAME="medexpert"
+  echo "[MedExpert-v2] Langfuse OTel env configured → ${LANGFUSE_URL}"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Start sam run (39 agents + 1 gateway)
 # ---------------------------------------------------------------------------
 echo "[MedExpert-v2] Starting sam run with ${#REQUIRED_CONFIGS[@]} configs (39 agents + 1 gateway)..."
 sam run --system-env "${REQUIRED_CONFIGS[@]}" &

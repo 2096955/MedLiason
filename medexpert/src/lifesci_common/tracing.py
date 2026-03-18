@@ -5,9 +5,9 @@ Supports two backends (mutually exclusive, checked in order):
 1. **Langfuse** — set ``LANGFUSE_SECRET_KEY`` + ``LANGFUSE_PUBLIC_KEY``
 2. **Arize Phoenix** — set ``PHOENIX_API_KEY``
 
-Both backends use OpenTelemetry under the hood.  Langfuse v4 is OTel-native;
-Phoenix uses openinference instrumentation.  LiteLLM calls are auto-traced
-by whichever backend is active.
+Both backends use OpenTelemetry under the hood.  LiteLLM's built-in
+``"otel"`` callback reads ``OTEL_EXPORTER_OTLP_*`` env vars; we configure
+them to point at Langfuse's OTel ingestion endpoint.
 
 Call ``init_tracing()`` once at process startup (after .env is loaded).
 If neither backend is configured or deps are missing, the function is a
@@ -33,12 +33,16 @@ _active_backend: str | None = None
 def _init_langfuse() -> bool:
     """Wire LiteLLM → OpenTelemetry → Langfuse.
 
+    Sets OTEL_EXPORTER_OTLP_* env vars so that litellm's built-in "otel"
+    callback auto-creates the correct exporter.  Then appends "otel" to
+    litellm.callbacks to activate the integration.
+
     Requires env vars:
         LANGFUSE_SECRET_KEY  — project secret key (sk-lf-...)
         LANGFUSE_PUBLIC_KEY  — project public key (pk-lf-...)
-        LANGFUSE_BASE_URL    — optional, defaults to EU cloud
+        LANGFUSE_BASE_URL    — optional, defaults to https://cloud.langfuse.com
     """
-    global _tracer_provider, _active_backend
+    global _active_backend
 
     secret = os.getenv("LANGFUSE_SECRET_KEY")
     public = os.getenv("LANGFUSE_PUBLIC_KEY")
@@ -48,47 +52,21 @@ def _init_langfuse() -> bool:
     base_url = os.getenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
 
     try:
-        from langfuse import Langfuse, observe  # noqa: F401 — verify SDK present
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,
+        # Set OTEL env vars so litellm's OTel callback auto-configures.
+        # LiteLLM reads these in OpenTelemetryConfig.from_env() when the
+        # "otel" callback is first instantiated.
+        os.environ.setdefault(
+            "OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"
         )
-        from opentelemetry.sdk.resources import Resource
-    except ImportError:
-        logger.info(
-            "Langfuse extras not installed — run: "
-            "pip install langfuse opentelemetry-exporter-otlp-proto-http"
+        os.environ.setdefault(
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            f"{base_url.rstrip('/')}/api/public/otel",
         )
-        return False
-
-    try:
-        # Langfuse v4 accepts OTel spans via its /api/public/otel/v1/traces endpoint
-        otel_endpoint = f"{base_url.rstrip('/')}/api/public/otel/v1/traces"
-
-        resource = Resource.create(
-            {
-                "service.name": "medexpert",
-                "deployment.environment": os.getenv(
-                    "MEDEXPERT_ENV", "development"
-                ),
-            }
+        os.environ.setdefault(
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            f"Authorization=Basic {_encode_basic_auth(public, secret)}",
         )
-
-        exporter = OTLPSpanExporter(
-            endpoint=otel_endpoint,
-            headers={
-                "Authorization": f"Basic {_encode_basic_auth(public, secret)}",
-            },
-        )
-
-        provider = TracerProvider(resource=resource)
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-
-        # Set as global provider so LiteLLM's OTel integration picks it up
-        from opentelemetry import trace
-
-        trace.set_tracer_provider(provider)
+        os.environ.setdefault("OTEL_SERVICE_NAME", "medexpert")
 
         # Enable LiteLLM's built-in OpenTelemetry callback
         import litellm
@@ -97,12 +75,8 @@ def _init_langfuse() -> bool:
         if "otel" not in litellm.callbacks:
             litellm.callbacks.append("otel")
 
-        _tracer_provider = provider
         _active_backend = "langfuse"
-        logger.info(
-            "Langfuse tracing enabled → %s",
-            base_url,
-        )
+        logger.info("Langfuse tracing enabled → %s", base_url)
         return True
     except Exception:
         logger.warning("Failed to initialise Langfuse tracing", exc_info=True)
