@@ -238,6 +238,25 @@ fi
 # 7. Start sam run (39 agents + 1 gateway)
 # ---------------------------------------------------------------------------
 echo "[MedExpert-v2] Starting sam run with ${#REQUIRED_CONFIGS[@]} configs (39 agents + 1 gateway)..."
+
+# Write a sitecustomize.py that patches litellm.callbacks at Python startup.
+# This runs in every Python process (including sam run) before any imports.
+SITE_DIR=$(python -c "import site; print(site.getsitepackages()[0])")
+cat > "${SITE_DIR}/sitecustomize.py" << 'PYEOF'
+import os
+_sk = os.environ.get("LANGFUSE_SECRET_KEY")
+_pk = os.environ.get("LANGFUSE_PUBLIC_KEY")
+if _sk and _pk:
+    try:
+        import litellm
+        if "langfuse_otel" not in (litellm.callbacks or []):
+            litellm.callbacks = litellm.callbacks or []
+            litellm.callbacks.append("langfuse_otel")
+    except Exception:
+        pass
+PYEOF
+echo "[MedExpert-v2] sitecustomize.py written to ${SITE_DIR}"
+
 sam run --system-env "${REQUIRED_CONFIGS[@]}" &
 SAM_PID=$!
 wait $SAM_PID
