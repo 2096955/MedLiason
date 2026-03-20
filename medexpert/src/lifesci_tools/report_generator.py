@@ -497,6 +497,7 @@ class ReportGeneratorTool(DynamicTool):
         return {
             "report": report,
             "mode": mode,
+            "report_mode": mode,
             "evidence_count": len(evidence),
             "has_verification": verification is not None,
             "has_advisory": advisory is not None,

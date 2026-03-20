@@ -530,3 +530,20 @@ async def test_research_brief_single_source_conclusion(tool, ctx):
     report = result["report"]
     assert "single source" in report.lower()
     assert "caution" in report.lower()
+
+
+# ── C2: report_mode field ────────────────────────────────────
+
+
+async def test_report_mode_in_output(tool, ctx, sample_evidence):
+    """report_generator must include report_mode in its output dict."""
+    for mode in ["quick_answer", "research_brief", "full_synthesis", "advisory_board_report"]:
+        result = await tool._run_async_impl(
+            {
+                "mode": mode,
+                "question": "Test?",
+                "evidence_json": json.dumps(sample_evidence),
+            },
+            ctx,
+        )
+        assert result["report_mode"] == mode

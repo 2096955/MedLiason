@@ -23,8 +23,32 @@ import {
   RefreshCw,
   Clock,
   Timer,
+  Zap,
+  FileSearch,
+  Microscope,
+  Users,
 } from "lucide-react";
 import type { PipelineErrorData } from "@/lib/types";
+
+/** C6: Advisory board deliberation output */
+export interface AdvisoryPerspectives {
+  consensus_points?: string[];
+  contested_points?: Array<{
+    point: string;
+    positions?: Array<{
+      persona: string;
+      position: string;
+      strength: "strong" | "moderate" | "weak";
+    }>;
+    resolution_note?: string;
+  }>;
+  blind_spots?: string[];
+  synthesis?: string;
+  confidence_level?: "high" | "moderate" | "low";
+  key_uncertainty?: string;
+  perspective_count?: number;
+  analysis_method?: string;
+}
 
 export interface ResearchProtocolProgressData {
   type: "research_protocol_progress";
@@ -35,6 +59,8 @@ export interface ResearchProtocolProgressData {
   coverage_pct?: number | null;
   gvr_cycle?: number;
   verification_verdict?: string | null;
+  research_path?: string | null;
+  advisory_perspectives?: AdvisoryPerspectives | null;
 }
 
 interface ResearchProtocolStepperProps {
@@ -43,6 +69,14 @@ interface ResearchProtocolStepperProps {
   pipelineErrors?: PipelineErrorData | null;
   agentName?: string;
 }
+
+/** C2: Research path display config */
+const RESEARCH_PATH_CONFIG: Record<string, { icon: typeof Sparkles; label: string; color: string }> = {
+  quick_answer: { icon: Zap, label: "Quick Answer", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300" },
+  research_brief: { icon: FileSearch, label: "Research Brief", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300" },
+  full_synthesis: { icon: Microscope, label: "Deep Research", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300" },
+  advisory_board_report: { icon: Users, label: "Advisory Board", color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300" },
+};
 
 /** Derive model tier from agent name suffix → estimated total time in seconds. */
 function getModelEta(agentName?: string): { label: string; minSec: number; maxSec: number } {
@@ -133,6 +167,107 @@ const statusStyles: Record<StepStatus, { dot: string; text: string; line: string
   },
 };
 
+/** C6: Expandable advisory board perspectives section */
+function AdvisoryPerspectivesPanel({ data }: { data: AdvisoryPerspectives }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const confidenceColor = {
+    high: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+    moderate: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+    low: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
+  }[data.confidence_level ?? "moderate"] ?? "bg-gray-100 text-gray-700";
+
+  return (
+    <div className="mt-1 ml-6 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+        aria-expanded={expanded}
+      >
+        <span className="flex items-center gap-1.5 font-medium text-gray-600 dark:text-gray-400">
+          <Users className="w-3 h-3" />
+          Advisory Perspectives
+          {data.confidence_level && (
+            <span className={`px-1 py-0.5 rounded text-[10px] ${confidenceColor}`}>
+              {data.confidence_level}
+            </span>
+          )}
+        </span>
+        {expanded ? <ChevronUp className="w-3 h-3 text-gray-400" /> : <ChevronDown className="w-3 h-3 text-gray-400" />}
+      </button>
+
+      {expanded && (
+        <div className="px-2 pb-2 space-y-2 text-xs text-gray-600 dark:text-gray-400">
+          {/* Synthesis */}
+          {data.synthesis && (
+            <p className="leading-relaxed">{data.synthesis}</p>
+          )}
+
+          {/* Consensus */}
+          {data.consensus_points && data.consensus_points.length > 0 && (
+            <div>
+              <span className="font-medium text-green-600 dark:text-green-400">Consensus</span>
+              <ul className="mt-0.5 space-y-0.5">
+                {data.consensus_points.map((p, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <span className="mt-1.5 h-1 w-1 rounded-full bg-green-500 flex-shrink-0" />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Contested */}
+          {data.contested_points && data.contested_points.length > 0 && (
+            <div>
+              <span className="font-medium text-amber-600 dark:text-amber-400">Contested Points</span>
+              <div className="mt-0.5 space-y-1.5">
+                {data.contested_points.map((cp, i) => (
+                  <div key={i} className="pl-2 border-l-2 border-amber-300 dark:border-amber-700">
+                    <p className="font-medium">{cp.point}</p>
+                    {cp.positions && cp.positions.map((pos, j) => (
+                      <p key={j} className="text-gray-500 dark:text-gray-500">
+                        <span className="font-medium">{pos.persona}</span>: {pos.position}
+                        <span className="opacity-60"> ({pos.strength})</span>
+                      </p>
+                    ))}
+                    {cp.resolution_note && (
+                      <p className="text-gray-500 dark:text-gray-500 italic mt-0.5">{cp.resolution_note}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Blind spots */}
+          {data.blind_spots && data.blind_spots.length > 0 && (
+            <div>
+              <span className="font-medium text-orange-600 dark:text-orange-400">Blind Spots</span>
+              <ul className="mt-0.5 space-y-0.5">
+                {data.blind_spots.map((b, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 text-orange-500 flex-shrink-0" />
+                    {b}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Key uncertainty */}
+          {data.key_uncertainty && (
+            <p className="text-gray-500 dark:text-gray-500">
+              <span className="font-medium">Key uncertainty:</span> {data.key_uncertainty}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ResearchProtocolStepper({
   progress,
   isComplete = false,
@@ -167,6 +302,9 @@ export function ResearchProtocolStepper({
     ? 100
     : Math.round(((progress.step + 1) / progress.total_steps) * 100);
 
+  // C2: resolve research path config
+  const pathCfg = progress.research_path ? RESEARCH_PATH_CONFIG[progress.research_path] : null;
+
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden text-sm">
       {/* Header */}
@@ -185,6 +323,16 @@ export function ResearchProtocolStepper({
           <span className="font-medium text-gray-900 dark:text-gray-100">
             {isComplete ? "Research complete" : `Research in progress — ${progressPct}%`}
           </span>
+          {/* C2: Research path badge */}
+          {pathCfg && (() => {
+            const PathIcon = pathCfg.icon;
+            return (
+              <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${pathCfg.color}`}>
+                <PathIcon className="w-3 h-3" />
+                {pathCfg.label}
+              </span>
+            );
+          })()}
           {/* Elapsed timer + ETA (only while running) */}
           {!isComplete && (
             <span className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 font-normal tabular-nums">
@@ -315,6 +463,11 @@ export function ResearchProtocolStepper({
                         </div>
                       ))}
                     </div>
+                  )}
+                  {/* C6: Advisory perspectives panel after SYNTHESIZE step */}
+                  {idx === 4 && (status === "complete" || status === "active") &&
+                    progress.advisory_perspectives && (
+                    <AdvisoryPerspectivesPanel data={progress.advisory_perspectives} />
                   )}
                 </div>
               </div>

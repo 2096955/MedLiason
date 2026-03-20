@@ -168,6 +168,10 @@ apps:
         For comprehensive questions (full_synthesis or advisory_board_report):
         - Call `deliberation_synthesizer` with advisory perspectives to get
           genuine multi-perspective analysis of contested points and blind spots.
+        - After `deliberation_synthesizer` returns, IMMEDIATELY store its
+          output: memory_plane(operation="store", key="advisory_output",
+          value=<full JSON output as string>, namespace="intermediate").
+          This persists the advisory board analysis for the audit trail.
         - Call `uncertainty_quantifier` with question and evidence for a
           structured per-claim confidence profile.
 
@@ -178,6 +182,11 @@ apps:
         - Comprehensive → "full_synthesis"
         Pass your confidence assessment and bottom line in the evidence
         so report_generator can incorporate them into the narrative.
+
+        After calling report_generator, store the report mode:
+        memory_plane(operation="store", key="report_mode",
+        value=<the mode you used: quick_answer/research_brief/full_synthesis/advisory_board_report>,
+        namespace="intermediate").
 
         **RESPOND TO THE USER NOW** — After report_generator produces the
         synthesis, present your complete answer with citations as a text

@@ -705,3 +705,45 @@ def test_prune_cleans_old_query_patterns(db):
     rows = db.execute("SELECT * FROM query_patterns").fetchall()
     assert len(rows) == 1
     assert rows[0]["normalized_template"] == "new pattern"
+
+
+# ── C2+C6: report_mode and advisory_perspectives_json ─────────
+
+
+def test_write_session_outcome_with_report_mode(db):
+    cold_store.write_session_outcome(
+        db,
+        session_id="s-rm",
+        query_domain="drugs",
+        report_mode="full_synthesis",
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT report_mode FROM session_outcomes WHERE session_id = 's-rm'"
+    ).fetchone()
+    assert row["report_mode"] == "full_synthesis"
+
+
+def test_write_session_outcome_with_advisory_perspectives(db):
+    advisory = '{"consensus_points":["point1"],"blind_spots":[]}'
+    cold_store.write_session_outcome(
+        db,
+        session_id="s-adv",
+        query_domain="literature",
+        advisory_perspectives_json=advisory,
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT advisory_perspectives_json FROM session_outcomes WHERE session_id = 's-adv'"
+    ).fetchone()
+    assert row["advisory_perspectives_json"] == advisory
+
+
+def test_write_session_outcome_defaults_null_for_new_columns(db):
+    cold_store.write_session_outcome(db, session_id="s-def", query_domain="drugs")
+    db.commit()
+    row = db.execute(
+        "SELECT report_mode, advisory_perspectives_json FROM session_outcomes WHERE session_id = 's-def'"
+    ).fetchone()
+    assert row["report_mode"] is None
+    assert row["advisory_perspectives_json"] is None

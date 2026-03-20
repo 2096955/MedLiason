@@ -502,6 +502,14 @@ class ResearchProtocolProgressData(BaseModel):
     verification_verdict: Optional[str] = Field(
         None, description="Verification result: PASS, MINOR_ISSUES, or CRITICAL_ISSUES"
     )
+    research_path: Optional[str] = Field(
+        None,
+        description="Report mode chosen by orchestrator: quick_answer, research_brief, full_synthesis, advisory_board_report",
+    )
+    advisory_perspectives: Optional[dict] = Field(
+        None,
+        description="Deliberation synthesizer output: consensus_points, contested_points, blind_spots, synthesis, confidence_level",
+    )
 
 
 SignalData = Union[

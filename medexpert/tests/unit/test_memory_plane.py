@@ -872,3 +872,36 @@ async def test_non_idempotent_store_different_value(tool, ctx):
     )
     assert result["success"] is True
     assert result.get("idempotent") is None
+
+
+# ── C2+C6: report_mode and advisory_output in signal collection ──
+
+
+async def test_collect_session_signals_includes_report_mode(cold_tool, ctx):
+    """flush_cold auto-collects report_mode from hot store."""
+    import lifesci_tools.cold_worker as cw
+
+    cw.reset_for_testing()
+
+    await cold_tool._run_async_impl(
+        {"operation": "store", "key": "report_mode", "value": "full_synthesis", "namespace": "intermediate"}, ctx
+    )
+
+    signals = await cold_tool._collect_session_signals("sess-001")
+    assert signals.get("report_mode") == "full_synthesis"
+
+
+async def test_collect_session_signals_includes_advisory_output(cold_tool, ctx):
+    """flush_cold auto-collects advisory_output from hot store."""
+    import json as _json
+    import lifesci_tools.cold_worker as cw
+
+    cw.reset_for_testing()
+
+    advisory = _json.dumps({"consensus_points": ["point1"], "blind_spots": ["spot1"]})
+    await cold_tool._run_async_impl(
+        {"operation": "store", "key": "advisory_output", "value": advisory, "namespace": "intermediate"}, ctx
+    )
+
+    signals = await cold_tool._collect_session_signals("sess-001")
+    assert signals.get("advisory_perspectives_json") == advisory

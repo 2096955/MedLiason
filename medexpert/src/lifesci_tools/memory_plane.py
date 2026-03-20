@@ -300,9 +300,11 @@ class MemoryPlaneTool(DynamicTool):
 
             from solace_agent_mesh.common.data_parts import ResearchProtocolProgressData
 
-            # Read coverage + verdict from memory if available
+            # Read coverage + verdict + C2/C6 fields from memory if available
             coverage_pct = None
             verdict = None
+            report_mode = None
+            advisory_perspectives = None
             try:
                 raw_cp = await self._backend.get(
                     self._make_key(session_id, "intermediate", "coverage_pct")
@@ -314,6 +316,25 @@ class MemoryPlaneTool(DynamicTool):
                 )
                 if raw_v:
                     verdict = raw_v
+                # C2: report_mode
+                raw_rm = await self._backend.get(
+                    self._make_key(session_id, "intermediate", "report_mode")
+                )
+                if raw_rm:
+                    report_mode = raw_rm
+                # C6: advisory_output
+                raw_adv = await self._backend.get(
+                    self._make_key(session_id, "intermediate", "advisory_output")
+                )
+                if raw_adv:
+                    try:
+                        parsed = json.loads(raw_adv)
+                        # Truncate synthesis to 500 chars for SSE payload
+                        if isinstance(parsed.get("synthesis"), str) and len(parsed["synthesis"]) > 500:
+                            parsed["synthesis"] = parsed["synthesis"][:500] + "..."
+                        advisory_perspectives = parsed
+                    except (json.JSONDecodeError, TypeError):
+                        pass
             except Exception:
                 pass
 
@@ -325,6 +346,8 @@ class MemoryPlaneTool(DynamicTool):
                 coverage_pct=coverage_pct,
                 gvr_cycle=0,
                 verification_verdict=verdict,
+                research_path=report_mode,
+                advisory_perspectives=advisory_perspectives,
             )
 
             host.publish_data_signal_from_thread(
@@ -377,17 +400,22 @@ class MemoryPlaneTool(DynamicTool):
         revv_coro = self._backend.get(self._make_key(session_id, "verification", "re_verification_verdict"))
         revs_coro = self._backend.get(self._make_key(session_id, "verification", "re_verification_score"))
         withheld_coro = self._backend.get(self._make_key(session_id, "verification", "report_withheld"))
+        # C2+C6: report_mode and advisory_output
+        rm_coro = self._backend.get(self._make_key(session_id, "intermediate", "report_mode"))
+        adv_coro = self._backend.get(self._make_key(session_id, "intermediate", "advisory_output"))
 
         (
             ev_keys, cit_keys,
             raw_vv, raw_vv_alt, raw_vs, raw_vs_alt,
             raw_cp, raw_cp_alt, raw_specs, raw_domain,
             raw_rev, raw_gvr, raw_revv, raw_revs, raw_withheld,
+            raw_rm, raw_adv,
         ) = await asyncio.gather(
             ev_keys_coro, cit_keys_coro,
             vv_coro, vv_alt_coro, vs_coro, vs_alt_coro,
             cp_coro, cp_alt_coro, sp_coro, dom_coro,
             rev_coro, gvr_coro, revv_coro, revs_coro, withheld_coro,
+            rm_coro, adv_coro,
         )
 
         # ── evidence count ──
@@ -444,6 +472,14 @@ class MemoryPlaneTool(DynamicTool):
                 log.debug("Could not parse re_verification_score=%r for session %s", raw_revs, session_id)
         if raw_withheld and raw_withheld.lower() in ("true", "1"):
             signals["report_withheld"] = True
+
+        # ── C2: report_mode ──
+        if raw_rm:
+            signals["report_mode"] = raw_rm
+
+        # ── C6: advisory_perspectives ──
+        if raw_adv:
+            signals["advisory_perspectives_json"] = raw_adv
 
         # ── citations → source counts (evidence_count + avg_grade_score only) ──
         # Note: citations_valid/invalid and passed_verification are not

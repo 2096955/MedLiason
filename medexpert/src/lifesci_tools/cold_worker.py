@@ -371,6 +371,8 @@ def _persist_one(db_path: str, item: dict[str, Any]) -> None:
         verification_score = item.get("verification_score", 0.0)
         revision_triggered = item.get("revision_triggered", False)
         specialists_used = item.get("specialists_used", [])
+        report_mode = item.get("report_mode")
+        advisory_perspectives_json = item.get("advisory_perspectives_json")
 
         # 1. Session outcome
         cold_store.write_session_outcome(
@@ -383,6 +385,8 @@ def _persist_one(db_path: str, item: dict[str, Any]) -> None:
             verification_score=verification_score,
             revision_triggered=revision_triggered,
             specialists_used=specialists_used,
+            report_mode=report_mode,
+            advisory_perspectives_json=advisory_perspectives_json,
         )
 
         # 2. Source reliability

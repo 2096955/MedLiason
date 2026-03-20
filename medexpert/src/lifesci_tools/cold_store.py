@@ -396,6 +396,14 @@ _MIGRATIONS = [
         );
         """,
     ),
+    # M8: Add report_mode and advisory_perspectives_json to session_outcomes (C2+C6).
+    (
+        "SELECT 1 FROM pragma_table_info('session_outcomes') WHERE name='report_mode'",
+        """
+        ALTER TABLE session_outcomes ADD COLUMN report_mode TEXT DEFAULT NULL;
+        ALTER TABLE session_outcomes ADD COLUMN advisory_perspectives_json TEXT DEFAULT NULL;
+        """,
+    ),
 ]
 
 
@@ -450,14 +458,16 @@ def write_session_outcome(
     verification_score: float = 0.0,
     revision_triggered: bool = False,
     specialists_used: list[str] | None = None,
+    report_mode: str | None = None,
+    advisory_perspectives_json: str | None = None,
 ) -> None:
     """Insert or replace a session outcome row."""
     conn.execute(
         """INSERT OR REPLACE INTO session_outcomes
            (session_id, query_domain, query_text, coverage_pct,
             verification_verdict, verification_score, revision_triggered,
-            specialists_used_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            specialists_used_json, report_mode, advisory_perspectives_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             query_domain,
@@ -467,6 +477,8 @@ def write_session_outcome(
             verification_score,
             int(revision_triggered),
             json.dumps(specialists_used or []),
+            report_mode,
+            advisory_perspectives_json,
         ),
     )
 
