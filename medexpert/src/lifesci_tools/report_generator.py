@@ -478,6 +478,22 @@ class ReportGeneratorTool(DynamicTool):
         else:
             report = ""
 
+        # Persist final answer to Redis for polling fallback (SSE may drop on Cloud Run)
+        if report and mode in ("full_synthesis", "advisory_board_report"):
+            try:
+                session_id = ""
+                if hasattr(tool_context, "session") and tool_context.session:
+                    session_id = getattr(tool_context.session, "id", "")
+                if session_id:
+                    from lifesci_tools.memory_plane import MemoryPlaneTool
+                    mp = MemoryPlaneTool._backend
+                    if mp is not None:
+                        redis_key = f"medexpert:{session_id}:intermediate:final_answer"
+                        await mp.set(redis_key, report, ex=3600)
+                        logger.info("[report_generator] Stored final_answer to Redis (%d chars)", len(report))
+            except Exception as exc:
+                logger.warning("[report_generator] Failed to store final_answer to Redis: %s", exc)
+
         return {
             "report": report,
             "mode": mode,

@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 // Note: may be able to remove this workaround with next version of uuid
 const v4 = () => uuidv4({});
 
-import { api, RateLimitError } from "@/lib/api";
+import { api, RateLimitError, pollTaskStatus } from "@/lib/api";
 import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData, type TriageProgressData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
 import { resolveAgentName } from "@/lib/config/modelOptions";
@@ -126,6 +126,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                     stalled: true,
                     stalledAt: new Date().toISOString(),
                 }));
+                // If stalled and not already polling, start polling fallback
+                // Use refs to avoid stale closure (timeout fires 60s after effect creation)
+                if (!pollingIntervalRef.current && currentTaskIdRef.current && currentSessionIdRef.current) {
+                    console.log("[ChatPoll] Stall detected — starting polling fallback.");
+                    startPollingFallback(currentTaskIdRef.current, currentSessionIdRef.current);
+                }
             }, 60_000);
         } else {
             // Clear stall flag when no longer responding
@@ -167,6 +173,11 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const CHAT_SSE_BASE_DELAY_MS = 1000;
     const CHAT_SSE_MAX_DELAY_MS = 16000;
 
+    // Polling fallback state (activates when SSE reconnection is exhausted)
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const pollingLastTimestampRef = useRef(0);
+    const POLLING_INTERVAL_MS = 5_000;
+
     // Track isCancelling in ref to access in async callbacks
     const isCancellingRef = useRef(isCancelling);
     useEffect(() => {
@@ -175,9 +186,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     // Track current session id to prevent race conditions
     const currentSessionIdRef = useRef(sessionId);
+    const currentTaskIdRef = useRef(currentTaskId);
     useEffect(() => {
         currentSessionIdRef.current = sessionId;
     }, [sessionId]);
+    useEffect(() => {
+        currentTaskIdRef.current = currentTaskId;
+    }, [currentTaskId]);
 
     const [taskIdInSidePanel, setTaskIdInSidePanel] = useState<string | null>(null);
     const cancelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -2402,9 +2417,95 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         [sessionId]
     );
 
+    // ── Polling fallback (activates when SSE reconnection exhausted) ──
+
+    const stopPollingFallback = useCallback(() => {
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+        }
+        pollingLastTimestampRef.current = 0;
+    }, []);
+
+    const startPollingFallback = useCallback(
+        (taskId: string, sid: string) => {
+            // Don't start if already polling
+            if (pollingIntervalRef.current) return;
+
+            console.log(`[ChatPoll] Starting polling fallback for task ${taskId}, session ${sid}`);
+            latestStatusText.current = "Reconnecting via polling...";
+
+            const poll = async () => {
+                try {
+                    const resp = await pollTaskStatus(taskId, sid, pollingLastTimestampRef.current);
+
+                    // Process new events through the same SSE message handler
+                    if (resp.events_since && resp.events_since.length > 0) {
+                        for (const evt of resp.events_since) {
+                            // Synthesize a MessageEvent-like object for handleSseMessage
+                            const syntheticEvent = new MessageEvent("message", {
+                                data: JSON.stringify(evt.payload),
+                            });
+                            handleSseMessage(syntheticEvent);
+
+                            // Track the latest timestamp to avoid re-processing
+                            if (evt.created_time > pollingLastTimestampRef.current) {
+                                pollingLastTimestampRef.current = evt.created_time;
+                            }
+                        }
+                    }
+
+                    // Check completion
+                    if (resp.is_complete) {
+                        console.log("[ChatPoll] Task complete via polling. Stopping.");
+                        stopPollingFallback();
+
+                        // If we got an answer but no final event was processed, create
+                        // a synthetic completion message from the Redis answer_text
+                        if (resp.answer_text && !resp.has_final_event) {
+                            setMessages(prev => {
+                                const last = prev[prev.length - 1];
+                                if (last && !last.isUser && !last.isComplete) {
+                                    return [
+                                        ...prev.slice(0, -1),
+                                        { ...last, isComplete: true },
+                                    ];
+                                }
+                                // No incomplete agent message — create one from answer_text
+                                return [
+                                    ...prev,
+                                    {
+                                        role: "agent",
+                                        parts: [{ kind: "text", text: resp.answer_text! }],
+                                        isUser: false,
+                                        isComplete: true,
+                                        metadata: { messageId: `msg-${v4()}` },
+                                    } as MessageFE,
+                                ];
+                            });
+                        }
+
+                        setIsResponding(false);
+                        latestStatusText.current = null;
+                    }
+                } catch (err) {
+                    console.warn("[ChatPoll] Polling request failed:", err);
+                    // Keep polling — transient errors are expected
+                }
+            };
+
+            // Immediate first poll, then interval
+            void poll();
+            pollingIntervalRef.current = setInterval(poll, POLLING_INTERVAL_MS);
+        },
+        [handleSseMessage, stopPollingFallback, setMessages],
+    );
+
     const handleSseOpen = useCallback(() => {
         // Reset reconnection state on successful connection
         chatSseReconnectionAttemptsRef.current = 0;
+        // Stop polling if SSE reconnected successfully
+        stopPollingFallback();
         if (chatSseReconnectionTimeoutRef.current) {
             clearTimeout(chatSseReconnectionTimeoutRef.current);
             chatSseReconnectionTimeoutRef.current = null;
@@ -2440,9 +2541,16 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 }, delay);
                 return;
             }
-            // Max attempts reached — show error
-            setError({ title: "Connection Failed", error: "Connection lost after multiple retry attempts. Please try again." });
+            // Max SSE attempts reached — fall back to polling instead of showing error
+            console.log("[ChatSSE] Max reconnection attempts. Switching to polling fallback.");
             chatSseReconnectionAttemptsRef.current = 0;
+            closeCurrentEventSource();
+            if (currentTaskId && sessionId) {
+                startPollingFallback(currentTaskId, sessionId);
+                return;
+            }
+            // No task/session to poll — show error as last resort
+            setError({ title: "Connection Failed", error: "Connection lost after multiple retry attempts. Please try again." });
         }
 
         // Original cleanup for non-reconnectable cases or max attempts exceeded
@@ -2455,7 +2563,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             latestStatusText.current = null;
         }
         setMessages(prev => prev.filter(msg => !msg.isStatusBubble).map((m, i, arr) => (i === arr.length - 1 && !m.isUser ? { ...m, isComplete: true } : m)));
-    }, [closeCurrentEventSource, isResponding, currentTaskId, setError]);
+    }, [closeCurrentEventSource, isResponding, currentTaskId, sessionId, startPollingFallback, setError]);
 
     const cleanupUploadedFiles = useCallback(async (uploadedFiles: Array<{ filename: string; sessionId: string }>) => {
         if (uploadedFiles.length === 0) {
@@ -3080,8 +3188,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 chatSseReconnectionTimeoutRef.current = null;
             }
             chatSseReconnectionAttemptsRef.current = 0;
+            stopPollingFallback();
         }
-    }, [currentTaskId, closeCurrentEventSource]);
+    }, [currentTaskId, closeCurrentEventSource, stopPollingFallback]);
 
     // --- Sub-context memoized values (Phase E Round 1) ---
     const notificationValue = useMemo(

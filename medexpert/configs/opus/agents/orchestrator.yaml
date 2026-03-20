@@ -209,6 +209,12 @@ apps:
         wait for verification. Then proceed to STEP 5 (verification runs
         after the user already has the answer).
 
+        **Store final answer for polling fallback** — Immediately after
+        responding, call memory_plane(operation="store", key="final_answer",
+        value=<your full answer text>, namespace="intermediate"). This
+        ensures the answer is retrievable via REST polling if the SSE
+        connection drops.
+
         **STEP 5 — VERIFY + REVISE**
         Delegate the draft to `peer_VerifierAgentOpus`. Store verification_verdict
         and verification_score in memory_plane (namespace: "verification").

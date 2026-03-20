@@ -461,6 +461,15 @@ def _setup_routers() -> None:
     except ImportError:
         pass  # Not a MedExpert deployment — skip
 
+    # MedExpert polling fallback router (optional — SSE connection drop recovery)
+    try:
+        from poll_api.router import router as poll_router
+
+        app.include_router(poll_router, prefix=api_prefix, tags=["Polling Fallback"])
+        log.info("Polling fallback router mounted at %s/poll", api_prefix)
+    except ImportError:
+        pass  # Not a MedExpert deployment — skip
+
     log.info("Legacy routers mounted for endpoints not yet migrated")
 
     # Register shared exception handlers

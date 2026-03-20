@@ -35,3 +35,9 @@ storybook-static
 cypress/screenshots
 cypress/videos
 cypress/results
+
+# Playwright E2E output
+e2e/screenshots
+e2e/test-results
+playwright-report
+test-results

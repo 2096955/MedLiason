@@ -1,5 +1,6 @@
 """Tests for lifesci_common.tracing bootstrap — Langfuse + Phoenix backends."""
 
+import os
 import sys
 
 import pytest
@@ -11,12 +12,21 @@ def _reset_tracing_state():
     import lifesci_common.tracing as mod
 
     mod._initialized = False
-    mod._tracer_provider = None
     mod._active_backend = None
     yield
     mod._initialized = False
-    mod._tracer_provider = None
     mod._active_backend = None
+    # Clean up env vars that _init_langfuse may have set
+    os.environ.pop("LANGFUSE_HOST", None)
+
+
+@pytest.fixture()
+def _reset_litellm_callbacks():
+    """Save and restore litellm.callbacks around a test."""
+    import litellm
+    original = list(litellm.callbacks or [])
+    yield
+    litellm.callbacks = original
 
 
 # ── No backend configured ──────────────────────────────────────────────────
@@ -69,12 +79,12 @@ def test_langfuse_no_public_key_skips(monkeypatch):
     assert mod.init_tracing() is False
 
 
-def test_langfuse_missing_deps_falls_through(monkeypatch):
-    """If langfuse package not installed, falls through to Phoenix (also missing)."""
+def test_langfuse_missing_litellm_falls_through(monkeypatch):
+    """If litellm import fails, Langfuse init falls through to Phoenix."""
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
     monkeypatch.delenv("PHOENIX_API_KEY", raising=False)
-    monkeypatch.setitem(sys.modules, "langfuse", None)
+    monkeypatch.setitem(sys.modules, "litellm", None)
 
     import lifesci_common.tracing as mod
 
@@ -82,25 +92,11 @@ def test_langfuse_missing_deps_falls_through(monkeypatch):
     assert mod.init_tracing() is False
 
 
-def test_langfuse_successful_init(monkeypatch):
-    """Langfuse backend initialises when both keys are set and deps available."""
+def test_langfuse_successful_init(monkeypatch, _reset_litellm_callbacks):
+    """Langfuse backend initialises when both keys are set."""
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
     monkeypatch.setenv("LANGFUSE_BASE_URL", "https://test.langfuse.com")
-
-    try:
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,
-        )
-    except ImportError:
-        pytest.skip("OpenTelemetry OTLP exporter not installed")
-
-    try:
-        import langfuse  # noqa: F401
-    except ImportError:
-        pytest.skip("langfuse not installed")
 
     import lifesci_common.tracing as mod
 
@@ -109,17 +105,37 @@ def test_langfuse_successful_init(monkeypatch):
     assert result is True
     assert mod._initialized is True
     assert mod._active_backend == "langfuse"
-    assert mod._tracer_provider is not None
+
+    import litellm
+    assert "langfuse_otel" in litellm.callbacks
 
 
-def test_encode_basic_auth():
-    from lifesci_common.tracing import _encode_basic_auth
+def test_langfuse_base_url_maps_to_host(monkeypatch, _reset_litellm_callbacks):
+    """LANGFUSE_BASE_URL is mapped to LANGFUSE_HOST for litellm compat."""
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://custom.langfuse.com")
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
 
-    result = _encode_basic_auth("pk-lf-test", "sk-lf-test")
-    import base64
+    import lifesci_common.tracing as mod
 
-    decoded = base64.b64decode(result).decode()
-    assert decoded == "pk-lf-test:sk-lf-test"
+    mod._initialized = False
+    mod.init_tracing()
+    assert os.environ.get("LANGFUSE_HOST") == "https://custom.langfuse.com"
+
+
+def test_langfuse_host_not_overwritten(monkeypatch, _reset_litellm_callbacks):
+    """If LANGFUSE_HOST is already set, LANGFUSE_BASE_URL does not overwrite."""
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://base.langfuse.com")
+    monkeypatch.setenv("LANGFUSE_HOST", "https://host.langfuse.com")
+
+    import lifesci_common.tracing as mod
+
+    mod._initialized = False
+    mod.init_tracing()
+    assert os.environ.get("LANGFUSE_HOST") == "https://host.langfuse.com"
 
 
 # ── Phoenix backend ────────────────────────────────────────────────────────
@@ -168,7 +184,6 @@ def test_phoenix_register_failure_leaves_uninitialized(monkeypatch):
     mod._initialized = False
     assert mod.init_tracing() is False
     assert mod._initialized is False
-    assert mod._tracer_provider is None
 
 
 def test_phoenix_successful_init(monkeypatch):
@@ -208,26 +223,17 @@ def test_phoenix_successful_init(monkeypatch):
     assert mod.init_tracing() is True
     assert mod._initialized is True
     assert mod._active_backend == "phoenix"
-    assert mod._tracer_provider is mock_provider
     assert MockInstrumentor.instrumented is True
 
 
 # ── Langfuse takes priority over Phoenix ────────────────────────────────────
 
 
-def test_langfuse_takes_priority_over_phoenix(monkeypatch):
+def test_langfuse_takes_priority_over_phoenix(monkeypatch, _reset_litellm_callbacks):
     """When both Langfuse and Phoenix keys are set, Langfuse wins."""
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-test")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-test")
     monkeypatch.setenv("PHOENIX_API_KEY", "test-key")
-
-    try:
-        import langfuse  # noqa: F401
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,  # noqa: F401
-        )
-    except ImportError:
-        pytest.skip("langfuse or OTel OTLP exporter not installed")
 
     import lifesci_common.tracing as mod
 
@@ -235,35 +241,6 @@ def test_langfuse_takes_priority_over_phoenix(monkeypatch):
     result = mod.init_tracing()
     assert result is True
     assert mod._active_backend == "langfuse"
-
-
-# ── Shutdown ────────────────────────────────────────────────────────────────
-
-
-def test_shutdown_flushes_provider():
-    """shutdown_tracing() calls shutdown on the provider and clears it."""
-    import lifesci_common.tracing as mod
-
-    class MockProvider:
-        shut_down = False
-
-        def shutdown(self):
-            MockProvider.shut_down = True
-
-    mod._tracer_provider = MockProvider()
-    mod._active_backend = "langfuse"
-    mod.shutdown_tracing()
-    assert MockProvider.shut_down is True
-    assert mod._tracer_provider is None
-    assert mod._active_backend is None
-
-
-def test_shutdown_noop_when_no_provider():
-    """shutdown_tracing() is safe to call when no provider is set."""
-    import lifesci_common.tracing as mod
-
-    mod._tracer_provider = None
-    mod.shutdown_tracing()  # should not raise
 
 
 # ── get_active_backend ──────────────────────────────────────────────────────

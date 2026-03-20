@@ -13,10 +13,8 @@ try:
     if _result:
         import litellm as _lm
 
-        _log.warning(
-            "Tracing init OK: callbacks=%s", _lm.callbacks
-        )
+        _log.info("Tracing init OK: callbacks=%s", _lm.callbacks)
     else:
-        _log.info("Tracing init returned False (no backend configured)")
+        _log.debug("Tracing: no backend configured")
 except Exception as _exc:
     _log.warning("Tracing init failed: %s", _exc)

@@ -245,3 +245,34 @@ class ApiClient {
 
 export const api = new ApiClient();
 export { getErrorFromResponse };
+
+/**
+ * Poll task status and events via REST (fallback when SSE drops).
+ * Returns Redis-cached signals + SQL events since the given timestamp.
+ */
+export interface PollResponse {
+    task_id: string;
+    session_id: string;
+    is_complete: boolean;
+    is_running: boolean;
+    protocol_step: number | null;
+    protocol_step_name: string | null;
+    answer_text: string | null;
+    has_final_event: boolean;
+    event_count: number;
+    events_since: Array<{
+        event_type: string;
+        payload: Record<string, unknown>;
+        created_time: number;
+    }>;
+}
+
+export async function pollTaskStatus(
+    taskId: string,
+    sessionId: string,
+    afterTimestamp?: number,
+): Promise<PollResponse> {
+    const params = new URLSearchParams({ session_id: sessionId });
+    if (afterTimestamp) params.set("after", String(afterTimestamp));
+    return api.webui.get(`/api/v1/poll/${taskId}?${params}`) as Promise<PollResponse>;
+}

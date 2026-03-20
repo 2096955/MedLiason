@@ -668,6 +668,13 @@ class MemoryPlaneTool(DynamicTool):
         payload.setdefault("query_domain", args.get("query_domain", "general"))
         payload.setdefault("query_text", args.get("query", ""))
 
+        # Write task_complete signal to Redis for polling fallback
+        try:
+            complete_key = self._make_key(session_id, "intermediate", "task_complete")
+            await self._backend.set(complete_key, "true", ex=self._ttl_seconds)
+        except Exception as exc:
+            log.warning("Failed to write task_complete signal: %s", exc)
+
         try:
             from lifesci_tools.cold_worker import enqueue_session_flush
 
