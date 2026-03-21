@@ -504,9 +504,9 @@ const GraphCanvas: React.FC<GraphCanvasProps> = ({ nodes, edges, onNodeClick, hi
                             <text
                                 y={node.radius + 14}
                                 textAnchor="middle"
-                                fill={style.text}
-                                fontSize={10}
-                                fontWeight={500}
+                                fill={primaryLabel === "Session" ? "#475569" : style.text}
+                                fontSize={primaryLabel === "Session" ? 11 : 10}
+                                fontWeight={primaryLabel === "Session" ? 600 : 500}
                                 className="pointer-events-none select-none"
                             >
                                 {node.displayLabel}
