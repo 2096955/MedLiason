@@ -20,16 +20,19 @@ from lifesci_common.constants import (
     EVOLVABLE_AGENTS,
 )
 from lifesci_tools.cold_store import (
+    apply_pending_calibration,
     approve_candidate,
     get_active_prompt,
     get_aggregate_score,
     get_connection,
     get_feedback_stats,
+    get_pending_calibrations,
     get_pending_candidates,
     get_prompt_history,
     get_rolling_scores,
     get_strategy_by_type,
     reject_candidate,
+    reject_pending_calibration,
 )
 
 log = logging.getLogger(__name__)
@@ -113,6 +116,8 @@ class OverviewResponse(BaseModel):
     avg_composite: float | None = None
     promotions_last_24h: int
     agents_below_threshold: int
+    stale_prompt_candidates: int = 0
+    stale_calibrations_pending: int = 0
 
 
 class HealthResponse(BaseModel):
@@ -159,6 +164,31 @@ class CalibrationResponse(BaseModel):
     status: str
     window_days: int
     suggestions: list[CalibrationSuggestion]
+
+
+class PendingCalibrationEntry(BaseModel):
+    id: int
+    agent_name: str
+    domain: str
+    current_weight: float
+    suggested_weight: float
+    delta: float
+    negative_rate: float
+    sample_count: int
+    action: str
+    reason: str
+    status: str
+    created_at: str
+
+
+class PendingCalibrationsResponse(BaseModel):
+    pending: list[PendingCalibrationEntry]
+    total_pending: int
+
+
+class CalibrationActionRequest(BaseModel):
+    reviewer: str = ""
+    reason: str = ""
 
 
 class FeedbackSummaryResponse(BaseModel):
@@ -435,12 +465,30 @@ async def overview():
         ).fetchone()
         promotions_last_24h = row["cnt"] if row else 0
 
+        # Stale prompt candidates (pending > 24h)
+        prompt_candidates = get_pending_candidates(conn)
+        stale_prompt_count = sum(
+            1 for c in prompt_candidates if c.get("created_at", "") < cutoff
+        )
+
+        # Stale calibrations (pending > 24h)
+        try:
+            cal_pending = get_pending_calibrations(conn, status="pending")
+            stale_cal_count = sum(
+                1 for c in cal_pending if c.get("created_at", "") < cutoff
+            )
+        except sqlite3.OperationalError:
+            # Table may not exist on pre-M7 databases
+            stale_cal_count = 0
+
         return OverviewResponse(
             total_agents=total_agents,
             evolved_count=evolved_count,
             avg_composite=avg_composite,
             promotions_last_24h=promotions_last_24h,
             agents_below_threshold=below_threshold,
+            stale_prompt_candidates=stale_prompt_count,
+            stale_calibrations_pending=stale_cal_count,
         )
     except Exception as exc:
         log.exception("Error building overview: %s", exc)
@@ -600,6 +648,120 @@ async def calibration_overview(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to compute calibration",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Pending calibration review endpoints (Phase 3 — C4)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/calibration/pending", response_model=PendingCalibrationsResponse)
+async def list_pending_calibrations_endpoint():
+    """List calibration weight changes awaiting human review."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        raw = get_pending_calibrations(conn, status="pending")
+        entries = [
+            PendingCalibrationEntry(
+                id=c["id"],
+                agent_name=c["agent_name"],
+                domain=c["domain"],
+                current_weight=c["current_weight"],
+                suggested_weight=c["suggested_weight"],
+                delta=c["delta"],
+                negative_rate=c["negative_rate"],
+                sample_count=c["sample_count"],
+                action=c["action"],
+                reason=c["reason"],
+                status=c["status"],
+                created_at=c.get("created_at", ""),
+            )
+            for c in raw
+        ]
+        return PendingCalibrationsResponse(
+            pending=entries, total_pending=len(entries)
+        )
+    except Exception as exc:
+        log.exception("Error listing pending calibrations: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list pending calibrations",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/calibration/pending/{calibration_id}/apply")
+async def apply_calibration_endpoint(
+    calibration_id: int,
+    body: CalibrationActionRequest | None = None,
+):
+    """Apply a pending calibration weight change."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        reviewer = body.reviewer if body else ""
+        success = apply_pending_calibration(
+            conn, calibration_id, reviewer=reviewer
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No pending calibration found with id {calibration_id}",
+            )
+        return {
+            "status": "applied",
+            "calibration_id": calibration_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Error applying calibration: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to apply calibration",
+        ) from exc
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/calibration/pending/{calibration_id}/reject")
+async def reject_calibration_endpoint(
+    calibration_id: int,
+    body: CalibrationActionRequest | None = None,
+):
+    """Reject a pending calibration weight change."""
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = _open_conn()
+        reviewer = body.reviewer if body else ""
+        reason = body.reason if body else ""
+        success = reject_pending_calibration(
+            conn, calibration_id, reviewer=reviewer, reason=reason
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No pending calibration found with id {calibration_id}",
+            )
+        return {
+            "status": "rejected",
+            "calibration_id": calibration_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Error rejecting calibration: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reject calibration",
         ) from exc
     finally:
         if conn:

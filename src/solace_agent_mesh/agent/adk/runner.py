@@ -128,14 +128,53 @@ async def run_adk_async_task_thread_wrapper(
                     logical_task_id,
                 )
 
-        is_paused = await run_adk_async_task(
-            component,
-            task_context,
-            adk_session,
-            adk_content,
-            run_config,
-            a2a_context,
-        )
+        # Apply task-level timeout to prevent infinite hangs when peers die silently.
+        # Uses maxExecutionTimeMs from gateway metadata, or agent config, or default 1200s.
+        metadata = a2a_context.get("metadata", {})
+        max_exec_ms = metadata.get("maxExecutionTimeMs")
+        if max_exec_ms and isinstance(max_exec_ms, (int, float)) and max_exec_ms > 0:
+            task_timeout = min(max_exec_ms / 1000, 3600)  # Cap at 1 hour
+        else:
+            task_timeout = component.get_config("task_timeout_seconds", 1200)
+
+        try:
+            is_paused = await asyncio.wait_for(
+                run_adk_async_task(
+                    component,
+                    task_context,
+                    adk_session,
+                    adk_content,
+                    run_config,
+                    a2a_context,
+                ),
+                timeout=task_timeout,
+            )
+        except asyncio.TimeoutError:
+            log.error(
+                "%s Task %s timed out after %ds. Cancelling active peer sub-tasks.",
+                component.log_identifier,
+                logical_task_id,
+                task_timeout,
+            )
+            # Cancel any active peer sub-tasks
+            if task_context:
+                for sub_id, sub_info in (task_context.active_peer_sub_tasks or {}).items():
+                    try:
+                        peer_name = sub_info.get("peer_agent_name")
+                        if sub_id and peer_name:
+                            tid = sub_id.replace(component.CORRELATION_DATA_PREFIX, "", 1)
+                            cancel_req = a2a.create_cancel_task_request(task_id=tid)
+                            topic = component._get_agent_request_topic(peer_name)
+                            component.publish_a2a_message(
+                                payload=cancel_req.model_dump(exclude_none=True),
+                                topic=topic,
+                                user_properties={"clientId": component.agent_name},
+                            )
+                    except Exception:
+                        pass
+            raise TaskCancelledError(
+                f"Task {logical_task_id} timed out after {task_timeout}s"
+            )
 
         # Mark task as paused if it's waiting for peer response or user input
         if task_context and is_paused:

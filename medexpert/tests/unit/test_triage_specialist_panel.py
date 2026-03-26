@@ -1,7 +1,8 @@
 """Wiring tests for TriageSpecialistPanelTool — JSON extraction integration."""
 
+import asyncio
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -100,3 +101,133 @@ async def test_specialist_panel_handles_unparseable_response(tool, mock_ctx):
     verdict = result["verdicts"][0]
     assert verdict["diagnosis"] == "Insufficient information"
     assert verdict["confidence"] == 0
+
+
+@pytest.mark.asyncio
+async def test_specialist_panel_retries_on_timeout(tool, mock_ctx):
+    """TimeoutError on first attempt triggers one retry."""
+    good_response = _mock_llm_response(
+        '{"diagnosis": "ME/CFS", "confidence": 75, "thinking": "Classic PEM"}'
+    )
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise asyncio.TimeoutError("simulated timeout")
+        return good_response
+
+    with (
+        patch("litellm.completion", side_effect=side_effect),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await tool._run_async_impl(
+            {
+                "specialists": '["family_physician"]',
+                "clinical_note": '{"chief_complaint": "fatigue"}',
+            },
+            mock_ctx,
+        )
+
+    assert result["verdicts"][0]["diagnosis"] == "ME/CFS"
+    assert call_count == 2  # 1 failure + 1 retry
+
+
+@pytest.mark.asyncio
+async def test_specialist_panel_retries_on_transient_error(tool, mock_ctx):
+    """Transient litellm errors (503-like) trigger one retry."""
+    good_response = _mock_llm_response(
+        '{"diagnosis": "Hypothyroidism", "confidence": 60, "thinking": "TSH"}'
+    )
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("503 Service Unavailable")
+        return good_response
+
+    with (
+        patch("litellm.completion", side_effect=side_effect),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await tool._run_async_impl(
+            {
+                "specialists": '["family_physician"]',
+                "clinical_note": '{"chief_complaint": "fatigue"}',
+            },
+            mock_ctx,
+        )
+
+    assert result["verdicts"][0]["diagnosis"] == "Hypothyroidism"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_specialist_panel_diagnostic_thinking_on_failure(tool, mock_ctx):
+    """When all retries fail, the verdict thinking field contains the exception info."""
+    with (
+        patch(
+            "litellm.completion", side_effect=asyncio.TimeoutError("vertex cold start")
+        ),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await tool._run_async_impl(
+            {
+                "specialists": '["family_physician"]',
+                "clinical_note": '{"chief_complaint": "fatigue"}',
+            },
+            mock_ctx,
+        )
+
+    verdict = result["verdicts"][0]
+    assert verdict["confidence"] == 0
+    assert "TimeoutError" in verdict["thinking"]
+    assert "vertex cold start" in verdict["thinking"]
+
+
+@pytest.mark.asyncio
+async def test_specialist_panel_no_retry_on_non_transient_error(tool, mock_ctx):
+    """Non-transient errors (e.g. ValueError) do not trigger retry."""
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise ValueError("bad model name")
+
+    with patch("litellm.completion", side_effect=side_effect):
+        result = await tool._run_async_impl(
+            {
+                "specialists": '["family_physician"]',
+                "clinical_note": '{"chief_complaint": "fatigue"}',
+            },
+            mock_ctx,
+        )
+
+    assert result["verdicts"][0]["confidence"] == 0
+    # Should NOT retry on ValueError — only 1 call
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_specialist_panel_forwards_num_retries(tool, mock_ctx):
+    """num_retries from model config dict is forwarded to litellm.completion."""
+    tool.tool_config["model"] = {"model": "test-model", "num_retries": 4}
+    good = _mock_llm_response(
+        '{"diagnosis": "Anemia", "confidence": 50, "thinking": "low Hb"}'
+    )
+
+    with patch("litellm.completion", return_value=good) as mock_comp:
+        await tool._run_async_impl(
+            {
+                "specialists": '["family_physician"]',
+                "clinical_note": '{"chief_complaint": "fatigue"}',
+            },
+            mock_ctx,
+        )
+
+    _, kwargs = mock_comp.call_args
+    assert kwargs.get("num_retries") == 4

@@ -1,0 +1,239 @@
+# MedExpert Pro - Triage Orchestrator Agent (gemini-3.1-pro-preview)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: triage_orchestrator_pro.log
+
+!include ../shared_config_pro.yaml
+
+apps:
+  - name: triage_orchestrator_pro_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "TriageOrchestratorAgentPro"
+      display_name: "Triage Orchestrator (Pro)"
+      model: *orchestrator_model
+
+      instruction: |
+        You are the Triage Orchestrator Agent for MedExpert. You receive
+        structured clinical notes from the Triage Intake Agent and run a
+        5-stage diagnostic pipeline using specialist panels and decision
+        rules.
+
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you.
+        If the patient mentions specific drug names, medications, or unfamiliar terms, use web_search_firecrawl to identify what they are before proceeding with triage assessment. This context is critical for accurate clinical evaluation. Use only the tools listed in your tool set.
+
+        You coordinate the following tools:
+        - `triage_routing` -- selects specialists based on symptom keywords
+        - `triage_specialist_panel` -- runs parallel LLM calls with persona
+          prompts for each specialist
+        - `triage_consensus` -- groups diagnoses and selects the winner
+        - `triage_evaluation` -- cross-references diagnosis against symptoms
+        - `triage_nba` -- determines the Next Best Action routing
+        - `memory_plane` -- stores progress at each stage
+
+        ===============================================================
+        5-STAGE TRIAGE PIPELINE
+        ===============================================================
+
+        The intake agent sends you a task with a clinical_note JSON and
+        optionally an emergency_override flag.
+
+        **STAGE 2 -- ROUTING**
+        Call `triage_routing` with the clinical_note JSON string.
+        This returns tier1 (always 3 generalists) and tier2 (up to 3
+        matched specialists) lists.
+
+        Store the routing result:
+        - memory_plane(operation="store", key="routing_result",
+          value=<JSON of routing result>, namespace="intermediate")
+
+        **STAGE 3 -- SPECIALIST PANEL**
+        Call `triage_specialist_panel` with:
+        - specialists: JSON array of all_specialists from routing
+        - clinical_note: the clinical note JSON string
+        - tier1_specialists: JSON array of tier1 from routing
+
+        This runs parallel LLM calls and returns verdicts from each
+        specialist.
+
+        Store the verdicts:
+        - memory_plane(operation="store", key="specialist_verdicts",
+          value=<JSON of verdicts>, namespace="intermediate")
+
+        **STAGE 4 -- CONSENSUS + EVALUATION**
+        1. Call `triage_consensus` with the verdicts JSON array.
+           This groups diagnoses by similarity and selects the consensus.
+
+        2. Call `triage_evaluation` with:
+           - consensus_diagnosis from the consensus result
+           - mean_confidence from the consensus result
+           - clinical_note JSON string
+           - supporting_specialists JSON from consensus
+           - dissenting_specialists JSON from consensus
+
+        Store both results:
+        - memory_plane(operation="store", key="consensus_result",
+          value=<JSON>, namespace="intermediate")
+        - memory_plane(operation="store", key="evaluation_result",
+          value=<JSON>, namespace="intermediate")
+
+        **STAGE 5 -- NEXT BEST ACTION**
+        Call `triage_nba` with:
+        - consensus_diagnosis from consensus
+        - mean_confidence from consensus
+        - eval_confidence from evaluation
+        - flag_for_review from evaluation
+        - flag_reason from evaluation
+        - emergency_override (from the original task, if present)
+        - specialist_type (infer from the winning specialist cluster)
+        - session_id (from the task context)
+
+        Format the NBA result as the final response to the patient.
+        Include the disclaimer, diagnosis, recommended action, urgency,
+        and any self-care instructions or follow-up timeframes.
+
+        ===============================================================
+        EMERGENCY FAST-PATH
+        ===============================================================
+
+        If the incoming task includes `emergency_override=true`:
+
+        1. SKIP stages 2 and 3 (routing and specialist panel).
+        2. Go directly to `triage_evaluation` with:
+           - consensus_diagnosis: "Emergency presentation"
+           - mean_confidence: 0
+           - clinical_note: the clinical note
+           - emergency_override: true
+        3. Then call `triage_nba` with emergency_override=true.
+        4. The NBA will route to emergency_services immediately.
+
+        Store the emergency evaluation:
+        - memory_plane(operation="store", key="emergency_eval",
+          value=<JSON>, namespace="intermediate")
+
+        ===============================================================
+        MEMORY PLANE USAGE
+        ===============================================================
+
+        Store progress at each stage so that results can be audited and
+        used for cold store learning. Use namespace="intermediate" for
+        all triage pipeline data.
+
+        ===============================================================
+        RESPONSE FORMAT
+        ===============================================================
+
+        After the NBA tool returns, format a patient-friendly response:
+
+        1. Restate the disclaimer (AI-assisted, not medical advice)
+        2. Summarize the assessment: diagnosis, confidence level
+        3. State the recommended action clearly
+        4. Include any self-care instructions if applicable
+        5. Include escalation criteria (when to seek higher care)
+        6. Include follow-up timeframe if applicable
+
+        Do NOT reveal internal tool names, stage numbers, or technical
+        pipeline details to the patient.
+
+        ===============================================================
+        POST-NBA ENRICHMENT (NHS 111 Clinical Guidance)
+        ===============================================================
+
+        After triage_nba returns a route of "self_care", "pharmacist",
+        or "gp_visit":
+        1. Call search_nhs_conditions with the consensus diagnosis
+        2. If results found, call get_nhs_condition_page for the top match
+        3. If the page links to specific treatment or self-care URLs,
+           call get_nhs_treatment_guidance to scrape that page
+        4. Include NHS self-care advice and "when to get help" guidance
+           in the patient response
+        5. Do NOT delay emergency or hospital routes with NHS lookups
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+
+      max_llm_calls_per_task: 25
+
+      tools:
+        # -- Stage 2: ROUTING --
+
+        # -- Web Search (Firecrawl) for medication/term identification --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
+        - tool_type: python
+          component_module: lifesci_tools.triage_routing
+          component_base_path: src
+
+        # -- Stage 3: SPECIALIST PANEL --
+        - tool_type: python
+          component_module: lifesci_tools.triage_specialist_panel
+          component_base_path: src
+          tool_config:
+            model: *specialist_model
+
+        # -- Stage 4: CONSENSUS + EVALUATION --
+        - tool_type: python
+          component_module: lifesci_tools.triage_consensus
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.triage_evaluation
+          component_base_path: src
+          tool_config:
+            model: *specialist_model
+
+        # -- Stage 5: NBA --
+        - tool_type: python
+          component_module: lifesci_tools.triage_nba
+          component_base_path: src
+          tool_config:
+            cold_db_path: data/medexpert-cold.db
+
+        # -- Shared state --
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+        # -- Post-NBA: NHS 111 Clinical Guidance (Firecrawl) --
+        - tool_type: mcp
+          name: nhs_111_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9016/sse"
+            timeout: 30
+
+      # Agent Card Definition
+      agent_card:
+        description: |
+          [Pro / gemini-3.1-pro-preview] Triage orchestrator for MedExpert. Runs a
+          5-stage diagnostic pipeline: Routing -> Specialist Panel ->
+          Consensus/Evaluation -> Next Best Action. Supports emergency
+          fast-path bypass.
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: triage_pipeline
+            name: Triage Pipeline
+            description: Full 5-stage triage pipeline with specialist panel and NBA routing.
+          - id: emergency_triage
+            name: Emergency Triage
+            description: Fast-path emergency triage bypassing specialist panel.
+
+      # Discovery & Communication
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        request_timeout_seconds: 300

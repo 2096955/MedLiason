@@ -73,17 +73,24 @@ def build_seed_payload(query: str, db_path: str) -> dict[str, Any]:
             conn, "source_weights", "_global"
         )
 
-        # Active prompt versions for observability
+        # Batch fetch all active prompts in one query instead of N individual calls
         active_prompts = {}
-        for agent_name in EVOLVABLE_AGENTS:
-            prompt = cold_store.get_active_prompt(conn, agent_name)
-            if prompt:
-                active_prompts[agent_name] = {
-                    "version": prompt["version"],
+        try:
+            placeholders = ",".join("?" for _ in EVOLVABLE_AGENTS)
+            rows = conn.execute(
+                f"SELECT agent_name, version, instruction FROM prompt_versions "
+                f"WHERE agent_name IN ({placeholders}) AND status = 'active'",
+                list(EVOLVABLE_AGENTS),
+            ).fetchall()
+            for row in rows:
+                active_prompts[row[0]] = {
+                    "version": row[1],
                     "instruction_hash": hashlib.md5(
-                        prompt["instruction"].encode()
+                        row[2].encode()
                     ).hexdigest()[:8],
                 }
+        except Exception:
+            pass  # prompt_versions table may not exist yet
 
         has_data = any(
             [

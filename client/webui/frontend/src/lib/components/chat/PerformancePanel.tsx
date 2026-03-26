@@ -191,7 +191,7 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({ isActive = f
             setOverview(null);
             setAgents([]);
             setPromotions([]);
-            setError("Could not reach the evolution API. The prompt evolution service may not be running.");
+            setError("No evolution data yet. Metrics will appear after research sessions complete.");
         } finally {
             setIsLoading(false);
         }

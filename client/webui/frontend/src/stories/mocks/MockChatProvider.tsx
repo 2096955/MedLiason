@@ -111,6 +111,8 @@ const defaultMockChatContext: DefaultMockContextType = {
     setHighlightedSourceId: () => {},
     triageProgress: null,
     setTriageProgress: () => {},
+    pipelineErrors: null,
+    setPipelineErrors: () => {},
 
     // Prompt handling
     pendingPrompt: null,

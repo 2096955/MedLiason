@@ -6,6 +6,7 @@ after repeated failures and probes after a recovery timeout.
 """
 
 import asyncio
+import json
 import logging
 import random
 import time
@@ -14,6 +15,7 @@ from enum import Enum
 from urllib.parse import urlparse
 
 import httpx
+from fastmcp.exceptions import ToolError
 
 log = logging.getLogger(__name__)
 
@@ -134,11 +136,183 @@ class CircuitOpenError(Exception):
 
     def __init__(self, url: str):
         self.url = url
+        self.error_category = "circuit_open"
+        self.is_retryable = True
+        self.retry_after_seconds = _circuit_breaker.recovery_timeout
         super().__init__(f"Circuit breaker OPEN for {url}")
 
 
 # Module-level singleton
 _circuit_breaker = CircuitBreaker()
+
+
+# ---------------------------------------------------------------------------
+# Module-level shared httpx client (lazy singleton with connection pooling)
+# ---------------------------------------------------------------------------
+
+_http_client: httpx.AsyncClient | None = None
+_http_client_lock = asyncio.Lock()
+
+
+async def _get_http_client() -> httpx.AsyncClient:
+    """Return the shared ``httpx.AsyncClient``, creating it on first use.
+
+    Uses double-checked locking to avoid creating multiple clients under
+    concurrent access.  The client is configured with connection pooling
+    (20 max connections, 10 keepalive) so that TCP + TLS setup costs are
+    amortised across MCP calls.  Per-request timeouts are passed at call
+    site, not on the client.
+    """
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        return _http_client
+    async with _http_client_lock:
+        if _http_client is not None and not _http_client.is_closed:
+            return _http_client
+        _http_client = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            timeout=DEFAULT_TIMEOUT,
+        )
+        return _http_client
+
+
+# ---------------------------------------------------------------------------
+# Validation exception (defined before structured_error_response)
+# ---------------------------------------------------------------------------
+
+
+class ValidationError(Exception):
+    """Raised for invalid input (HTTP 400/422 equivalent)."""
+
+    def __init__(self, message: str):
+        self.error_category = "validation_error"
+        self.is_retryable = False
+        super().__init__(message)
+
+
+# ---------------------------------------------------------------------------
+# Status-to-category mapping
+# ---------------------------------------------------------------------------
+
+
+def _status_to_category(status_code: int) -> str:
+    """Map an HTTP status code to a human-readable error category."""
+    if status_code == 429:
+        return "rate_limited"
+    if status_code in (500, 502, 503, 504):
+        return "service_unavailable"
+    if status_code == 404:
+        return "not_found"
+    if status_code in (400, 422):
+        return "validation_error"
+    if status_code in (401, 403):
+        return "auth_error"
+    if status_code == 0:
+        return "network_error"
+    return "api_error"
+
+
+# ---------------------------------------------------------------------------
+# Structured error response builder
+# ---------------------------------------------------------------------------
+
+
+def structured_error_response(
+    exc: Exception,
+    server_name: str,
+    tool_name: str,
+) -> dict:
+    """Build a structured error dict from an exception.
+
+    Returns a dict with at least: ``success``, ``error``, ``error_category``,
+    ``is_retryable``, ``server``, ``tool``.  Additional keys depend on the
+    exception type (e.g. ``retry_after_seconds``, ``last_status``, ``attempts``).
+    """
+    base = {
+        "success": False,
+        "server": server_name,
+        "tool": tool_name,
+    }
+
+    if isinstance(exc, CircuitOpenError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "retry_after_seconds": exc.retry_after_seconds,
+        })
+    elif isinstance(exc, RetryExhaustedError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+            "last_status": exc.last_status,
+            "attempts": exc.attempts,
+        })
+    elif isinstance(exc, ValidationError):
+        base.update({
+            "error": str(exc),
+            "error_category": exc.error_category,
+            "is_retryable": exc.is_retryable,
+        })
+    elif isinstance(exc, httpx.HTTPError):
+        base.update({
+            "error": str(exc),
+            "error_category": "network_error",
+            "is_retryable": True,
+        })
+    else:
+        base.update({
+            "error": str(exc),
+            "error_category": "api_error",
+            "is_retryable": False,
+        })
+
+    return base
+
+
+# Categories where the MCP isError flag should be set — these are
+# unambiguously server-side failures that the LLM should not attempt
+# to interpret as partial data.
+_FATAL_ERROR_CATEGORIES = frozenset({
+    "circuit_open",
+    "rate_limited",
+    "service_unavailable",
+    "network_error",
+    "auth_error",
+})
+
+
+def raise_or_return_error(
+    exc: Exception,
+    server_name: str,
+    tool_name: str,
+    **extra_fields: object,
+) -> dict:
+    """Build a structured error and raise ``ToolError`` for fatal categories.
+
+    For fatal errors (circuit_open, rate_limited, service_unavailable,
+    network_error, auth_error), raises ``fastmcp.exceptions.ToolError``
+    with the structured JSON as the message.  This sets ``isError=True``
+    on the MCP ``CallToolResult`` so the LLM immediately knows the tool
+    call failed — it does not have to parse the JSON to detect failure.
+
+    For non-fatal errors (not_found, validation_error, api_error), returns
+    the structured dict as a normal tool result.  These represent expected
+    boundary conditions the LLM should reason about (e.g. "no results
+    found" or "invalid input").
+
+    *extra_fields* are merged into the dict before raising/returning,
+    allowing callers to include domain-specific keys like ``"results": []``.
+    """
+    err = structured_error_response(exc, server_name, tool_name)
+    if extra_fields:
+        err.update(extra_fields)
+
+    if err.get("error_category") in _FATAL_ERROR_CATEGORIES:
+        raise ToolError(json.dumps(err))
+
+    return err
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +327,8 @@ class RetryExhaustedError(Exception):
         self.url = url
         self.last_status = last_status
         self.attempts = attempts
+        self.error_category = _status_to_category(last_status)
+        self.is_retryable = last_status in RETRYABLE_STATUS_CODES or last_status == 0
         super().__init__(
             f"All {attempts} retries exhausted for {url} (last status: {last_status})"
         )
@@ -180,37 +356,39 @@ async def resilient_get(
         raise CircuitOpenError(url)
 
     last_response = None
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.get(url, params=params, headers=headers)
-                if response.status_code not in RETRYABLE_STATUS_CODES:
-                    _circuit_breaker.record_success(url)
-                    return response
-                last_response = response
-                log.warning(
-                    "Retryable status %d from GET %s (attempt %d/%d)",
-                    response.status_code,
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                )
-            except httpx.HTTPError as exc:
-                log.warning(
-                    "HTTP error on GET %s (attempt %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                    exc,
-                )
-                if attempt == max_retries:
-                    _circuit_breaker.record_failure(url)
-                    raise
+    client = await _get_http_client()
+    for attempt in range(max_retries + 1):
+        try:
+            response = await client.get(
+                url, params=params, headers=headers, timeout=timeout
+            )
+            if response.status_code not in RETRYABLE_STATUS_CODES:
+                _circuit_breaker.record_success(url)
+                return response
+            last_response = response
+            log.warning(
+                "Retryable status %d from GET %s (attempt %d/%d)",
+                response.status_code,
+                url,
+                attempt + 1,
+                max_retries + 1,
+            )
+        except httpx.HTTPError as exc:
+            log.warning(
+                "HTTP error on GET %s (attempt %d/%d): %s",
+                url,
+                attempt + 1,
+                max_retries + 1,
+                exc,
+            )
+            if attempt == max_retries:
+                _circuit_breaker.record_failure(url)
+                raise
 
-            if attempt < max_retries:
-                delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
-                log.debug("Backing off %.2fs before retry", delay)
-                await asyncio.sleep(delay)
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
+            log.debug("Backing off %.2fs before retry", delay)
+            await asyncio.sleep(delay)
 
     _circuit_breaker.record_failure(url)
     if last_response is not None:
@@ -235,37 +413,39 @@ async def resilient_post(
         raise CircuitOpenError(url)
 
     last_response = None
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(url, json=json, headers=headers)
-                if response.status_code not in RETRYABLE_STATUS_CODES:
-                    _circuit_breaker.record_success(url)
-                    return response
-                last_response = response
-                log.warning(
-                    "Retryable status %d from POST %s (attempt %d/%d)",
-                    response.status_code,
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                )
-            except httpx.HTTPError as exc:
-                log.warning(
-                    "HTTP error on POST %s (attempt %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    max_retries + 1,
-                    exc,
-                )
-                if attempt == max_retries:
-                    _circuit_breaker.record_failure(url)
-                    raise
+    client = await _get_http_client()
+    for attempt in range(max_retries + 1):
+        try:
+            response = await client.post(
+                url, json=json, headers=headers, timeout=timeout
+            )
+            if response.status_code not in RETRYABLE_STATUS_CODES:
+                _circuit_breaker.record_success(url)
+                return response
+            last_response = response
+            log.warning(
+                "Retryable status %d from POST %s (attempt %d/%d)",
+                response.status_code,
+                url,
+                attempt + 1,
+                max_retries + 1,
+            )
+        except httpx.HTTPError as exc:
+            log.warning(
+                "HTTP error on POST %s (attempt %d/%d): %s",
+                url,
+                attempt + 1,
+                max_retries + 1,
+                exc,
+            )
+            if attempt == max_retries:
+                _circuit_breaker.record_failure(url)
+                raise
 
-            if attempt < max_retries:
-                delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
-                log.debug("Backing off %.2fs before retry", delay)
-                await asyncio.sleep(delay)
+        if attempt < max_retries:
+            delay = base_delay * (2**attempt) + random.uniform(0, 0.5)
+            log.debug("Backing off %.2fs before retry", delay)
+            await asyncio.sleep(delay)
 
     _circuit_breaker.record_failure(url)
     if last_response is not None:

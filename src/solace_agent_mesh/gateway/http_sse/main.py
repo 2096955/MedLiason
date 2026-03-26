@@ -452,6 +452,24 @@ def _setup_routers() -> None:
     except ImportError:
         pass  # Not a MedExpert deployment — skip
 
+    # MedExpert knowledge graph router (optional)
+    try:
+        from graph_api.router import router as graph_router
+
+        app.include_router(graph_router, prefix=api_prefix, tags=["Knowledge Graph"])
+        log.info("Knowledge graph router mounted at %s/graph", api_prefix)
+    except ImportError:
+        pass  # Not a MedExpert deployment — skip
+
+    # MedExpert polling fallback router (optional — SSE connection drop recovery)
+    try:
+        from poll_api.router import router as poll_router
+
+        app.include_router(poll_router, prefix=api_prefix, tags=["Polling Fallback"])
+        log.info("Polling fallback router mounted at %s/poll", api_prefix)
+    except ImportError:
+        pass  # Not a MedExpert deployment — skip
+
     log.info("Legacy routers mounted for endpoints not yet migrated")
 
     # Register shared exception handlers
@@ -590,4 +608,10 @@ async def generic_exception_handler(request: FastAPIRequest, exc: Exception):
 async def read_root():
     """Basic health check endpoint."""
     log.debug("Health check endpoint '/health' called")
+    return {"status": "A2A Web UI Backend is running"}
+
+
+@app.get("/api/v1/health", tags=["Health"])
+async def api_v1_health():
+    """API-prefixed health check endpoint (alias for /health)."""
     return {"status": "A2A Web UI Backend is running"}

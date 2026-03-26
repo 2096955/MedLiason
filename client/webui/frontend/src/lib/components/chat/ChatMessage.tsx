@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
-import { AlertCircle, Quote, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertCircle, Network, Quote, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { ChatBubble, ChatBubbleMessage, MarkdownHTMLConverter, MarkdownWrapper, MessageBanner } from "@/lib/components";
 import { Button } from "@/lib/components/ui";
 import { ViewWorkflowButton } from "@/lib/components/ui/ViewWorkflowButton";
-import { useChatContext } from "@/lib/hooks";
+import { useChatContext, useConfigContext } from "@/lib/hooks";
 import type { ArtifactInfo, ArtifactPart, DataPart, FileAttachment, FilePart, MessageFE, RAGSearchResult, TextPart } from "@/lib/types";
 import type { ChatContextValue } from "@/lib/contexts";
 import { InlineResearchProgress, type ResearchProgressData } from "@/lib/components/research/InlineResearchProgress";
 import { ResearchProtocolStepper, type ResearchProtocolProgressData } from "@/lib/components/research/ResearchProtocolStepper";
+import { ResearchInconclusivePanel } from "@/lib/components/research/ResearchInconclusivePanel";
 import { DeepResearchReportContent } from "@/lib/components/research/DeepResearchReportContent";
 import { Sources } from "@/lib/components/web/Sources";
 import { ImageSearchGrid } from "@/lib/components/research";
@@ -41,7 +43,9 @@ const MessageActions: React.FC<{
     /** Optional text content override */
     textContentOverride?: string;
 }> = ({ message, showWorkflowButton, showFeedbackActions, handleViewWorkflowClick, sourcesElement, textContentOverride }) => {
-    const { configCollectFeedback, submittedFeedback, handleFeedbackSubmit, addNotification } = useChatContext();
+    const { configCollectFeedback, submittedFeedback, handleFeedbackSubmit, addNotification, sessionId } = useChatContext();
+    const { configFeatureEnablement } = useConfigContext();
+    const navigate = useNavigate();
     const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
     const [feedbackType, setFeedbackType] = useState<"up" | "down" | null>(null);
 
@@ -87,6 +91,16 @@ const MessageActions: React.FC<{
                         </div>
                     )}
                     <MessageHoverButtons message={message} textContentOverride={textContentOverride} />
+                    {configFeatureEnablement?.knowledgeGraph && sessionId && (
+                        <Button
+                            tooltip="View in Knowledge Graph"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/knowledge-graph?session=${encodeURIComponent(sessionId)}`)}
+                        >
+                            <Network className="h-4 w-4" />
+                        </Button>
+                    )}
                     {sourcesElement && <div className="ml-2">{sourcesElement}</div>}
                 </div>
             </div>
@@ -616,7 +630,7 @@ const getChatBubble = (
     reportContentOverride?: string,
     highlightedText?: string | null
 ): React.ReactNode => {
-    const { openSidePanelTab, setTaskIdInSidePanel, ragData } = chatContext;
+    const { openSidePanelTab, setTaskIdInSidePanel, ragData, pipelineErrors, selectedAgentName } = chatContext;
 
     if (message.isStatusBubble) {
         return null;
@@ -626,22 +640,22 @@ const getChatBubble = (
         return <AuthenticationMessage message={message} />;
     }
 
-    // Check for research progress data (deep research or 12-step protocol)
+    // Check for research progress data (deep research or 7-step protocol)
     const progressPart = message.parts?.find(p => p.kind === "data") as DataPart | undefined;
     const progressType = progressPart?.data ? (progressPart.data as { type?: string }).type : undefined;
     const hasDeepResearchProgress = progressType === "deep_research_progress";
     const hasProtocolProgress = progressType === "research_protocol_progress";
 
-    // Show 12-step protocol progress stepper.
+    // Show 7-step protocol progress stepper.
     // DEV: To test, inject mock data: { type: "research_protocol_progress", step: 3,
-    //   step_name: "COLLECT", total_steps: 12, detail: "Gathering from 3 specialists",
+    //   step_name: "COLLECT", total_steps: 7, detail: "Gathering from 3 specialists",
     //   coverage_pct: null, gvr_cycle: 0, verification_verdict: null }
     // as a DataPart in a status_update SSE event. See ResearchProtocolStepper.tsx for full type.
     if (hasProtocolProgress && !message.isComplete) {
         const data = progressPart!.data as unknown as ResearchProtocolProgressData;
         return (
             <div className="my-2">
-                <ResearchProtocolStepper progress={data} isComplete={false} />
+                <ResearchProtocolStepper progress={data} isComplete={false} pipelineErrors={pipelineErrors} agentName={selectedAgentName} />
             </div>
         );
     }
@@ -701,6 +715,21 @@ const getChatBubble = (
     const hasContent = groupedParts.some(p => (p.kind === "text" && p.text.trim()) || p.kind === "file" || p.kind === "artifact");
     if (!hasContent) {
         return null;
+    }
+
+    // Detect research inconclusive (report withheld) pattern
+    const fullText = groupedParts
+        .filter(p => p.kind === "text")
+        .map(p => (p as TextPart).text)
+        .join("");
+    const isResearchInconclusive = !message.isUser && message.isComplete && fullText.includes("Research Inconclusive");
+
+    if (isResearchInconclusive) {
+        return (
+            <div key={message.metadata?.messageId} className="my-2">
+                <ResearchInconclusivePanel messageText={fullText} pipelineErrors={pipelineErrors} />
+            </div>
+        );
     }
 
     const variant = message.isUser ? "sent" : "received";

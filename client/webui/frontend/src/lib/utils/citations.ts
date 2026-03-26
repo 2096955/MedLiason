@@ -18,20 +18,20 @@ export { getCleanDomain } from "./url";
 // Citation marker pattern for the sTrN format: [[cite:s0r0]], [[cite:s1r2]], etc.
 // Also supports single bracket [cite:xxx] in case LLM uses wrong format
 // Also supports [[cite:research0]] for deep research
-export const CITATION_PATTERN = /\[?\[cite:(s\d+r\d+|research\d+)\]\]?/g;
+export const CITATION_PATTERN = /\[?\[cite:(s\d+r\d+|research\d+|kg\d+r\d+)\]\]?/g;
 
 // Pattern for comma-separated citations like [[cite:s0r0, s0r1, s0r2]]
 // Also handles LLM-generated format with repeated cite: prefix
-export const MULTI_CITATION_PATTERN = /\[?\[cite:((?:s\d+r\d+|research\d+)(?:\s*,\s*(?:cite:)?(?:s\d+r\d+|research\d+))+)\]\]?/g;
+export const MULTI_CITATION_PATTERN = /\[?\[cite:((?:s\d+r\d+|research\d+|kg\d+r\d+)(?:\s*,\s*(?:cite:)?(?:s\d+r\d+|research\d+|kg\d+r\d+))+)\]\]?/g;
 
 // Pattern to extract individual citations from a comma-separated list
-export const INDIVIDUAL_CITATION_PATTERN = /(?:cite:)?(s\d+r\d+|research\d+)/g;
+export const INDIVIDUAL_CITATION_PATTERN = /(?:cite:)?(s\d+r\d+|research\d+|kg\d+r\d+)/g;
 
 export const CLEANUP_REGEX = /\[?\[cite:[^\]]+\]\]?/g;
 
 export interface Citation {
     marker: string;
-    type: "search" | "research";
+    type: "search" | "research" | "kg";
     sourceId: number;
     position: number;
     source?: RAGSource;
@@ -51,7 +51,7 @@ export type { RAGSource, RAGSearchResult as RAGMetadata };
 const SEARCH_CITATION_ID_PATTERN = /^s(\d+)r(\d+)$/;
 const RESEARCH_CITATION_ID_PATTERN = /^research(\d+)$/;
 
-function parseCitationId(citationId: string): { type: "search" | "research"; sourceId: number } | null {
+function parseCitationId(citationId: string): { type: "search" | "research" | "kg"; sourceId: number } | null {
     // Try sTrN format first
     const searchMatch = citationId.match(SEARCH_CITATION_ID_PATTERN);
     if (searchMatch) {
@@ -67,6 +67,15 @@ function parseCitationId(citationId: string): { type: "search" | "research"; sou
         return {
             type: "research",
             sourceId: parseInt(researchMatch[1], 10),
+        };
+    }
+
+    // Try kg format: kg{turn}r{index}
+    const kgMatch = citationId.match(/^kg(\d+)r(\d+)$/);
+    if (kgMatch) {
+        return {
+            type: "kg",
+            sourceId: parseInt(kgMatch[2], 10),
         };
     }
 
@@ -142,7 +151,7 @@ export function parseCitations(text: string, ragMetadata?: RAGSearchResult): Cit
 
         // If there's a comma immediately after (within the same bracket), skip it
         // as it will be handled by the multi-citation pattern
-        if (afterMatch.match(/^\s*,\s*(?:s\d+r\d+|research\d+)/)) {
+        if (afterMatch.match(/^\s*,\s*(?:s\d+r\d+|research\d+|kg\d+r\d+)/)) {
             continue;
         }
 
@@ -190,7 +199,7 @@ export function parseCitations(text: string, ragMetadata?: RAGSearchResult): Cit
  * Remove citation markers from text (for display without citations)
  */
 export function removeCitationMarkers(text: string): string {
-    return text.replace(CITATION_PATTERN, "");
+    return text.replace(CLEANUP_REGEX, "");
 }
 
 /**
@@ -300,17 +309,22 @@ export function getCitationTooltip(citation: Citation): string {
         return sourceUrl;
     }
 
+    const isKg = citation.type === "kg";
+    if (isKg) {
+        const labels = citation.source?.metadata?.labels;
+        const name = citation.source?.metadata?.title || citation.source?.filename;
+        const sourceUrl = citation.source?.sourceUrl || citation.source?.url;
+        if (sourceUrl) {
+            return name ? `${name}\n${sourceUrl}` : sourceUrl;
+        }
+        const labelStr = Array.isArray(labels) ? labels.join(", ") : "Entity";
+        return `Knowledge Graph: ${labelStr} — ${name || "Unknown"}`;
+    }
+
     if (!citation.source) {
         return `Source ${getCitationNumber(citation)}`;
     }
 
     const score = (citation.source.relevanceScore * 100).toFixed(1);
     return `${citation.source.filename} (${score}% relevance)`;
-}
-
-/**
- * Get citation link URL (for kb_search with source URLs)
- */
-export function getCitationLink(citation: Citation): string | undefined {
-    return citation.source?.sourceUrl;
 }

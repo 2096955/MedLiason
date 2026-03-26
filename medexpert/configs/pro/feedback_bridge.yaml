@@ -1,0 +1,46 @@
+# MedExpert Pro - Feedback Bridge Flow (gemini-3.1-pro-preview variant)
+#
+# Subscribes to user feedback events published by the Pro gateway's
+# FeedbackService and bridges them to the MedExpert cold store.
+#
+# ISOLATION NOTE: Pro feedback data is written to the SAME cold store
+# (data/medexpert-cold.db) as the standard stack because the cold_store
+# tool uses session IDs for keying, and Pro sessions have distinct IDs.
+# However, the evolution dashboard API (/api/v1/evolution/*) and the
+# manage_prompts.py CLI do NOT distinguish between Pro and standard
+# feedback. To analyse Pro feedback separately, query the user_feedback
+# table directly and filter by session_id or timestamp range corresponding
+# to your Pro evaluation window:
+#
+#   sqlite3 data/medexpert-cold.db \
+#     "SELECT * FROM user_feedback WHERE created_at > '<pro_start_time>'"
+#
+# Run via: sam run configs/pro/feedback_bridge.yaml
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: feedback_bridge_pro.log
+
+shared_config:
+  - shared_config_pro.yaml
+
+flows:
+  - name: feedback_bridge_pro
+    components:
+      - component_name: feedback_broker_input
+        component_module: broker_input
+        component_config:
+          broker_type: solace
+          broker_url: ${SOLACE_BROKER_URL, ws://localhost:8008}
+          broker_username: ${SOLACE_BROKER_USERNAME, default}
+          broker_password: ${SOLACE_BROKER_PASSWORD, default}
+          broker_vpn: ${SOLACE_BROKER_VPN, default}
+          temporary_queue: true
+          broker_subscriptions:
+            - topic: "*/sam/feedback/>"
+            - topic: "sam/feedback/>"
+
+      - component_name: feedback_bridge_processor
+        component_module: lifesci_tools.feedback_bridge_component
+        component_config: {}

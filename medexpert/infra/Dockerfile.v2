@@ -1,0 +1,58 @@
+# MedExpert-v2: Multi-model Cloud Run single-container deployment
+# Stage 1: Frontend build (discarded after static files extracted)
+FROM python:3.12-slim AS base
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libxml2-dev libxslt-dev redis-server ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install SAM from PyPI (clean, no build hook)
+RUN pip install --no-cache-dir "solace-agent-mesh==1.16.4"
+
+# Install medexpert
+COPY pyproject.toml .
+COPY src/ src/
+# backoff: litellm's OTel callback imports proxy_server which requires it
+# opentelemetry-exporter-otlp-proto-grpc: litellm unconditionally imports gRPC exporter
+RUN pip install --no-cache-dir -e ".[langfuse]" backoff opentelemetry-exporter-otlp-proto-grpc
+
+# Memgraph MCP server (streamable-http transport, connects to Memgraph sidecar)
+RUN pip install --no-cache-dir mcp-memgraph
+
+# Override litellm for Pro (gemini-3.1-pro-preview) and Opus (claude-opus-4-6) models.
+# SAM pins litellm==1.76.3 which predates these models. The override installs 1.82.0
+# without re-resolving SAM's dependency tree (--force-reinstall --no-deps).
+# Verified: gemini-2.5-flash works correctly under 1.82.0 (backward compatible).
+RUN pip install --force-reinstall --no-deps "litellm>=1.82.0,<2.0.0"
+
+# NOTE: google-adk==1.18.0 stays as-is (pinned by SAM 1.16.4).
+# Upgrading to 1.23.0+ with --no-deps broke Pro entirely (0 tools, immediate error).
+
+# Clean up pip cache and __pycache__ to reduce image size
+RUN find /usr/local/lib/python3.12 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true \
+    && rm -rf /root/.cache/pip
+
+# Cold store data directory
+RUN mkdir -p /app/data
+
+# Runtime files — all 3 config sets (standard + pro + opus)
+COPY configs/ configs/
+COPY prompts/ prompts/
+COPY infra/start_v2.sh /app/start_v2.sh
+RUN chmod +x /app/start_v2.sh
+
+# Replace SAM's default UI with MedExpert-branded frontend
+RUN rm -rf /usr/local/lib/python3.12/site-packages/solace_agent_mesh/client/webui/frontend/static/
+COPY frontend-static/ /usr/local/lib/python3.12/site-packages/solace_agent_mesh/client/webui/frontend/static/
+
+# Override SAM gateway files with MedExpert customizations
+COPY gateway-overrides/main.py     /usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/main.py
+COPY gateway-overrides/routers/agent_cards.py     /usr/local/lib/python3.12/site-packages/solace_agent_mesh/gateway/http_sse/routers/agent_cards.py
+
+ENV PORT=8080
+ENV SOLACE_DEV_MODE=true
+ENV PYTHONPATH="/app/src:${PYTHONPATH}"
+EXPOSE 8080
+ENTRYPOINT ["/app/start_v2.sh"]

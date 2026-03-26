@@ -56,20 +56,20 @@ def _mock_response(status_code: int, data=None) -> MagicMock:
 
 
 class TestKnowledgeGraphDegradation:
-    """Test that KG returns structured errors when Neo4j is unavailable."""
+    """Test that KG returns structured errors when Memgraph is unavailable."""
 
     @pytest.mark.asyncio
     async def test_no_connection_returns_structured_error(self):
-        """Without NEO4J_URI, should return no_connection status."""
+        """Without MEMGRAPH_URL, should return structured error."""
         with patch(
             "mcp_servers.knowledge_graph.server._get_driver",
             return_value=None,
         ):
             result = await _query_knowledge_graph("BRCA1 breast cancer")
 
-        assert result["status"] == "no_connection"
+        assert result["success"] is False
         assert result["results"] == []
-        assert "Neo4j" in result["message"]
+        assert result["error_category"] == "service_unavailable"
         assert "BRCA1" in result["fallback_search_query"]
 
     @pytest.mark.asyncio
@@ -96,7 +96,7 @@ class TestKnowledgeGraphDegradation:
         ):
             result = await _get_entity_relationships("BRCA1")
 
-        assert result["status"] == "no_connection"
+        assert result["success"] is False
         assert result["results"] == []
 
     @pytest.mark.asyncio

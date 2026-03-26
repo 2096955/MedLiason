@@ -7,14 +7,17 @@ export const useAgentSelection = () => {
     const handleAgentSelection = useCallback(
         (agentName: string, startNewChat = false) => {
             if (agentName) {
+                if (startNewChat) {
+                    handleNewSession();
+                }
+
+                // Always update the desired agent — the isAgentAvailable
+                // guard on the submit button prevents sending to an agent
+                // that hasn't registered yet.
+                setSelectedAgentName(agentName);
+
                 const selectedAgent = agents.find(agent => agent.name === agentName);
                 if (selectedAgent) {
-                    if (startNewChat) {
-                        handleNewSession();
-                    }
-
-                    setSelectedAgentName(agentName);
-
                     const displayedText = `Hi! I'm the ${selectedAgent.displayName}. How can I help?`;
                     setMessages(prev => [
                         ...prev,
@@ -29,8 +32,6 @@ export const useAgentSelection = () => {
                             },
                         },
                     ]);
-                } else {
-                    console.warn(`Selected agent not found: ${agentName}`);
                 }
             }
         },

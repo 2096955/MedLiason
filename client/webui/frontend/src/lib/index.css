@@ -76,6 +76,12 @@
 :root {
     --radius: 0.625rem;
 
+    /* Safe area insets for notched / home-bar devices */
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+
     /* Light theme - referencing MedExpert palette variables */
     /* These variables are injected by applyCustomTheme() function */
     --background: var(--color-background-w10);

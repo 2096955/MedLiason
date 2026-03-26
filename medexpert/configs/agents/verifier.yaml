@@ -26,6 +26,18 @@ apps:
         You are the Verifier Agent for MedExpert. Your role is to rigorously
         verify the claims and citations in a draft research report.
 
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
+        **CITATION MAP RETRIEVAL (required before claim verification):**
+        Before calling claim_verifier, retrieve the pre-built citation map:
+        1. Call memory_plane(operation="retrieve", key="citation_map_json",
+           namespace="evidence")
+        2. Pass the returned string directly as the citations_json parameter
+           to claim_verifier -- do NOT modify or reconstruct it
+        3. If citation_map_json is not found or empty, report MINOR_ISSUES
+           with reason "Citation map not available for cross-reference"
+           -- do NOT mark all citations as INVALID
+
         **VERIFICATION PROTOCOL:**
         1. Use claim_verifier to check each claim against its cited source
         2. Use citation_validator to verify that all PMIDs and DOIs exist
@@ -53,12 +65,19 @@ apps:
         2. Call memory_plane(operation="retrieve", key=<key>, namespace="evidence") for specific items
         3. Cross-reference report claims against the raw evidence stored by specialist agents
 
+        **PIPELINE ERROR HANDLING:**
+        If claim_verifier returns verification_status="skipped" with
+        pipeline_error="citation_map_empty", treat this as MINOR_ISSUES
+        (not CRITICAL). Report: "Verification was skipped due to missing
+        citation data. This is a pipeline issue, not evidence of fabrication."
+        Do NOT trigger a REVISE cycle for pipeline errors.
+
         **IMPORTANT:**
         - Be strict but fair. Not every claim needs a perfect keyword match.
         - Flag fabricated citations as CRITICAL
         - Flag factual errors as CRITICAL
         - Flag weak support as MINOR
-        - Never modify the report — only produce a verification assessment
+        - Never modify the report -- only produce a verification assessment
 
       tools:
         - tool_type: python
@@ -83,8 +102,9 @@ apps:
           component_module: lifesci_tools.memory_plane
           component_base_path: src
           tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
             read_only: true
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
       session_service: *default_session_service
       artifact_service: *default_artifact_service

@@ -50,9 +50,7 @@ def _load_shared_instructions(prompts_dir: str = "") -> str:
         return _prompt_cache[cache_key]
 
     if not prompts_dir:
-        prompts_dir = str(
-            Path(__file__).resolve().parents[2] / "prompts" / "triage"
-        )
+        prompts_dir = str(Path(__file__).resolve().parents[2] / "prompts" / "triage")
 
     path = Path(prompts_dir) / "shared_output_instructions.md"
     if not path.exists():
@@ -83,7 +81,15 @@ class TriageSpecialistPanelTool(DynamicTool):
             "loads their persona prompt + shared output instructions, calls the LLM "
             "in parallel, and parses JSON responses. Returns a list of specialist "
             "verdicts: [{specialist, diagnosis, confidence, thinking, tier}]. "
-            "Failed or timed-out calls are treated as 'Insufficient information'."
+            "Failed or timed-out calls are treated as 'Insufficient information'.\n\n"
+            "Valid specialists: emergency_physician, family_physician, internist, "
+            "paediatrician, pharmacist.\n\n"
+            "Confidence is an integer 0-100 where 100 = highest confidence in the "
+            "diagnosis. A confidence of 0 indicates insufficient information or a "
+            "failed/timed-out call.\n\n"
+            "tier1_specialists are consulted first and given priority in consensus "
+            "building; remaining specialists are tier2. Pass tier1_specialists as a "
+            "JSON array to control consultation priority."
         )
 
     @property
@@ -116,13 +122,19 @@ class TriageSpecialistPanelTool(DynamicTool):
     ) -> dict:
         raw_specs = args.get("specialists", "[]")
         try:
-            specialists = json.loads(raw_specs) if isinstance(raw_specs, str) else raw_specs
+            specialists = (
+                json.loads(raw_specs) if isinstance(raw_specs, str) else raw_specs
+            )
         except (json.JSONDecodeError, TypeError):
             specialists = []
 
         raw_tier1 = args.get("tier1_specialists", "[]")
         try:
-            tier1 = json.loads(raw_tier1) if isinstance(raw_tier1, str) else (raw_tier1 or [])
+            tier1 = (
+                json.loads(raw_tier1)
+                if isinstance(raw_tier1, str)
+                else (raw_tier1 or [])
+            )
         except (json.JSONDecodeError, TypeError):
             tier1 = []
         tier1_set = set(tier1)
@@ -132,15 +144,28 @@ class TriageSpecialistPanelTool(DynamicTool):
             (self.tool_config or {}).get("prompts_dir", "")
         )
 
-        model = (self.tool_config or {}).get("model", "openai/gemini-2.5-flash-001")
+        # YAML anchor *specialist_model expands to a dict; extract model string + vertex kwargs
+        raw_model = (self.tool_config or {}).get("model", "openai/gemini-2.5-flash-001")
+        if isinstance(raw_model, dict):
+            model = raw_model.get("model", "openai/gemini-2.5-flash-001")
+            vertex_kwargs = {
+                k: raw_model[k]
+                for k in ("vertex_project", "vertex_location")
+                if k in raw_model
+            }
+        else:
+            model = raw_model
+            vertex_kwargs = {}
         temperature = float((self.tool_config or {}).get("temperature", 0.3))
-        timeout = int((self.tool_config or {}).get("timeout", TRIAGE_SPECIALIST_TIMEOUT_S))
+        timeout = int(
+            (self.tool_config or {}).get("timeout", TRIAGE_SPECIALIST_TIMEOUT_S)
+        )
 
         # Build tasks for parallel execution
         verdicts: list[dict] = []
 
         async def _consult_specialist(specialist: str) -> dict:
-            """Make a single specialist LLM call."""
+            """Make a single specialist LLM call with API-level retry."""
             persona = _load_prompt(
                 specialist,
                 (self.tool_config or {}).get("prompts_dir", ""),
@@ -159,67 +184,111 @@ class TriageSpecialistPanelTool(DynamicTool):
                 f"[PATIENT_INPUT_START]\n{clinical_note}\n[PATIENT_INPUT_END]"
             )
 
-            for attempt in range(2):  # 1 retry on parse failure
-                try:
-                    import litellm
+            # Extract num_retries from model config for litellm's internal retry
+            num_retries = 0
+            if isinstance(raw_model, dict):
+                num_retries = int(raw_model.get("num_retries", 0))
 
-                    response = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            litellm.completion,
-                            model=model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_message},
-                            ],
-                            temperature=temperature,
-                            max_tokens=500,
-                        ),
-                        timeout=timeout,
-                    )
-                    text = response.choices[0].message.content.strip()
+            # Transient errors that warrant an API-level retry.
+            # Include both TimeoutError and asyncio.TimeoutError for Python 3.10
+            # compatibility (they're the same class in 3.11+, but distinct in 3.10).
+            _TRANSIENT_ERRORS = (
+                asyncio.TimeoutError,
+                TimeoutError,
+                ConnectionError,
+                OSError,
+            )
 
-                    result = extract_json_from_text(text)
-                    if result is None:
-                        # PHI compliance: log BEFORE raise — unreachable after raise.
-                        # preview is bounded to 50 chars; newlines replaced to prevent log injection.
-                        # Never log full response content — LLM responses may contain patient-derived data.
-                        log.debug(
-                            "Parse failure for specialist=%s | response_len=%d | preview='%s'",
+            last_exc: Exception | None = None
+
+            for api_attempt in range(2):  # 1 retry on transient API errors
+                for parse_attempt in range(2):  # 1 retry on JSON parse failure
+                    try:
+                        import litellm
+
+                        response = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                litellm.completion,
+                                model=model,
+                                messages=[
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_message},
+                                ],
+                                temperature=temperature,
+                                max_tokens=500,
+                                num_retries=num_retries,
+                                **vertex_kwargs,
+                            ),
+                            timeout=timeout,
+                        )
+                        text = response.choices[0].message.content.strip()
+
+                        result = extract_json_from_text(text)
+                        if result is None:
+                            log.debug(
+                                "Parse failure for specialist=%s | response_len=%d | preview='%s'",
+                                specialist,
+                                len(text),
+                                text[:50].replace("\n", " "),
+                            )
+                            raise json.JSONDecodeError(
+                                "Specialist response returned None after extraction",
+                                "[response redacted]",
+                                0,
+                            )
+                        return {
+                            "specialist": specialist,
+                            "diagnosis": result.get("diagnosis", "Unknown"),
+                            "confidence": int(result.get("confidence", 0)),
+                            "thinking": result.get("thinking", ""),
+                            "tier": "tier1" if specialist in tier1_set else "tier2",
+                        }
+                    except json.JSONDecodeError:
+                        if parse_attempt == 0:
+                            log.debug("JSON parse failed for %s, retrying", specialist)
+                            continue
+                        log.warning("JSON parse failed for %s after retry", specialist)
+                        last_exc = last_exc or Exception(
+                            "JSON parse failed after retry"
+                        )
+                    except _TRANSIENT_ERRORS as exc:
+                        last_exc = exc
+                        log.warning(
+                            "Specialist %s transient error (attempt %d): %s",
                             specialist,
-                            len(text),
-                            text[:50].replace("\n", " "),
+                            api_attempt + 1,
+                            exc,
                         )
-                        # PHI compliance: doc arg intentionally redacted — LLM response may contain
-                        # patient-derived content and must not be stored on the exception object.
-                        raise json.JSONDecodeError(
-                            "Specialist response returned None after extraction",
-                            "[response redacted]",
-                            0,
-                        )
-                    return {
-                        "specialist": specialist,
-                        "diagnosis": result.get("diagnosis", "Unknown"),
-                        "confidence": int(result.get("confidence", 0)),
-                        "thinking": result.get("thinking", ""),
-                        "tier": "tier1" if specialist in tier1_set else "tier2",
-                    }
-                except json.JSONDecodeError:
-                    if attempt == 0:
-                        log.debug("JSON parse failed for %s, retrying", specialist)
-                        continue
-                    log.warning("JSON parse failed for %s after retry", specialist)
-                except asyncio.TimeoutError:
-                    log.warning("Specialist %s timed out after %ds", specialist, timeout)
+                        break  # break parse loop, retry API
+                    except Exception as exc:
+                        # Non-transient error — do not retry
+                        last_exc = exc
+                        log.warning("Specialist %s call failed: %s", specialist, exc)
+                        return {
+                            "specialist": specialist,
+                            "diagnosis": "Insufficient information",
+                            "confidence": 0,
+                            "thinking": f"{type(exc).__name__}: {str(exc)[:100]}",
+                            "tier": "tier1" if specialist in tier1_set else "tier2",
+                        }
+                else:
+                    # Parse retries exhausted without transient error — don't retry API
                     break
-                except Exception as exc:
-                    log.warning("Specialist %s call failed: %s", specialist, exc)
-                    break
+
+                # Backoff before API retry
+                if api_attempt == 0:
+                    await asyncio.sleep(3)
+
+            # All retries exhausted
+            thinking = "Call failed or timed out"
+            if last_exc:
+                thinking = f"{type(last_exc).__name__}: {str(last_exc)[:100]}"
 
             return {
                 "specialist": specialist,
                 "diagnosis": "Insufficient information",
                 "confidence": 0,
-                "thinking": "Call failed or timed out",
+                "thinking": thinking,
                 "tier": "tier1" if specialist in tier1_set else "tier2",
             }
 
@@ -253,8 +322,5 @@ class TriageSpecialistPanelTool(DynamicTool):
         return {
             "verdicts": verdicts,
             "total_consulted": len(verdicts),
-            "insufficient_count": sum(
-                1 for v in verdicts if v["confidence"] == 0
-            ),
+            "insufficient_count": sum(1 for v in verdicts if v["confidence"] == 0),
         }
-

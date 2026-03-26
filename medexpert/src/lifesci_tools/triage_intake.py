@@ -105,7 +105,11 @@ class TriageIntakeTool(DynamicTool):
         # Parse symptoms
         symptoms_raw = args.get("symptoms", "[]")
         try:
-            symptoms = json.loads(symptoms_raw) if isinstance(symptoms_raw, str) else symptoms_raw
+            symptoms = (
+                json.loads(symptoms_raw)
+                if isinstance(symptoms_raw, str)
+                else symptoms_raw
+            )
             if not isinstance(symptoms, list):
                 symptoms = []
         except (json.JSONDecodeError, TypeError):
@@ -124,7 +128,8 @@ class TriageIntakeTool(DynamicTool):
             tool_context,
             stage=1,
             stage_name="INTAKE",
-            detail="Emergency detected — initiating fast-path" if emergency_type
+            detail="Emergency detected — initiating fast-path"
+            if emergency_type
             else "Gathering patient information",
             emergency_override=bool(emergency_type),
             log_identifier="[TriageIntake:Progress]",
@@ -158,8 +163,10 @@ class TriageIntakeTool(DynamicTool):
 
         # Check completeness — need chief complaint + at least 2 symptoms with detail
         detailed_symptoms = [
-            s for s in symptoms
-            if isinstance(s, dict) and s.get("symptom")
+            s
+            for s in symptoms
+            if isinstance(s, dict)
+            and s.get("symptom")
             and (s.get("duration") or s.get("severity"))
         ]
 
@@ -180,11 +187,16 @@ class TriageIntakeTool(DynamicTool):
                 "message": "Need more symptom details before routing to specialists.",
             }
 
+        # Signal to handoff guard that intake is done
+        if hasattr(tool_context, "state"):
+            tool_context.state["_triage_intake_complete"] = True
+
         return {
             "status": "complete",
             "clinical_note": clinical_note,
             "symptom_count": len(detailed_symptoms),
         }
+
 
 def _detect_emergency(text: str) -> str | None:
     """Scan text for emergency keywords. Returns the matched keyword or None."""

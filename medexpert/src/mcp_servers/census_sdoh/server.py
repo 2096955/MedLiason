@@ -15,7 +15,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import CENSUS_ACS_URL
 
@@ -129,6 +129,7 @@ async def get_sdoh_indicators(
                     indicators["poverty_rate_pct"] = round(below / total * 100, 1)
 
             return {
+                "success": True,
                 "state_fips": safe_state,
                 "year": query_year,
                 "indicators": indicators,
@@ -147,6 +148,8 @@ async def get_sdoh_indicators(
                 "indicators": {},
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "census_sdoh", "get_sdoh_indicators", indicators={})
     except Exception as exc:
         log.error("Census SDOH query failed: %s", exc)
         return {"error": str(exc), "indicators": {}}
@@ -226,6 +229,7 @@ async def get_poverty_data(
                 })
 
             return {
+                "success": True,
                 "state_fips": safe_state,
                 "county_fips": safe_county,
                 "year": DEFAULT_ACS_YEAR,
@@ -238,6 +242,8 @@ async def get_poverty_data(
                 "results": [],
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "census_sdoh", "get_poverty_data", results=[])
     except Exception as exc:
         log.error("Census poverty query failed: %s", exc)
         return {"error": str(exc), "results": []}
@@ -295,6 +301,7 @@ async def get_insurance_data(state_fips: str) -> dict:
             uninsured_rate = round(uninsured / total * 100, 1) if total > 0 else 0.0
 
             return {
+                "success": True,
                 "state_fips": safe_state,
                 "year": DEFAULT_ACS_YEAR,
                 "total_assessed": total,
@@ -310,6 +317,8 @@ async def get_insurance_data(state_fips: str) -> dict:
                 "error": f"Census API returned status {resp.status_code}",
             }
 
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "census_sdoh", "get_insurance_data")
     except Exception as exc:
         log.error("Census insurance query failed: %s", exc)
         return {"error": str(exc)}

@@ -28,6 +28,9 @@ apps:
         5-stage diagnostic pipeline using specialist panels and decision
         rules.
 
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you.
+        If the patient mentions specific drug names, medications, or unfamiliar terms, use web_search_firecrawl to identify what they are before proceeding with triage assessment. This context is critical for accurate clinical evaluation. Use only the tools listed in your tool set.
+
         You coordinate the following tools:
         - `triage_routing` -- selects specialists based on symptom keywords
         - `triage_specialist_panel` -- runs parallel LLM calls with persona
@@ -141,6 +144,20 @@ apps:
         Do NOT reveal internal tool names, stage numbers, or technical
         pipeline details to the patient.
 
+        ===============================================================
+        POST-NBA ENRICHMENT (NHS 111 Clinical Guidance)
+        ===============================================================
+
+        After triage_nba returns a route of "self_care", "pharmacist",
+        or "gp_visit":
+        1. Call search_nhs_conditions with the consensus diagnosis
+        2. If results found, call get_nhs_condition_page for the top match
+        3. If the page links to specific treatment or self-care URLs,
+           call get_nhs_treatment_guidance to scrape that page
+        4. Include NHS self-care advice and "when to get help" guidance
+           in the patient response
+        5. Do NOT delay emergency or hospital routes with NHS lookups
+
       session_service: *default_session_service
       artifact_service: *default_artifact_service
 
@@ -148,6 +165,11 @@ apps:
 
       tools:
         # -- Stage 2: ROUTING --
+
+        # -- Web Search (Firecrawl) for medication/term identification --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
         - tool_type: python
           component_module: lifesci_tools.triage_routing
           component_base_path: src
@@ -167,13 +189,15 @@ apps:
         - tool_type: python
           component_module: lifesci_tools.triage_evaluation
           component_base_path: src
+          tool_config:
+            model: *specialist_model
 
         # -- Stage 5: NBA --
         - tool_type: python
           component_module: lifesci_tools.triage_nba
           component_base_path: src
           tool_config:
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
         # -- Shared state --
         - tool_type: python
@@ -181,7 +205,15 @@ apps:
           component_base_path: src
           tool_config:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
+
+        # -- Post-NBA: NHS 111 Clinical Guidance (Firecrawl) --
+        - tool_type: mcp
+          name: nhs_111_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9016/sse"
+            timeout: 30
 
       # Agent Card Definition
       agent_card:

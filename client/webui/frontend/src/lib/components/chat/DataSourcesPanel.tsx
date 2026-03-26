@@ -33,6 +33,9 @@ const KNOWN_MCP_SOURCES = [
     { name: "Environmental", description: "EPA air quality & EJScreen", port: 9008 },
     { name: "Census/SDOH", description: "Social determinants of health", port: 9009 },
     { name: "Provider Intel", description: "CMS open payments data", port: 9010 },
+    { name: "NHS 111", description: "NHS clinical guidance (Firecrawl)", port: 9016 },
+    { name: "BMA Library", description: "UK clinical guidelines (Firecrawl)", port: 9017 },
+    { name: "OpenEvidence", description: "AI-synthesised clinical evidence", port: 9018 },
 ];
 
 const KNOWN_SEARCH_TOOLS = [
@@ -59,7 +62,7 @@ export const DataSourcesPanel: React.FC<DataSourcesPanelProps> = ({ isActive = f
             hasFetchedRef.current = true;
         } catch {
             setHealth(null);
-            setError("Could not reach data sources endpoint. Showing known sources.");
+            setError("Showing known sources.");
         } finally {
             setIsLoading(false);
         }
@@ -145,20 +148,24 @@ export const DataSourcesPanel: React.FC<DataSourcesPanelProps> = ({ isActive = f
                     <div className="space-y-1.5">
                         {showStaticFallback
                             ? KNOWN_MCP_SOURCES.map(source => (
-                                  <div key={source.name} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
-                                      <span className="bg-muted-foreground/40 h-2 w-2 flex-shrink-0 rounded-full" />
-                                      <span className="flex-1 truncate font-medium">{source.name}</span>
-                                      <span className="text-muted-foreground text-xs">{source.description}</span>
+                                  <div key={source.name} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm">
+                                      <span className="bg-muted-foreground/40 mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" />
+                                      <div className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium">{source.name}</span>
+                                          <span className="text-muted-foreground block text-xs">{source.description}</span>
+                                      </div>
                                   </div>
                               ))
                             : mcpSources.map(source => (
-                                  <div key={source.name} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
+                                  <div key={source.name} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm">
                                       <span
-                                          className={`h-2 w-2 flex-shrink-0 rounded-full ${statusDot(source.status)}`}
+                                          className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${statusDot(source.status)}`}
                                           aria-label={source.status}
                                       />
-                                      <span className="flex-1 truncate font-medium">{source.name}</span>
-                                      <span className="text-muted-foreground text-xs">{source.status}</span>
+                                      <div className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium">{source.name}</span>
+                                          <span className="text-muted-foreground block text-xs">{source.status}</span>
+                                      </div>
                                   </div>
                               ))}
                     </div>
@@ -172,20 +179,24 @@ export const DataSourcesPanel: React.FC<DataSourcesPanelProps> = ({ isActive = f
                     <div className="space-y-1.5">
                         {showStaticFallback
                             ? KNOWN_SEARCH_TOOLS.map(source => (
-                                  <div key={source.name} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
-                                      <span className="bg-muted-foreground/40 h-2 w-2 flex-shrink-0 rounded-full" />
-                                      <span className="flex-1 truncate font-medium">{source.name}</span>
-                                      <span className="text-muted-foreground text-xs">{source.description}</span>
+                                  <div key={source.name} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm">
+                                      <span className="bg-muted-foreground/40 mt-1.5 h-2 w-2 flex-shrink-0 rounded-full" />
+                                      <div className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium">{source.name}</span>
+                                          <span className="text-muted-foreground block text-xs">{source.description}</span>
+                                      </div>
                                   </div>
                               ))
                             : searchSources.map(source => (
-                                  <div key={source.name} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
+                                  <div key={source.name} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm">
                                       <span
-                                          className={`h-2 w-2 flex-shrink-0 rounded-full ${statusDot(source.status)}`}
+                                          className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${statusDot(source.status)}`}
                                           aria-label={source.status}
                                       />
-                                      <span className="flex-1 truncate font-medium">{source.name}</span>
-                                      <span className="text-muted-foreground text-xs">{source.description}</span>
+                                      <div className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium">{source.name}</span>
+                                          <span className="text-muted-foreground block text-xs">{source.description}</span>
+                                      </div>
                                   </div>
                               ))}
                     </div>

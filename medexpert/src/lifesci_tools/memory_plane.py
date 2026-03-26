@@ -1,5 +1,13 @@
 """Central Memory Plane — shared state for orchestrator, verifier, reviser.
 
+.. deprecated::
+    This monolithic tool is retained for backward compatibility.
+    Prefer using the focused tools directly:
+
+    - ``session_state`` — hot-path store/retrieve/append/clear (intermediate, verification)
+    - ``evidence_store`` — citation and evidence management (citations, evidence)
+    - ``cold_query`` — cold store operations (seed_session, flush_cold, query_cold, get_strategy)
+
 Provides session-scoped key-value storage with namespace separation.
 Uses Redis in production, falls back to an in-memory dict for dev/test.
 
@@ -27,17 +35,17 @@ NAMESPACES = ("citations", "evidence", "intermediate", "learning", "verification
 # This emits ResearchProtocolProgressData without depending on LLM output.
 _STEP_MAP = {
     "seed_session": (0, "SEED", "Loading learned strategies from past sessions"),
-    "flush_cold": (11, "PERSIST", "Saving session signals to cold store"),
+    "flush_cold": (6, "PERSIST", "Saving session signals to cold store"),
 }
 _KEY_STEP_MAP = {
     # store/append operations with these keys signal specific steps
     ("intermediate", "specialists_used"): (3, "COLLECT", "Gathering evidence from specialists"),
     ("intermediate", "query_domain"): (3, "COLLECT", "Gathering evidence from specialists"),
-    ("intermediate", "coverage_pct"): (6, "VALIDATE", "Checking research completeness"),
-    ("verification", "verification_verdict"): (9, "VERIFY", "Verifying claims against sources"),
-    ("verification", "verification_score"): (9, "VERIFY", "Verifying claims against sources"),
-    ("intermediate", "revision_triggered"): (10, "REVISE", "Revising flagged claims"),
-    ("verification", "re_verification_verdict"): (10, "REVISE", "Re-verifying revised report"),
+    ("intermediate", "coverage_pct"): (3, "COLLECT", "Checking research completeness"),
+    ("verification", "verification_verdict"): (5, "VERIFY", "Verifying claims against sources"),
+    ("verification", "verification_score"): (5, "VERIFY", "Verifying claims against sources"),
+    ("intermediate", "revision_triggered"): (5, "VERIFY", "Revising flagged claims"),
+    ("verification", "re_verification_verdict"): (5, "VERIFY", "Re-verifying revised report"),
 }
 
 
@@ -122,7 +130,18 @@ class MemoryPlaneTool(DynamicTool):
                 "specialist agents. Supports operations: retrieve, list_keys, "
                 "query_cold, get_strategy. "
                 "Keys are scoped by session ID and namespace (citations, evidence, "
-                "intermediate, learning, verification)."
+                "intermediate, learning, verification).\n\n"
+                "READ-ONLY operations available:\n"
+                "- retrieve: fetch a single value by namespace + key\n"
+                "- list_keys: list all keys in a namespace\n"
+                "- query_cold: look up historical intelligence from the cold store (requires query param)\n"
+                "- get_strategy: fetch a learned strategy by type (routing, source_ranking, agent_pairs) and key\n\n"
+                "Namespaces:\n"
+                "- citations: published source references with citation IDs (s0r0, s0r1, ...)\n"
+                "- evidence: graded evidence items and citation_map_json for the verifier\n"
+                "- intermediate: working data (specialists_used, coverage_pct, query_domain)\n"
+                "- learning: seeded strategies from cold store history\n"
+                "- verification: verification verdicts and scores from the GVR loop"
             )
         return (
             "Central memory plane for storing and retrieving shared state across "
@@ -131,7 +150,29 @@ class MemoryPlaneTool(DynamicTool):
             "flush_cold auto-collects session signals from the hot store — just "
             "pass query_domain and query_text. "
             "Keys are scoped by session ID and namespace (citations, evidence, "
-            "intermediate, learning, verification)."
+            "intermediate, learning, verification).\n\n"
+            "Operations (read-write):\n"
+            "- store: write a value to namespace + key (idempotent if value unchanged)\n"
+            "- retrieve: fetch a single value by namespace + key\n"
+            "- list_keys: list all keys in a namespace\n"
+            "- append: add an item to a JSON array at namespace + key\n"
+            "- clear_session: delete all keys for the current session\n\n"
+            "Operations (cold store):\n"
+            "- seed_session: load learned strategies from cold store into the learning namespace "
+            "(requires query param)\n"
+            "- flush_cold: auto-collect session signals and persist to cold store "
+            "(requires query and query_domain params)\n"
+            "- query_cold: look up historical intelligence from the cold store (requires query param)\n"
+            "- get_strategy: fetch a learned strategy by type (routing, source_ranking, agent_pairs) "
+            "and key\n\n"
+            "Namespaces:\n"
+            "- citations: published source references with citation IDs (s0r0, s0r1, ...)\n"
+            "- evidence: graded evidence items and citation_map_json for the verifier\n"
+            "- intermediate: working data (specialists_used, coverage_pct, query_domain)\n"
+            "- learning: seeded strategies from cold store history\n"
+            "- verification: verification verdicts and scores from the GVR loop\n\n"
+            "Workflow ordering: Call seed_session ONCE at protocol start (STEP 0). "
+            "Call flush_cold ONCE at protocol end (STEP 6)."
         )
 
     @property
@@ -259,9 +300,11 @@ class MemoryPlaneTool(DynamicTool):
 
             from solace_agent_mesh.common.data_parts import ResearchProtocolProgressData
 
-            # Read coverage + verdict from memory if available
+            # Read coverage + verdict + C2/C6 fields from memory if available
             coverage_pct = None
             verdict = None
+            report_mode = None
+            advisory_perspectives = None
             try:
                 raw_cp = await self._backend.get(
                     self._make_key(session_id, "intermediate", "coverage_pct")
@@ -273,17 +316,38 @@ class MemoryPlaneTool(DynamicTool):
                 )
                 if raw_v:
                     verdict = raw_v
+                # C2: report_mode
+                raw_rm = await self._backend.get(
+                    self._make_key(session_id, "intermediate", "report_mode")
+                )
+                if raw_rm:
+                    report_mode = raw_rm
+                # C6: advisory_output
+                raw_adv = await self._backend.get(
+                    self._make_key(session_id, "intermediate", "advisory_output")
+                )
+                if raw_adv:
+                    try:
+                        parsed = json.loads(raw_adv)
+                        # Truncate synthesis to 500 chars for SSE payload
+                        if isinstance(parsed.get("synthesis"), str) and len(parsed["synthesis"]) > 500:
+                            parsed["synthesis"] = parsed["synthesis"][:500] + "..."
+                        advisory_perspectives = parsed
+                    except (json.JSONDecodeError, TypeError):
+                        pass
             except Exception:
                 pass
 
             progress = ResearchProtocolProgressData(
                 step=step,
                 step_name=step_name,
-                total_steps=12,
+                total_steps=7,
                 detail=detail,
                 coverage_pct=coverage_pct,
                 gvr_cycle=0,
                 verification_verdict=verdict,
+                research_path=report_mode,
+                advisory_perspectives=advisory_perspectives,
             )
 
             host.publish_data_signal_from_thread(
@@ -336,17 +400,22 @@ class MemoryPlaneTool(DynamicTool):
         revv_coro = self._backend.get(self._make_key(session_id, "verification", "re_verification_verdict"))
         revs_coro = self._backend.get(self._make_key(session_id, "verification", "re_verification_score"))
         withheld_coro = self._backend.get(self._make_key(session_id, "verification", "report_withheld"))
+        # C2+C6: report_mode and advisory_output
+        rm_coro = self._backend.get(self._make_key(session_id, "intermediate", "report_mode"))
+        adv_coro = self._backend.get(self._make_key(session_id, "intermediate", "advisory_output"))
 
         (
             ev_keys, cit_keys,
             raw_vv, raw_vv_alt, raw_vs, raw_vs_alt,
             raw_cp, raw_cp_alt, raw_specs, raw_domain,
             raw_rev, raw_gvr, raw_revv, raw_revs, raw_withheld,
+            raw_rm, raw_adv,
         ) = await asyncio.gather(
             ev_keys_coro, cit_keys_coro,
             vv_coro, vv_alt_coro, vs_coro, vs_alt_coro,
             cp_coro, cp_alt_coro, sp_coro, dom_coro,
             rev_coro, gvr_coro, revv_coro, revs_coro, withheld_coro,
+            rm_coro, adv_coro,
         )
 
         # ── evidence count ──
@@ -403,6 +472,14 @@ class MemoryPlaneTool(DynamicTool):
                 log.debug("Could not parse re_verification_score=%r for session %s", raw_revs, session_id)
         if raw_withheld and raw_withheld.lower() in ("true", "1"):
             signals["report_withheld"] = True
+
+        # ── C2: report_mode ──
+        if raw_rm:
+            signals["report_mode"] = raw_rm
+
+        # ── C6: advisory_perspectives ──
+        if raw_adv:
+            signals["advisory_perspectives_json"] = raw_adv
 
         # ── citations → source counts (evidence_count + avg_grade_score only) ──
         # Note: citations_valid/invalid and passed_verification are not
@@ -486,6 +563,7 @@ class MemoryPlaneTool(DynamicTool):
         # ── Deterministic protocol progress emission ──────────────
         # Emit SSE progress signals based on which operation/key is being called.
         # This is tied to actual tool invocations, not LLM output parsing.
+        step_num = None
         if operation in _STEP_MAP:
             step_num, step_name, detail = _STEP_MAP[operation]
             await self._emit_protocol_progress(
@@ -496,6 +574,21 @@ class MemoryPlaneTool(DynamicTool):
             await self._emit_protocol_progress(
                 tool_context, step_num, step_name, detail, session_id
             )
+
+        # ── Reactive step advancement for protocol validator ──────
+        # Confirms the protocol step during tool execution by updating
+        # session.state.  This complements the predictive advancement
+        # performed by the protocol_step_validator callback.
+        if step_num is not None:
+            try:
+                inv = getattr(tool_context, "_invocation_context", None)
+                session_obj = getattr(inv, "session", None) if inv else None
+                if session_obj and hasattr(session_obj, "state"):
+                    current = session_obj.state.get("_protocol_current_step", 0)
+                    if step_num > current:
+                        session_obj.state["_protocol_current_step"] = step_num
+            except Exception:
+                pass  # Don't break memory_plane if session state is unavailable
 
         if operation == "store":
             if not key:
@@ -591,7 +684,7 @@ class MemoryPlaneTool(DynamicTool):
         """Auto-collect session signals from hot store and enqueue to cold worker."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "flushed": False, "reason": "Cold store not available — session data not persisted"}
 
         # 1. Auto-collect from hot store
         auto_signals = await self._collect_session_signals(session_id)
@@ -610,6 +703,13 @@ class MemoryPlaneTool(DynamicTool):
         payload["cold_db_path"] = cold_db_path
         payload.setdefault("query_domain", args.get("query_domain", "general"))
         payload.setdefault("query_text", args.get("query", ""))
+
+        # Write task_complete signal to Redis for polling fallback
+        try:
+            complete_key = self._make_key(session_id, "intermediate", "task_complete")
+            await self._backend.set(complete_key, "true", ex=self._ttl_seconds)
+        except Exception as exc:
+            log.warning("Failed to write task_complete signal: %s", exc)
 
         try:
             from lifesci_tools.cold_worker import enqueue_session_flush
@@ -647,7 +747,7 @@ class MemoryPlaneTool(DynamicTool):
         """Load learned strategies from cold store into hot learning namespace."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "seeded": False, "reason": "Cold store not available — proceeding without historical intelligence"}
         query_text = args.get("query", "")
         try:
             from lifesci_tools.strategy_seeder import build_seed_payload
@@ -667,7 +767,7 @@ class MemoryPlaneTool(DynamicTool):
         """Look up historical intelligence from the cold store."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "results": [], "reason": "Cold store not available"}
         query_text = args.get("query", "")
 
         def _sync_query():
@@ -698,7 +798,7 @@ class MemoryPlaneTool(DynamicTool):
         """Fetch a specific learned strategy by type and key."""
         cold_db_path = getattr(self, "_cold_db_path", "")
         if not cold_db_path:
-            return {"success": False, "error": "Cold store not configured"}
+            return {"success": True, "strategy": None, "reason": "Cold store not available — no historical routing"}
         if not key:
             return {"success": False, "error": "Key is required for get_strategy (domain or '_global')"}
         strategy_type = args.get("strategy_type", "")

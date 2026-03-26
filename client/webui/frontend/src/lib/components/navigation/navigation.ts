@@ -1,4 +1,4 @@
-import { MessageCircle, Bot, SunMoon, FolderOpen, NotepadText } from "lucide-react";
+import { MessageCircle, Bot, SunMoon, FolderOpen, NotepadText, Network } from "lucide-react";
 
 import type { NavigationItem } from "@/lib/types";
 
@@ -18,7 +18,7 @@ export const getTopNavigationItems = (featureFlags?: Record<string, boolean>): N
         },
         {
             id: "agentMesh",
-            label: "Agent Mesh",
+            label: "Agent Configs",
             icon: Bot,
         },
     ];
@@ -46,6 +46,16 @@ export const getTopNavigationItems = (featureFlags?: Record<string, boolean>): N
         });
     }
 
+    // Add knowledge graph page if feature flag is enabled
+    const knowledgeGraphEnabled = featureFlags?.knowledgeGraph ?? false;
+    if (knowledgeGraphEnabled) {
+        items.push({
+            id: "knowledgeGraph",
+            label: "Knowledge",
+            icon: Network,
+        });
+    }
+
     return items;
 };
 
@@ -58,7 +68,7 @@ export const topNavigationItems: NavigationItem[] = [
     },
     {
         id: "agentMesh",
-        label: "Agent Mesh",
+        label: "Agent Configs",
         icon: Bot,
     },
     {
@@ -71,6 +81,11 @@ export const topNavigationItems: NavigationItem[] = [
         label: "Prompts",
         icon: NotepadText,
         badge: "EXPERIMENTAL",
+    },
+    {
+        id: "knowledgeGraph",
+        label: "Knowledge",
+        icon: Network,
     },
 ];
 

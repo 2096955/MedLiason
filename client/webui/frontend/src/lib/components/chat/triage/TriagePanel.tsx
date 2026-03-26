@@ -87,7 +87,7 @@ export const TriagePanel: React.FC<TriagePanelProps> = ({ isActive: _isActive })
 
                 <div className="space-y-4 px-4 pb-4">
                     {/* Specialist Verdicts */}
-                    {specialist_verdicts && specialist_verdicts.length > 0 && (
+                    {Array.isArray(specialist_verdicts) && specialist_verdicts.length > 0 && (
                         <div>
                             <h4 className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider">
                                 <Users className="h-3 w-3" /> Specialist Verdicts
@@ -135,7 +135,7 @@ export const TriagePanel: React.FC<TriagePanelProps> = ({ isActive: _isActive })
                                 </div>
 
                                 {/* Supporting specialists */}
-                                {consensus.supporting_specialists.length > 0 && (
+                                {Array.isArray(consensus.supporting_specialists) && consensus.supporting_specialists.length > 0 && (
                                     <div className="mt-2">
                                         <p className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
                                             Supporting
@@ -155,7 +155,7 @@ export const TriagePanel: React.FC<TriagePanelProps> = ({ isActive: _isActive })
                                 )}
 
                                 {/* Dissenting specialists */}
-                                {consensus.dissenting_specialists.length > 0 && (
+                                {Array.isArray(consensus.dissenting_specialists) && consensus.dissenting_specialists.length > 0 && (
                                     <div className="mt-2">
                                         <p className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">
                                             Dissenting

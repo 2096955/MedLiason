@@ -14,7 +14,7 @@ import logging
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 from lifesci_common.constants import CLINICALTRIALS_STUDIES_URL
 
@@ -111,7 +111,11 @@ async def search_trials(query: str, max_results: int = 10) -> dict:
         "format": "json",
     }
 
-    response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    try:
+        response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "clinicaltrials", "search_trials", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"ClinicalTrials.gov API returned {response.status_code}",
@@ -128,6 +132,7 @@ async def search_trials(query: str, max_results: int = 10) -> dict:
     total_count = data.get("totalCount", len(results))
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": total_count,
         "returned_count": len(results),
@@ -148,7 +153,11 @@ async def get_trial_details(nct_id: str) -> dict:
     url = f"{CLINICALTRIALS_STUDIES_URL}/{clean_id}"
     params = {"format": "json"}
 
-    response = await resilient_get(url, params=params)
+    try:
+        response = await resilient_get(url, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "clinicaltrials", "get_trial_details")
+
     if response.status_code == 404:
         return {"error": f"Trial {clean_id} not found"}
     if response.status_code != 200:
@@ -160,7 +169,7 @@ async def get_trial_details(nct_id: str) -> dict:
         log.error("Failed to parse trial details JSON: %s", exc)
         return {"error": "Invalid JSON response from API"}
 
-    return _parse_study(data)
+    return {**_parse_study(data), "success": True}
 
 
 @mcp.tool()
@@ -180,7 +189,11 @@ async def search_by_condition(condition: str, max_results: int = 10) -> dict:
         "format": "json",
     }
 
-    response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    try:
+        response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "clinicaltrials", "search_by_condition", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"ClinicalTrials.gov API returned {response.status_code}",
@@ -197,6 +210,7 @@ async def search_by_condition(condition: str, max_results: int = 10) -> dict:
     total_count = data.get("totalCount", len(results))
 
     return {
+        "success": True,
         "condition": safe_condition,
         "total_count": total_count,
         "returned_count": len(results),
@@ -220,7 +234,11 @@ async def search_by_intervention(intervention: str, max_results: int = 10) -> di
         "format": "json",
     }
 
-    response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    try:
+        response = await resilient_get(CLINICALTRIALS_STUDIES_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "clinicaltrials", "search_by_intervention", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"ClinicalTrials.gov API returned {response.status_code}",
@@ -237,6 +255,7 @@ async def search_by_intervention(intervention: str, max_results: int = 10) -> di
     total_count = data.get("totalCount", len(results))
 
     return {
+        "success": True,
         "intervention": safe_intervention,
         "total_count": total_count,
         "returned_count": len(results),

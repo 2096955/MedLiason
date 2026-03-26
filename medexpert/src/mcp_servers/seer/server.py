@@ -14,7 +14,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query, escape_soql
 from lifesci_common.constants import SEER_API_URL
 
@@ -93,6 +93,8 @@ async def get_cancer_statistics(
             incidence_results = [_parse_cancer_record(r) for r in resp.json()]
         else:
             log.warning("SEER incidence API returned %d", resp.status_code)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "seer", "get_cancer_statistics", incidence=[], mortality=[])
     except Exception as exc:
         log.error("Failed to fetch incidence data: %s", exc)
 
@@ -102,10 +104,13 @@ async def get_cancer_statistics(
             mortality_results = [_parse_cancer_record(r) for r in resp.json()]
         else:
             log.warning("SEER mortality API returned %d", resp.status_code)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "seer", "get_cancer_statistics", incidence=incidence_results, mortality=[])
     except Exception as exc:
         log.error("Failed to fetch mortality data: %s", exc)
 
     return {
+        "success": True,
         "cancer_type": cancer_type,
         "incidence": incidence_results,
         "mortality": mortality_results,
@@ -154,6 +159,7 @@ async def search_cancer_incidence(
         if resp.status_code == 200:
             records = [_parse_cancer_record(r) for r in resp.json()]
             return {
+                "success": True,
                 "cancer_type": cancer_type,
                 "year_filter": year,
                 "results": records,
@@ -164,6 +170,8 @@ async def search_cancer_incidence(
                 "error": f"API returned status {resp.status_code}",
                 "results": [],
             }
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "seer", "search_cancer_incidence", results=[])
     except Exception as exc:
         log.error("Failed to search cancer incidence: %s", exc)
         return {

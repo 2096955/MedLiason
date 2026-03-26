@@ -155,6 +155,12 @@ uv pip install fastmcp httpx biopython lxml "redis[hiredis]" 2>/dev/null \
   || uv pip install fastmcp httpx biopython lxml redis
 ok "MedExpert dependencies installed"
 
+# Install tracing extras (Arize Phoenix — optional, silent skip on failure)
+info "Installing tracing dependencies (Arize Phoenix)..."
+uv pip install -e "$MEDEXPERT_DIR[tracing]" --no-deps 2>/dev/null \
+  && ok "Tracing dependencies installed" \
+  || warn "Tracing dependencies failed to install — Phoenix observability will be disabled"
+
 ###########################################################################
 # Phase 3 — Environment File
 ###########################################################################

@@ -670,19 +670,33 @@ class AudioService:
             import os
             
             api_key = gemini_config.get("api_key", "")
-            model = gemini_config.get("model", "gemini-2.5-flash-preview-tts")
+            model = gemini_config.get("model", "gemini-2.5-flash-tts")
             final_voice = voice or gemini_config.get("default_voice", "Kore")
             # Gemini requires lowercase voice names
             final_voice = final_voice.lower()
             language = gemini_config.get("language", "en-US")
-            
-            if not api_key:
-                log.error("[AudioService] No Gemini API key found")
-                raise HTTPException(500, "Gemini TTS API key not configured")
-            
-            
-            # Create Gemini client
-            client = genai.Client(api_key=api_key)
+
+            # Resolve unresolved env var placeholders to empty
+            if api_key and api_key.startswith("${"):
+                api_key = ""
+
+            # Create Gemini client — prefer API key, fall back to Vertex AI ADC
+            vertex_project = gemini_config.get("vertex_project", "")
+            vertex_location = gemini_config.get("vertex_location", "")
+
+            if api_key:
+                client = genai.Client(api_key=api_key)
+            elif vertex_project:
+                log.info("[AudioService] No Gemini API key; using Vertex AI ADC (project=%s, location=%s)",
+                         vertex_project, vertex_location or "us-central1")
+                client = genai.Client(
+                    vertexai=True,
+                    project=vertex_project,
+                    location=vertex_location or "us-central1",
+                )
+            else:
+                log.error("[AudioService] No Gemini API key or Vertex AI project configured")
+                raise HTTPException(500, "Gemini TTS not configured: set api_key or vertex_project")
             
             # Create voice config
             voice_config = adk_types.VoiceConfig(
@@ -1233,9 +1247,11 @@ class AudioService:
         tts_polly_valid = False
         if tts_config:
             # Check Gemini - can be nested under 'gemini' or at root level for backward compat
+            # Valid if: explicit API key OR Vertex AI project configured (ADC auth)
             gemini_nested = tts_config.get("gemini", {})
             gemini_api_key = gemini_nested.get("api_key") or tts_config.get("api_key")
-            tts_gemini_valid = self._is_valid_api_key(gemini_api_key)
+            gemini_vertex_project = gemini_nested.get("vertex_project", "")
+            tts_gemini_valid = self._is_valid_api_key(gemini_api_key) or bool(gemini_vertex_project)
             
             azure_config = tts_config.get("azure", {})
             tts_azure_valid = (

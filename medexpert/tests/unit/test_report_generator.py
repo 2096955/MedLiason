@@ -1,7 +1,7 @@
 """Tests for ReportGeneratorTool — multi-format research report output."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,12 +10,25 @@ from lifesci_tools.report_generator import ReportGeneratorTool
 
 @pytest.fixture
 def tool():
+    """Tool without model config — template only."""
     return ReportGeneratorTool()
 
 
 @pytest.fixture
+def llm_tool():
+    """Tool with model config — LLM narrative enabled."""
+    return ReportGeneratorTool(tool_config={
+        "model": "openai/gemini-2.5-flash-001",
+        "temperature": 0.3,
+    })
+
+
+@pytest.fixture
 def ctx():
-    return MagicMock()
+    mock = MagicMock()
+    mock.session = MagicMock()
+    mock.session.id = "test-session-789"
+    return mock
 
 
 @pytest.fixture
@@ -302,3 +315,235 @@ async def test_disclaimer_in_all_modes(tool, ctx, sample_evidence):
             ctx,
         )
         assert "medical advice" in result["report"].lower()
+
+
+# ═══════════════════════════════════════════════════════════════
+# LLM narrative synthesis tests
+# ═══════════════════════════════════════════════════════════════
+
+
+def _mock_narrative_response(text: str):
+    """Build a mock litellm response for narrative synthesis."""
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock()]
+    mock_resp.choices[0].message.content = text
+    mock_resp.usage = MagicMock()
+    mock_resp.usage.prompt_tokens = 300
+    mock_resp.usage.completion_tokens = 400
+    return mock_resp
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_llm_full_synthesis(mock_llm, llm_tool, ctx, sample_evidence):
+    """LLM generates narrative synthesis for full_synthesis mode."""
+    mock_llm.return_value = _mock_narrative_response(
+        "Strong evidence suggests that metformin is effective as first-line therapy "
+        "for type 2 diabetes [[cite:s0r0]]. A recent Phase 3 trial also demonstrated "
+        "the efficacy of SGLT2 inhibitors [[cite:s0r1]].\n\n"
+        "The evidence is largely consistent, with both metformin and newer agents "
+        "showing meaningful HbA1c reductions. However, long-term comparative data "
+        "remains limited.\n\n"
+        "**Bottom line:** Metformin remains the strongest first-line option, with "
+        "SGLT2 inhibitors as a viable complement."
+    )
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "full_synthesis",
+            "question": "What is the best treatment for diabetes?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "llm"
+    assert "metformin" in result["report"].lower()
+    assert "[[cite:s0r0]]" in result["report"]
+    assert "## Evidence Summary Table" in result["report"]
+    assert "medical advice" in result["report"].lower()  # Disclaimer
+    mock_llm.assert_called_once()
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_llm_advisory_board_report(mock_llm, llm_tool, ctx, sample_evidence, sample_advisory):
+    """LLM narrative + advisory perspectives in advisory_board_report mode."""
+    mock_llm.return_value = _mock_narrative_response(
+        "Evidence synthesis narrative for the advisory report."
+    )
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "advisory_board_report",
+            "question": "Test?",
+            "evidence_json": json.dumps(sample_evidence),
+            "advisory_perspectives_json": json.dumps(sample_advisory),
+        },
+        ctx,
+    )
+    assert result["method"] == "llm"
+    assert "## Advisory Board Perspectives" in result["report"]
+    assert "Clinical Pragmatist" in result["report"]
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_llm_failure_falls_back_to_template(mock_llm, llm_tool, ctx, sample_evidence):
+    """LLM failure → template fallback for full_synthesis."""
+    mock_llm.side_effect = Exception("LLM timeout")
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "full_synthesis",
+            "question": "Test?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "template"
+    assert "## Executive Summary" in result["report"]  # Template structure
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_llm_with_verification(mock_llm, llm_tool, ctx, sample_evidence, sample_verification):
+    """LLM synthesis includes verification section when provided."""
+    mock_llm.return_value = _mock_narrative_response("Evidence synthesis text.")
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "full_synthesis",
+            "question": "Test?",
+            "evidence_json": json.dumps(sample_evidence),
+            "verification_result_json": json.dumps(sample_verification),
+        },
+        ctx,
+    )
+    assert result["method"] == "llm"
+    assert "## Verification Results" in result["report"]
+    assert result["has_verification"] is True
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_quick_answer_ignores_llm(mock_llm, llm_tool, ctx, sample_evidence):
+    """quick_answer mode uses template regardless of model config."""
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "quick_answer",
+            "question": "What is metformin?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "template"
+    assert "[[cite:" in result["report"]
+    mock_llm.assert_not_called()
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_research_brief_ignores_llm(mock_llm, llm_tool, ctx, sample_evidence):
+    """research_brief mode uses template regardless of model config."""
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "research_brief",
+            "question": "Efficacy of metformin?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "template"
+    assert "## Background" in result["report"]
+    mock_llm.assert_not_called()
+
+
+async def test_no_model_config_uses_template(tool, ctx, sample_evidence):
+    """Tool without model config uses template for all modes."""
+    result = await tool._run_async_impl(
+        {
+            "mode": "full_synthesis",
+            "question": "Test?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "template"
+    assert "## Executive Summary" in result["report"]
+
+
+@patch("lifesci_tools.report_generator._litellm_acompletion")
+async def test_llm_empty_response_falls_back(mock_llm, llm_tool, ctx, sample_evidence):
+    """Empty LLM response triggers template fallback."""
+    mock_llm.return_value = _mock_narrative_response("")
+    result = await llm_tool._run_async_impl(
+        {
+            "mode": "full_synthesis",
+            "question": "Test?",
+            "evidence_json": json.dumps(sample_evidence),
+        },
+        ctx,
+    )
+    assert result["method"] == "template"
+
+
+def test_init_with_dict_model():
+    """YAML anchor expansion: model config as dict."""
+    tool = ReportGeneratorTool(tool_config={
+        "model": {
+            "model": "vertex_ai/gemini-2.5-flash",
+            "vertex_project": "my-project",
+            "vertex_location": "us-central1",
+        }
+    })
+    assert tool.model == "vertex_ai/gemini-2.5-flash"
+    assert tool._vertex_kwargs == {"vertex_project": "my-project", "vertex_location": "us-central1"}
+
+
+def test_init_without_model():
+    """No model config → empty model string."""
+    tool = ReportGeneratorTool()
+    assert tool.model == ""
+
+
+# ── research_brief conclusion quality ────────────────────────
+
+
+async def test_research_brief_conclusion_not_generic(tool, ctx, sample_evidence):
+    """research_brief conclusion should NOT be the generic 'Further investigation' text."""
+    result = await tool._run_async_impl(
+        {
+            "question": "What is the safest anesthesia for hemophilia patients?",
+            "evidence_json": json.dumps(sample_evidence),
+            "mode": "research_brief",
+        },
+        ctx,
+    )
+    report = result["report"]
+    assert "preliminary findings are presented above" not in report
+    assert "Further investigation may be warranted" not in report
+    assert "## Conclusion" in report
+    assert "clinical" in report.lower()  # Should reference clinical context
+
+
+async def test_research_brief_single_source_conclusion(tool, ctx):
+    """Single source should get a cautionary conclusion."""
+    single = [{"title": "Only Study", "snippet": "Only finding", "cite_id": "s0r0"}]
+    result = await tool._run_async_impl(
+        {
+            "question": "Test question?",
+            "evidence_json": json.dumps(single),
+            "mode": "research_brief",
+        },
+        ctx,
+    )
+    report = result["report"]
+    assert "single source" in report.lower()
+    assert "caution" in report.lower()
+
+
+# ── C2: report_mode field ────────────────────────────────────
+
+
+async def test_report_mode_in_output(tool, ctx, sample_evidence):
+    """report_generator must include report_mode in its output dict."""
+    for mode in ["quick_answer", "research_brief", "full_synthesis", "advisory_board_report"]:
+        result = await tool._run_async_impl(
+            {
+                "mode": mode,
+                "question": "Test?",
+                "evidence_json": json.dumps(sample_evidence),
+            },
+            ctx,
+        )
+        assert result["report_mode"] == mode

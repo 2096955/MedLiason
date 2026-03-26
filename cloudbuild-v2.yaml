@@ -1,0 +1,55 @@
+steps:
+  # Build MedExpert frontend from source (includes model selector)
+  - name: "node:22"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "cd client/webui/frontend && npm ci --ignore-engines && npm run build"
+
+  # Copy built static/ to Docker build context
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - "rm -rf medexpert/frontend-static && cp -r client/webui/frontend/static medexpert/frontend-static"
+
+  # Copy gateway overrides into medexpert build context
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        mkdir -p medexpert/gateway-overrides/routers
+        cp src/solace_agent_mesh/gateway/http_sse/main.py medexpert/gateway-overrides/main.py
+        cp src/solace_agent_mesh/gateway/http_sse/routers/agent_cards.py medexpert/gateway-overrides/routers/agent_cards.py
+
+  # Docker build (uses Dockerfile.v2 with litellm override)
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medexpert-v2:${_TAG}"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/medexpert-v2:latest"
+      - "-f"
+      - "medexpert/infra/Dockerfile.v2"
+      - "medexpert"
+
+  # Push both tags
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medexpert-v2:${_TAG}"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/medexpert-v2:latest"]
+
+images:
+  - "gcr.io/$PROJECT_ID/medexpert-v2:${_TAG}"
+  - "gcr.io/$PROJECT_ID/medexpert-v2:latest"
+
+substitutions:
+  _TAG: "96620180"
+
+timeout: "1200s"
+
+options:
+  machineType: "E2_HIGHCPU_8"

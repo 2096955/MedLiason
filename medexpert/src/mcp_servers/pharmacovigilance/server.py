@@ -20,7 +20,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -122,7 +122,11 @@ async def search_serious_adverse_events(
         "sort": "receivedate:desc",
     }
 
-    response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "pharmacovigilance", "search_serious_adverse_events", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA FAERS API returned {response.status_code}",
@@ -149,6 +153,7 @@ async def search_serious_adverse_events(
     top_reactions = sorted(reaction_counts.items(), key=lambda x: -x[1])[:20]
 
     return {
+        "success": True,
         "drug_name": safe_drug,
         "total_serious_reports": meta.get("total", 0),
         "returned_count": len(results),
@@ -183,7 +188,11 @@ async def search_death_reports(drug_name: str, max_results: int = 10) -> dict:
         "sort": "receivedate:desc",
     }
 
-    response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_EVENT_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "pharmacovigilance", "search_death_reports", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA FAERS API returned {response.status_code}",
@@ -200,6 +209,7 @@ async def search_death_reports(drug_name: str, max_results: int = 10) -> dict:
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "drug_name": safe_drug,
         "total_death_reports": meta.get("total", 0),
         "returned_count": len(results),
@@ -229,7 +239,11 @@ async def get_boxed_warnings(drug_name: str) -> dict:
         "limit": 5,
     }
 
-    response = await resilient_get(OPENFDA_DRUG_LABEL_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DRUG_LABEL_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "pharmacovigilance", "get_boxed_warnings", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA drug label API returned {response.status_code}",
@@ -249,6 +263,7 @@ async def get_boxed_warnings(drug_name: str) -> dict:
     )
 
     return {
+        "success": True,
         "drug_name": safe_drug,
         "has_boxed_warning": has_boxed_warning,
         "returned_count": len(results),

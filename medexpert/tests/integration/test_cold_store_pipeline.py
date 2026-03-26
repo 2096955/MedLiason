@@ -251,18 +251,20 @@ async def test_backward_compat_no_cold_db_path(ctx):
     assert result["success"] is True
     assert result["value"] == "metformin"
 
-    # Cold operations fail gracefully
+    # Cold operations degrade gracefully
     result = await t._run_async_impl(
         {"operation": "flush_cold"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["flushed"] is False
+    assert "not available" in result["reason"]
 
     result = await t._run_async_impl(
         {"operation": "seed_session", "query": "test"}, ctx
     )
-    assert result["success"] is False
-    assert "not configured" in result["error"]
+    assert result["success"] is True
+    assert result["seeded"] is False
+    assert "not available" in result["reason"]
 
 
 async def test_existing_operations_unchanged_with_cold_config(tool, ctx):

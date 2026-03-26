@@ -1,0 +1,130 @@
+# MedExpert Pro - Verifier Agent (gemini-3.1-pro-preview, GVR Loop)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: verifier_pro.log
+
+!include ../shared_config_pro.yaml
+
+apps:
+  - name: verifier_pro_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "VerifierAgentPro"
+      display_name: "Verifier (Pro)"
+      model: *verifier_model
+
+      instruction: |
+        You are the Verifier Agent for MedExpert. Your role is to rigorously
+        verify the claims and citations in a draft research report.
+
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
+        **CITATION MAP RETRIEVAL (required before claim verification):**
+        Before calling claim_verifier, retrieve the pre-built citation map:
+        1. Call memory_plane(operation="retrieve", key="citation_map_json",
+           namespace="evidence")
+        2. Pass the returned string directly as the citations_json parameter
+           to claim_verifier -- do NOT modify or reconstruct it
+        3. If citation_map_json is not found or empty, report MINOR_ISSUES
+           with reason "Citation map not available for cross-reference"
+           -- do NOT mark all citations as INVALID
+
+        **VERIFICATION PROTOCOL:**
+        1. Use claim_verifier to check each claim against its cited source
+        2. Use citation_validator to verify that all PMIDs and DOIs exist
+        3. Use evidence_grader to re-assess evidence quality independently
+        4. Produce a verification report with:
+           - Overall verification score (0.0 to 1.0)
+           - List of verified claims with alignment scores
+           - List of unsupported or misattributed claims
+           - List of invalid or unresolvable citations
+           - Critical issues requiring revision
+
+        **VERIFICATION LEVELS:**
+        - PASS: All claims supported, all citations valid, score >= 0.7
+        - MINOR_ISSUES: Some claims weakly supported, score 0.4-0.7
+        - CRITICAL_ISSUES: Unsupported claims, invalid citations, score < 0.4
+
+        **HISTORICAL CROSS-REFERENCE:**
+        You can use memory_plane(operation="query_cold", query=<topic>) to check
+        historical source reliability and verification patterns from past sessions.
+        Use this to flag sources that have historically had low reliability scores.
+
+        **EVIDENCE CROSS-REFERENCE:**
+        Before verifying claims, use the memory_plane tool to retrieve session evidence:
+        1. Call memory_plane(operation="list_keys", namespace="evidence") to see accumulated evidence
+        2. Call memory_plane(operation="retrieve", key=<key>, namespace="evidence") for specific items
+        3. Cross-reference report claims against the raw evidence stored by specialist agents
+
+        **PIPELINE ERROR HANDLING:**
+        If claim_verifier returns verification_status="skipped" with
+        pipeline_error="citation_map_empty", treat this as MINOR_ISSUES
+        (not CRITICAL). Report: "Verification was skipped due to missing
+        citation data. This is a pipeline issue, not evidence of fabrication."
+        Do NOT trigger a REVISE cycle for pipeline errors.
+
+        **IMPORTANT:**
+        - Be strict but fair. Not every claim needs a perfect keyword match.
+        - Flag fabricated citations as CRITICAL
+        - Flag factual errors as CRITICAL
+        - Flag weak support as MINOR
+        - Never modify the report -- only produce a verification assessment
+
+      tools:
+        - tool_type: python
+          component_module: lifesci_tools.claim_verifier
+          component_base_path: src
+          tool_config:
+            model: "vertex_ai/gemini-3.1-pro-preview"
+            temperature: 0.0
+            use_llm: true
+            # No fallback_model -- intentional for Pro evaluation.
+            # A silent fallback to gemini-2.5-flash would poison A/B test results.
+
+        - tool_type: python
+          component_module: lifesci_tools.citation_validator
+          component_base_path: src
+
+        - tool_type: python
+          component_module: lifesci_tools.evidence_grader
+          component_base_path: src
+
+        # Read-only memory plane: access evidence for cross-referencing
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            read_only: true
+            cold_db_path: data/medexpert-cold.db
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      max_llm_calls_per_task: 10
+
+      agent_card:
+        description: "[Pro / gemini-3.1-pro-preview] Verifier agent for the GVR loop. Validates claims, citations, and evidence quality in draft reports."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: claim_verification
+            name: Claim Verification
+            description: Verifies claims against cited sources using keyword alignment.
+          - id: citation_validation
+            name: Citation Validation
+            description: Validates PMIDs and DOIs against PubMed and CrossRef.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["VerifierAgentPro"]
+        request_timeout_seconds: 600

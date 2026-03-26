@@ -7,9 +7,10 @@ import { v4 as uuidv4 } from "uuid";
 // Note: may be able to remove this workaround with next version of uuid
 const v4 = () => uuidv4({});
 
-import { api, RateLimitError } from "@/lib/api";
+import { api, RateLimitError, pollTaskStatus } from "@/lib/api";
 import { AgentContext, ChatContext, NotificationContext, SidePanelContext, type ChatContextValue, type PendingPromptData, type TriageProgressData } from "@/lib/contexts";
 import { useConfigContext, useArtifacts, useAgentCards, useTaskContext, useErrorDialog, useTitleGeneration, useBackgroundTaskMonitor, useArtifactPreview, useArtifactOperations, useAuthContext } from "@/lib/hooks";
+import { resolveAgentName } from "@/lib/config/modelOptions";
 import { useProjectContext, registerProjectDeletedCallback } from "@/lib/providers";
 import { getErrorMessage, fileToBase64, migrateTask, CURRENT_SCHEMA_VERSION, getApiBearerToken, internalToDisplayText } from "@/lib/utils";
 import { ConfirmationDialog } from "@/lib/components/common/ConfirmationDialog";
@@ -20,11 +21,13 @@ import type {
     FileAttachment,
     FilePart,
     JSONRPCErrorResponse,
+    MCPFailure,
     Message,
     MessageFE,
     Notification,
     Part,
     PartFE,
+    PipelineErrorData,
     SendStreamingMessageRequest,
     SendStreamingMessageSuccessResponse,
     Session,
@@ -74,6 +77,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     });
     const triageAutoOpenedRef = useRef<boolean>(false);
 
+    // Pipeline Error State
+    const [pipelineErrors, setPipelineErrors] = useState<PipelineErrorData | null>(null);
+
     // Triage pipeline timeout (120s) — show warning if pipeline stalls
     const triageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -100,6 +106,50 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         };
     }, [triageProgress]);
 
+    // Research pipeline stall detection (60s timeout)
+    const researchStallTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Mirror isResponding in a ref so the SSE handler closure always sees the current value
+    const isRespondingRef = useRef(isResponding);
+    useEffect(() => { isRespondingRef.current = isResponding; }, [isResponding]);
+
+    useEffect(() => {
+        // Clear any existing stall timeout
+        if (researchStallTimeoutRef.current) {
+            clearTimeout(researchStallTimeoutRef.current);
+            researchStallTimeoutRef.current = null;
+        }
+
+        if (isResponding) {
+            researchStallTimeoutRef.current = setTimeout(() => {
+                setPipelineErrors(prev => ({
+                    ...prev || { mcp_failures: [], cross_reference_warnings: [] },
+                    stalled: true,
+                    stalledAt: new Date().toISOString(),
+                }));
+                // If stalled and not already polling, start polling fallback
+                // Use refs to avoid stale closure (timeout fires 60s after effect creation)
+                if (!pollingIntervalRef.current && currentTaskIdRef.current && currentSessionIdRef.current) {
+                    console.log("[ChatPoll] Stall detected — starting polling fallback.");
+                    startPollingFallback(currentTaskIdRef.current, currentSessionIdRef.current);
+                }
+            }, 60_000);
+        } else {
+            // Clear stall flag when no longer responding
+            setPipelineErrors(prev => {
+                if (prev?.stalled) {
+                    return { ...prev, stalled: false, stalledAt: undefined };
+                }
+                return prev;
+            });
+        }
+
+        return () => {
+            if (researchStallTimeoutRef.current) {
+                clearTimeout(researchStallTimeoutRef.current);
+            }
+        };
+    }, [isResponding]);
+
     // Wrapper to keep ref in sync with state
     const setRagData = useCallback((data: RAGSearchResult[] | ((prev: RAGSearchResult[]) => RAGSearchResult[])) => {
         _setRagData(prev => {
@@ -123,6 +173,11 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     const CHAT_SSE_BASE_DELAY_MS = 1000;
     const CHAT_SSE_MAX_DELAY_MS = 16000;
 
+    // Polling fallback state (activates when SSE reconnection is exhausted)
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const pollingLastTimestampRef = useRef(0);
+    const POLLING_INTERVAL_MS = 5_000;
+
     // Track isCancelling in ref to access in async callbacks
     const isCancellingRef = useRef(isCancelling);
     useEffect(() => {
@@ -131,9 +186,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
     // Track current session id to prevent race conditions
     const currentSessionIdRef = useRef(sessionId);
+    const currentTaskIdRef = useRef(currentTaskId);
     useEffect(() => {
         currentSessionIdRef.current = sessionId;
     }, [sessionId]);
+    useEffect(() => {
+        currentTaskIdRef.current = currentTaskId;
+    }, [currentTaskId]);
 
     const [taskIdInSidePanel, setTaskIdInSidePanel] = useState<string | null>(null);
     const cancelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1379,9 +1438,31 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                     break;
                                 }
                                 case "research_protocol_progress": {
-                                    // MedExpert 12-step research protocol progress tracking
+                                    // MedExpert 7-step research protocol progress tracking
                                     // Clear latestStatusText so LoadingMessageRow doesn't show duplicate status
                                     latestStatusText.current = null;
+                                    // Reset stall timer — we received progress
+                                    if (researchStallTimeoutRef.current) {
+                                        clearTimeout(researchStallTimeoutRef.current);
+                                        researchStallTimeoutRef.current = null;
+                                    }
+                                    // Clear stall flag since we have fresh progress
+                                    setPipelineErrors(prev => {
+                                        if (prev?.stalled) {
+                                            return { ...prev, stalled: false, stalledAt: undefined };
+                                        }
+                                        return prev;
+                                    });
+                                    // Restart the timer if still responding (use ref to avoid stale closure)
+                                    if (isRespondingRef.current) {
+                                        researchStallTimeoutRef.current = setTimeout(() => {
+                                            setPipelineErrors(prev => ({
+                                                ...prev || { mcp_failures: [], cross_reference_warnings: [] },
+                                                stalled: true,
+                                                stalledAt: new Date().toISOString(),
+                                            }));
+                                        }, 60_000);
+                                    }
                                     // Don't return early - let the data part flow through to ChatMessage for rendering
                                     break;
                                 }
@@ -1455,6 +1536,40 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                                             }
                                         }
                                     }
+
+                                    // Extract pipeline error metadata from tool results
+                                    if (resultData && typeof resultData === "object") {
+                                        // publish_sources returns aggregate_status and mcp_failures
+                                        const aggStatus = (resultData as any).aggregate_status;
+                                        if (aggStatus && aggStatus !== "all_retrieved") {
+                                            const failures: MCPFailure[] = Array.isArray((resultData as any).mcp_failures)
+                                                ? (resultData as any).mcp_failures
+                                                : [];
+                                            const crossRefWarnings: string[] = Array.isArray((resultData as any).cross_reference_warnings)
+                                                ? (resultData as any).cross_reference_warnings
+                                                : [];
+                                            setPipelineErrors(prev => ({
+                                                aggregate_status: aggStatus,
+                                                mcp_failures: [...(prev?.mcp_failures || []), ...failures],
+                                                cross_reference_warnings: [...(prev?.cross_reference_warnings || []), ...crossRefWarnings],
+                                                verification_status: prev?.verification_status,
+                                                pipeline_error: prev?.pipeline_error,
+                                            }));
+                                        }
+
+                                        // claim_verifier returns verification_status: "skipped"
+                                        const verStatus = (resultData as any).verification_status;
+                                        if (verStatus === "skipped") {
+                                            setPipelineErrors(prev => ({
+                                                aggregate_status: prev?.aggregate_status,
+                                                mcp_failures: prev?.mcp_failures || [],
+                                                cross_reference_warnings: prev?.cross_reference_warnings || [],
+                                                verification_status: "skipped",
+                                                pipeline_error: (resultData as any).pipeline_error || prev?.pipeline_error,
+                                            }));
+                                        }
+                                    }
+
                                     // Don't add tool_result to content parts - it's metadata only
                                     break;
                                 }
@@ -1893,6 +2008,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             setTriageProgress(null);
             triageAutoOpenedRef.current = false;
             sessionStorage.removeItem("triageProgress");
+            // Clear pipeline errors and stall timer on new session
+            setPipelineErrors(null);
+            if (researchStallTimeoutRef.current) {
+                clearTimeout(researchStallTimeoutRef.current);
+                researchStallTimeoutRef.current = null;
+            }
             // Clear deep research query history
             deepResearchQueryHistoryRef.current.clear();
             // Artifacts will be automatically refreshed by useArtifacts hook when sessionId changes
@@ -2037,6 +2158,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 setTriageProgress(null);
                 triageAutoOpenedRef.current = false;
                 sessionStorage.removeItem("triageProgress");
+                // Clear pipeline errors and stall timer when switching sessions
+                setPipelineErrors(null);
+                if (researchStallTimeoutRef.current) {
+                    clearTimeout(researchStallTimeoutRef.current);
+                    researchStallTimeoutRef.current = null;
+                }
                 // Clear deep research query history when switching sessions
                 deepResearchQueryHistoryRef.current.clear();
 
@@ -2290,9 +2417,95 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         [sessionId]
     );
 
+    // ── Polling fallback (activates when SSE reconnection exhausted) ──
+
+    const stopPollingFallback = useCallback(() => {
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+        }
+        pollingLastTimestampRef.current = 0;
+    }, []);
+
+    const startPollingFallback = useCallback(
+        (taskId: string, sid: string) => {
+            // Don't start if already polling
+            if (pollingIntervalRef.current) return;
+
+            console.log(`[ChatPoll] Starting polling fallback for task ${taskId}, session ${sid}`);
+            latestStatusText.current = "Reconnecting via polling...";
+
+            const poll = async () => {
+                try {
+                    const resp = await pollTaskStatus(taskId, sid, pollingLastTimestampRef.current);
+
+                    // Process new events through the same SSE message handler
+                    if (resp.events_since && resp.events_since.length > 0) {
+                        for (const evt of resp.events_since) {
+                            // Synthesize a MessageEvent-like object for handleSseMessage
+                            const syntheticEvent = new MessageEvent("message", {
+                                data: JSON.stringify(evt.payload),
+                            });
+                            handleSseMessage(syntheticEvent);
+
+                            // Track the latest timestamp to avoid re-processing
+                            if (evt.created_time > pollingLastTimestampRef.current) {
+                                pollingLastTimestampRef.current = evt.created_time;
+                            }
+                        }
+                    }
+
+                    // Check completion
+                    if (resp.is_complete) {
+                        console.log("[ChatPoll] Task complete via polling. Stopping.");
+                        stopPollingFallback();
+
+                        // If we got an answer but no final event was processed, create
+                        // a synthetic completion message from the Redis answer_text
+                        if (resp.answer_text && !resp.has_final_event) {
+                            setMessages(prev => {
+                                const last = prev[prev.length - 1];
+                                if (last && !last.isUser && !last.isComplete) {
+                                    return [
+                                        ...prev.slice(0, -1),
+                                        { ...last, isComplete: true },
+                                    ];
+                                }
+                                // No incomplete agent message — create one from answer_text
+                                return [
+                                    ...prev,
+                                    {
+                                        role: "agent",
+                                        parts: [{ kind: "text", text: resp.answer_text! }],
+                                        isUser: false,
+                                        isComplete: true,
+                                        metadata: { messageId: `msg-${v4()}` },
+                                    } as MessageFE,
+                                ];
+                            });
+                        }
+
+                        setIsResponding(false);
+                        latestStatusText.current = null;
+                    }
+                } catch (err) {
+                    console.warn("[ChatPoll] Polling request failed:", err);
+                    // Keep polling — transient errors are expected
+                }
+            };
+
+            // Immediate first poll, then interval
+            void poll();
+            pollingIntervalRef.current = setInterval(poll, POLLING_INTERVAL_MS);
+        },
+        [handleSseMessage, stopPollingFallback, setMessages],
+    );
+
     const handleSseOpen = useCallback(() => {
         // Reset reconnection state on successful connection
         chatSseReconnectionAttemptsRef.current = 0;
+        // Stop polling if SSE reconnected successfully
+        stopPollingFallback();
         if (chatSseReconnectionTimeoutRef.current) {
             clearTimeout(chatSseReconnectionTimeoutRef.current);
             chatSseReconnectionTimeoutRef.current = null;
@@ -2328,9 +2541,16 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 }, delay);
                 return;
             }
-            // Max attempts reached — show error
-            setError({ title: "Connection Failed", error: "Connection lost after multiple retry attempts. Please try again." });
+            // Max SSE attempts reached — fall back to polling instead of showing error
+            console.log("[ChatSSE] Max reconnection attempts. Switching to polling fallback.");
             chatSseReconnectionAttemptsRef.current = 0;
+            closeCurrentEventSource();
+            if (currentTaskId && sessionId) {
+                startPollingFallback(currentTaskId, sessionId);
+                return;
+            }
+            // No task/session to poll — show error as last resort
+            setError({ title: "Connection Failed", error: "Connection lost after multiple retry attempts. Please try again." });
         }
 
         // Original cleanup for non-reconnectable cases or max attempts exceeded
@@ -2343,7 +2563,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             latestStatusText.current = null;
         }
         setMessages(prev => prev.filter(msg => !msg.isStatusBubble).map((m, i, arr) => (i === arr.length - 1 && !m.isUser ? { ...m, isComplete: true } : m)));
-    }, [closeCurrentEventSource, isResponding, currentTaskId, setError]);
+    }, [closeCurrentEventSource, isResponding, currentTaskId, sessionId, startPollingFallback, setError]);
 
     const cleanupUploadedFiles = useCallback(async (uploadedFiles: Array<{ filename: string; sessionId: string }>) => {
         if (uploadedFiles.length === 0) {
@@ -2859,7 +3079,13 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                         selectedAgent = agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
                     }
                 } else {
-                    selectedAgent = agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
+                    // Respect model selector localStorage preference on refresh
+                    const persistedModel = localStorage.getItem("medexpert-model");
+                    const persistedMode = localStorage.getItem("medexpert-mode");
+                    const preferredName = (persistedModel || persistedMode)
+                        ? resolveAgentName((persistedModel || "flash") as any, (persistedMode || "research") as any)
+                        : "OrchestratorAgent";
+                    selectedAgent = agents.find(agent => agent.name === preferredName) ?? agents.find(agent => agent.name === "OrchestratorAgent") ?? agents[0];
                 }
             }
 
@@ -2962,8 +3188,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
                 chatSseReconnectionTimeoutRef.current = null;
             }
             chatSseReconnectionAttemptsRef.current = 0;
+            stopPollingFallback();
         }
-    }, [currentTaskId, closeCurrentEventSource]);
+    }, [currentTaskId, closeCurrentEventSource, stopPollingFallback]);
 
     // --- Sub-context memoized values (Phase E Round 1) ---
     const notificationValue = useMemo(
@@ -3089,6 +3316,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         /** Triage */
         triageProgress,
         setTriageProgress,
+
+        /** Pipeline Errors */
+        pipelineErrors,
+        setPipelineErrors,
 
         /** Background Task Monitoring */
         backgroundTasks,

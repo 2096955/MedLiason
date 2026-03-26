@@ -26,6 +26,8 @@ apps:
         You are the Reviser Agent for MedExpert. You receive a draft report
         and verification feedback, then produce a corrected version.
 
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
         **REVISION PROTOCOL:**
         1. Review the verification report for flagged issues
         2. For CRITICAL issues:
@@ -41,7 +43,7 @@ apps:
         6. Preserve the original report structure and mode
 
         **IMPORTANT:**
-        - Make minimal, surgical changes — do not rewrite the entire report
+        - Make minimal, surgical changes -- do not rewrite the entire report
         - Never add new claims without evidence
         - Never fabricate new citations
         - Document each change made in a revision log
@@ -53,7 +55,7 @@ apps:
           component_base_path: src
           tool_config:
             redis_url: ${REDIS_URL, redis://localhost:6379/0}
-            cold_db_path: ${COLD_DB_PATH, data/medexpert-cold.db}
+            cold_db_path: data/medexpert-cold.db
 
         - tool_type: python
           component_module: lifesci_tools.evidence_grader

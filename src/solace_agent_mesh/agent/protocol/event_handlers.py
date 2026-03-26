@@ -971,12 +971,17 @@ async def handle_a2a_request(component, message: SolaceMessage):
                     effective_session_id,
                 )
 
-            # Always use SSE streaming mode for the ADK runner.
-            # This ensures that real-time callbacks (e.g., for fenced artifact
-            # progress) can function correctly for all task types. The component's
-            # internal logic uses the 'is_run_based_session' flag to differentiate
-            # between aggregating a final response and streaming partial updates.
-            streaming_mode = StreamingMode.SSE
+            # Default to SSE streaming for the ADK runner so real-time
+            # callbacks (e.g., fenced artifact progress) work correctly.
+            # Agents can override with streaming_mode: "none" in their YAML
+            # to disable streaming — this allows litellm to cleanly retry
+            # and fall back on mid-stream connection failures.
+            cfg_streaming = component.get_config("streaming_mode", "sse")
+            streaming_mode = (
+                StreamingMode.NONE
+                if str(cfg_streaming).lower() == "none"
+                else StreamingMode.SSE
+            )
 
             max_llm_calls_per_task = component.get_config("max_llm_calls_per_task", 20)
             log.debug(
@@ -1795,6 +1800,22 @@ async def handle_a2a_response(component, message: SolaceMessage):
             )
             # Reset the timeout since we received a status update
             await component.reset_peer_timeout(sub_task_id)
+            message.call_acknowledgements()
+            return
+
+        # --- Sync peer tool fast path ---
+        # If a SyncPeerAgentTool is waiting for this sub_task_id, deliver the
+        # result directly and skip the normal parallel-result / re-trigger flow.
+        if payload_to_queue is not None and component.try_deliver_sync_response(
+            sub_task_id, payload_to_queue
+        ):
+            log.info(
+                "%s Delivered final response to sync waiter for sub-task %s. Skipping async flow.",
+                component.log_identifier,
+                sub_task_id,
+            )
+            # Still claim the sub-task to clean up tracking state
+            await component._claim_peer_sub_task_completion(sub_task_id)
             message.call_acknowledgements()
             return
 

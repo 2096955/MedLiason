@@ -80,6 +80,43 @@ apps:
       frontend_feature_enablement:
         background_tasks: true
         auto_title_generation: true
+        speechToText: true
+        textToSpeech: true
+        knowledgeGraph: true
+
+      # ── Speech Configuration ───────────────────────────────────
+      # TTS: Gemini via Vertex AI ADC (service account key at
+      #      GOOGLE_APPLICATION_CREDENTIALS). No GEMINI_API_KEY needed.
+      # STT: Browser Web Speech API by default. Set a real OPENAI_API_KEY
+      #      (not the Google-aliased one) to enable external Whisper STT.
+      speech:
+        stt:
+          provider: openai
+          openai:
+            url: "https://api.openai.com/v1/audio/transcriptions"
+            model: "whisper-1"
+
+        tts:
+          provider: gemini
+          gemini:
+            vertex_project: "gbg-neuro"
+            vertex_location: "us-central1"
+            model: "gemini-2.5-flash-tts"
+            default_voice: "Kore"
+            language: "en-US"
+
+        speechTab:
+          advancedMode: false
+          speechToText:
+            speechToText: true
+            engineSTT: browser
+            languageSTT: en-US
+          textToSpeech:
+            textToSpeech: true
+            engineTTS: external
+            voice: Kore
+            playbackRate: 1.0
+            cacheTTS: true
 
       background_tasks:
         default_timeout_ms: 3600000

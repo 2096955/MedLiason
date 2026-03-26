@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from "react";
-import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { FileText, TrendingUp, Search, Link2, ChevronDown, ChevronUp, Brain, Globe, ExternalLink, AlertTriangle, Network } from "lucide-react";
 // Web-only version - enterprise icons removed
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/lib/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/lib/components/ui/select";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RAGSearchResult } from "@/lib/types";
+import type { RAGSearchResult, RAGSource, PipelineErrorData } from "@/lib/types";
 
 interface TimelineEvent {
     type: "thinking" | "search" | "read";
@@ -20,6 +21,41 @@ interface RAGInfoPanelProps {
     enabled: boolean;
     highlightedSourceId?: string | null;
     onHighlightConsumed?: () => void;
+    pipelineErrors?: PipelineErrorData | null;
+}
+
+type SortMode = "grade" | "recent" | "relevance";
+
+const GRADE_ORDER: Record<string, number> = {
+    High: 4,
+    Moderate: 3,
+    Low: 2,
+    "Very Low": 1,
+};
+
+function sortSources(sources: RAGSource[], mode: SortMode): RAGSource[] {
+    return [...sources].sort((a, b) => {
+        if (mode === "grade") {
+            const gradeA = GRADE_ORDER[a.evidenceGrade || a.metadata?.evidence_grade || ""] || 0;
+            const gradeB = GRADE_ORDER[b.evidenceGrade || b.metadata?.evidence_grade || ""] || 0;
+            if (gradeB !== gradeA) return gradeB - gradeA;
+            // Tie-break by year (newest first)
+            const yearA = a.publicationYear || a.metadata?.publication_year || 0;
+            const yearB = b.publicationYear || b.metadata?.publication_year || 0;
+            return yearB - yearA;
+        }
+        if (mode === "recent") {
+            const yearA = a.publicationYear || a.metadata?.publication_year || 0;
+            const yearB = b.publicationYear || b.metadata?.publication_year || 0;
+            if (yearB !== yearA) return yearB - yearA;
+            // Tie-break by grade
+            const gradeA = GRADE_ORDER[a.evidenceGrade || a.metadata?.evidence_grade || ""] || 0;
+            const gradeB = GRADE_ORDER[b.evidenceGrade || b.metadata?.evidence_grade || ""] || 0;
+            return gradeB - gradeA;
+        }
+        // relevance — sort by relevanceScore descending
+        return (b.relevanceScore || 0) - (a.relevanceScore || 0);
+    });
 }
 
 /**
@@ -47,6 +83,36 @@ const extractFilename = (filename: string | undefined): string => {
     return cleaned + ".pdf";
 };
 
+
+// --- Evidence grade badge helpers ---
+
+const GRADE_BADGE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+    High: { bg: "bg-green-500/15", text: "text-green-700 dark:text-green-400", dot: "bg-green-500" },
+    Moderate: { bg: "bg-amber-500/15", text: "text-amber-700 dark:text-amber-400", dot: "bg-amber-500" },
+    Low: { bg: "bg-orange-500/15", text: "text-orange-700 dark:text-orange-400", dot: "bg-orange-500" },
+    "Very Low": { bg: "bg-red-500/15", text: "text-red-700 dark:text-red-400", dot: "bg-red-500" },
+};
+
+function getSourceGrade(source: RAGSource): string | undefined {
+    return source.evidenceGrade || source.metadata?.evidence_grade || undefined;
+}
+
+function getSourceYear(source: RAGSource): number | undefined {
+    return source.publicationYear || source.metadata?.publication_year || undefined;
+}
+
+/** Color-coded pill badge showing evidence grade (High / Moderate / Low / Very Low). */
+const GradeBadge: React.FC<{ grade: string }> = ({ grade }) => {
+    const colors = GRADE_BADGE_COLORS[grade];
+    if (!colors) return null;
+    return (
+        <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ${colors.bg} ${colors.text}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+            {grade}
+        </span>
+    );
+};
+
 const SourceCard: React.FC<{
     source: RAGSearchResult["sources"][0];
     isHighlighted?: boolean;
@@ -71,6 +137,9 @@ const SourceCard: React.FC<{
     const hasRealContent = contentPreview && contentPreview !== "Reading...";
     const shouldTruncate = hasRealContent && contentPreview.length > 200;
     const displayContent = shouldTruncate && !isExpanded ? contentPreview.substring(0, 200) + "..." : contentPreview;
+
+    const grade = getSourceGrade(source);
+    const year = getSourceYear(source);
 
     // Only show score if it's a real relevance score (not the default 1.0 from deep research)
     const showScore = source.relevanceScore !== 1.0;
@@ -97,6 +166,8 @@ const SourceCard: React.FC<{
                             {displayTitle}
                         </span>
                     )}
+                    {year && <span className="text-muted-foreground flex-shrink-0 text-[10px]">({year})</span>}
+                    {grade && <GradeBadge grade={grade} />}
                 </div>
                 {showScore && (
                     <div className="ml-2 flex flex-shrink-0 items-center gap-1 text-xs font-medium">
@@ -105,6 +176,7 @@ const SourceCard: React.FC<{
                     </div>
                 )}
             </div>
+
 
             {/* Content Preview - Fixed height when collapsed - Only show if we have real content */}
             {hasRealContent && <div className={`text-muted-foreground overflow-hidden text-xs leading-relaxed break-words whitespace-pre-wrap ${isExpanded ? "" : "h-[72px]"}`}>{displayContent}</div>}
@@ -152,7 +224,8 @@ const VIRTUALIZE_THRESHOLD = 20;
 const VirtualizedSourceCardList: React.FC<{
     ragData: RAGSearchResult[];
     highlightedSourceId?: string | null;
-}> = ({ ragData, highlightedSourceId }) => {
+    sortMode: SortMode;
+}> = ({ ragData, highlightedSourceId, sortMode }) => {
     const parentRef = useRef<HTMLDivElement>(null);
 
     // Flatten sources for virtualization
@@ -171,18 +244,21 @@ const VirtualizedSourceCardList: React.FC<{
         return sources;
     }, [ragData]);
 
+    // Apply sort
+    const sortedSources = useMemo(() => sortSources(flatSources, sortMode), [flatSources, sortMode]);
+
     const virtualizer = useVirtualizer({
-        count: flatSources.length,
+        count: sortedSources.length,
         getScrollElement: () => parentRef.current,
         estimateSize: () => 120,
         overscan: 10,
     });
 
     // For small lists, skip virtualization
-    if (flatSources.length <= VIRTUALIZE_THRESHOLD) {
+    if (sortedSources.length <= VIRTUALIZE_THRESHOLD) {
         return (
             <div className="space-y-2">
-                {flatSources.map((source, idx) => (
+                {sortedSources.map((source, idx) => (
                     <SourceCard key={idx} source={source} isHighlighted={highlightedSourceId === source.citationId} />
                 ))}
             </div>
@@ -206,7 +282,7 @@ const VirtualizedSourceCardList: React.FC<{
                             paddingBottom: "8px",
                         }}
                     >
-                        <SourceCard source={flatSources[virtualRow.index]} isHighlighted={highlightedSourceId === flatSources[virtualRow.index].citationId} />
+                        <SourceCard source={sortedSources[virtualRow.index]} isHighlighted={highlightedSourceId === sortedSources[virtualRow.index].citationId} />
                     </div>
                 ))}
             </div>
@@ -214,7 +290,9 @@ const VirtualizedSourceCardList: React.FC<{
     );
 };
 
-export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, highlightedSourceId, onHighlightConsumed }) => {
+export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, highlightedSourceId, onHighlightConsumed, pipelineErrors }) => {
+    const [sortMode, setSortMode] = useState<SortMode>("grade");
+
     // Scroll to highlighted source when citation is clicked
     useEffect(() => {
         if (!highlightedSourceId) return;
@@ -260,7 +338,7 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         );
     }
 
-    const isAllDeepResearch = ragData.every(search => search.searchType === "deep_research" || search.searchType === "web_search");
+    const isAllDeepResearch = ragData.every(search => search.searchType === "deep_research" || search.searchType === "web_search" || search.searchType === "kb_search");
 
     // Calculate total sources across all searches (including images with valid source links)
     const totalSources = ragData.reduce((sum, search) => {
@@ -277,6 +355,8 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
 
     // Simple source item component for deep research
     const SimpleSourceItem: React.FC<{ source: RAGSearchResult["sources"][0]; isHighlighted?: boolean }> = ({ source, isHighlighted }) => {
+        const grade = getSourceGrade(source);
+        const year = getSourceYear(source);
         const sourceType = source.sourceType || "web";
 
         // For image sources, use the source page link (not the imageUrl)
@@ -321,6 +401,8 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                         {title}
                     </span>
                 )}
+                {year && <span className="text-muted-foreground ml-0.5 flex-shrink-0 text-[10px]">({year})</span>}
+                {grade && <GradeBadge grade={grade} />}
             </div>
         );
     };
@@ -342,6 +424,8 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         const isDeepResearch = ragData.some(search => search.searchType === "deep_research");
 
         ragData.forEach(search => {
+            // Skip kb_search — rendered in dedicated KG section
+            if (search.searchType === "kb_search") return;
             search.sources.forEach(source => {
                 const sourceType = source.sourceType || "web";
 
@@ -390,29 +474,6 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
         const snippets = Array.from(snippetMap.values());
         const all = [...fullyRead, ...snippets];
 
-        console.log("[RAGInfoPanel] Source filtering:", {
-            isWebSearch,
-            isDeepResearch,
-            totalSourcesBeforeFilter: ragData.reduce((sum, s) => sum + s.sources.length, 0),
-            fullyReadSources: fullyRead.length,
-            snippetSources: snippets.length,
-            sampleFullyRead: fullyRead.slice(0, 3).map(s => ({
-                url: s.url,
-                title: s.title,
-                fetched: s.metadata?.fetched,
-                fetch_status: s.metadata?.fetch_status,
-                contentPreview: s.contentPreview?.substring(0, 100),
-                hasMarker: s.contentPreview?.includes("[Full Content Fetched]"),
-            })),
-            sampleSnippets: snippets.slice(0, 3).map(s => ({
-                url: s.url,
-                title: s.title,
-                fetched: s.metadata?.fetched,
-                fetch_status: s.metadata?.fetch_status,
-                contentPreview: s.contentPreview?.substring(0, 100),
-                hasMarker: s.contentPreview?.includes("[Full Content Fetched]"),
-            })),
-        });
 
         return { fullyReadSources: fullyRead, snippetSources: snippets, allUniqueSources: all };
     })();
@@ -424,7 +485,11 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
     // Get the title from the first ragData entry (prefer LLM-generated title, fallback to query)
     const panelTitle = ragData && ragData.length > 0 ? ragData[0].title || ragData[0].query : "";
 
-    // Check if research is complete by looking for sources with fetched metadata
+    // Memoized sorted arrays — avoids re-sorting on every render
+    const sortedFullyRead = useMemo(() => sortSources(fullyReadSources, sortMode), [fullyReadSources, sortMode]);
+    const sortedSnippets = useMemo(() => sortSources(snippetSources, sortMode), [snippetSources, sortMode]);
+    const sortedAllUnique = useMemo(() => sortSources(allUniqueSources, sortMode), [allUniqueSources, sortMode]);
+
     const hasAnyFetchedSources = isDeepResearch && ragData.some(search => search.sources.some(s => s.metadata?.fetched === true || s.metadata?.fetch_status === "success"));
 
     return (
@@ -432,6 +497,19 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
             {isAllDeepResearch ? (
                 // Deep research: Show sources grouped by fully read vs snippets (only when complete)
                 <div className="flex flex-1 flex-col overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b">
+                        <span className="text-xs text-muted-foreground font-medium">{allUniqueSources.length} sources</span>
+                        <Select value={sortMode} onValueChange={val => setSortMode(val as SortMode)}>
+                            <SelectTrigger className="h-7 w-[140px] text-xs">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="grade">Evidence Grade</SelectItem>
+                                <SelectItem value="recent">Most Recent</SelectItem>
+                                <SelectItem value="relevance">Relevance</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                         {/* Title section showing research question or query */}
                         {panelTitle && (
@@ -440,19 +518,39 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                             </div>
                         )}
 
+                        {/* Knowledge Graph sources — rendered before grouped research sources */}
+                        {ragData?.some(r => r.searchType === "kb_search") && (
+                            <div className="mb-3">
+                                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-purple-400">
+                                    <Network className="h-4 w-4" />
+                                    Knowledge Graph
+                                </div>
+                                <div className="space-y-2">
+                                    {ragData
+                                        .filter(r => r.searchType === "kb_search")
+                                        .flatMap(r => r.sources)
+                                        .map((source) => (
+                                            <div key={source.citationId} className="border-l-2 border-purple-500/40 pl-2">
+                                                <SourceCard source={source} isHighlighted={highlightedSourceId === source.citationId} />
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Show grouped sources ONLY when research is complete (has fetched sources) */}
                         {showGroupedSources && hasAnyFetchedSources ? (
                             <>
                                 {/* Fully Read Sources Section */}
-                                {fullyReadSources.length > 0 && (
+                                {sortedFullyRead.length > 0 && (
                                     <div className="mb-4">
                                         <div className="mb-2">
                                             <h3 className="text-muted-foreground text-sm font-semibold">
-                                                {fullyReadSources.length} Fully Read Source{fullyReadSources.length !== 1 ? "s" : ""}
+                                                {sortedFullyRead.length} Fully Read Source{sortedFullyRead.length !== 1 ? "s" : ""}
                                             </h3>
                                         </div>
                                         <div className="space-y-1">
-                                            {fullyReadSources.map((source, idx) => (
+                                            {sortedFullyRead.map((source, idx) => (
                                                 <SimpleSourceItem key={`fully-read-${idx}`} source={source} />
                                             ))}
                                         </div>
@@ -460,16 +558,16 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                                 )}
 
                                 {/* Partially Read Sources Section */}
-                                {snippetSources.length > 0 && (
+                                {sortedSnippets.length > 0 && (
                                     <div>
                                         <div className="mb-2">
                                             <h3 className="text-muted-foreground text-sm font-semibold">
-                                                {snippetSources.length} Partially Read Source{snippetSources.length !== 1 ? "s" : ""}
+                                                {sortedSnippets.length} Partially Read Source{sortedSnippets.length !== 1 ? "s" : ""}
                                             </h3>
                                             <p className="text-muted-foreground mt-0.5 text-xs">Search result snippets</p>
                                         </div>
                                         <div className="space-y-1">
-                                            {snippetSources.map((source, idx) => (
+                                            {sortedSnippets.map((source, idx) => (
                                                 <SimpleSourceItem key={`partially-read-${idx}`} source={source} />
                                             ))}
                                         </div>
@@ -479,11 +577,11 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                         ) : (
                             <>
                                 <div className="mb-3">
-                                    <h3 className="text-muted-foreground text-sm font-semibold">{isDeepResearch && !hasAnyFetchedSources ? "Sources Explored So Far" : `${allUniqueSources.length} Sources`}</h3>
+                                    <h3 className="text-muted-foreground text-sm font-semibold">{isDeepResearch && !hasAnyFetchedSources ? "Sources Explored So Far" : `${sortedAllUnique.length} Sources`}</h3>
                                     {isDeepResearch && !hasAnyFetchedSources && <p className="text-muted-foreground mt-0.5 text-xs">Research in progress...</p>}
                                 </div>
                                 <div className="space-y-1">
-                                    {allUniqueSources.map((source, idx) => (
+                                    {sortedAllUnique.map((source, idx) => (
                                         <SimpleSourceItem key={`source-${idx}`} source={source} />
                                     ))}
                                 </div>
@@ -603,17 +701,84 @@ export const RAGInfoPanel: React.FC<RAGInfoPanelProps> = ({ ragData, enabled, hi
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="sources" className="mt-0 min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-                        <div className="mb-3">
-                            <h3 className="text-muted-foreground text-sm font-semibold">All Sources</h3>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                                {totalSources} source{totalSources !== 1 ? "s" : ""} found across {ragData.length} search{ragData.length !== 1 ? "es" : ""}
-                            </p>
+                    <TabsContent value="sources" className="mt-0 min-h-0 flex-1 overflow-hidden flex flex-col">
+                        <div className="flex items-center justify-between px-3 py-2 border-b">
+                            <span className="text-xs text-muted-foreground font-medium">{totalSources} sources</span>
+                            <Select value={sortMode} onValueChange={val => setSortMode(val as SortMode)}>
+                                <SelectTrigger className="h-7 w-[140px] text-xs">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="grade">Evidence Grade</SelectItem>
+                                    <SelectItem value="recent">Most Recent</SelectItem>
+                                    <SelectItem value="relevance">Relevance</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
+                        <div className="flex-1 overflow-y-auto px-4 pb-4">
+                            <div className="mb-3">
+                                <h3 className="text-muted-foreground text-sm font-semibold">All Sources</h3>
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                    {totalSources} source{totalSources !== 1 ? "s" : ""} found across {ragData.length} search{ragData.length !== 1 ? "es" : ""}
+                                </p>
+                            </div>
 
-                        <VirtualizedSourceCardList ragData={ragData} highlightedSourceId={highlightedSourceId} />
+                            {/* Knowledge Graph sources — rendered before web sources */}
+                            {ragData?.some(r => r.searchType === "kb_search") && (
+                                <div className="mb-3">
+                                    <div className="flex items-center gap-2 mb-2 text-sm font-medium text-purple-400">
+                                        <Network className="h-4 w-4" />
+                                        Knowledge Graph
+                                    </div>
+                                    <div className="space-y-2">
+                                        {ragData
+                                            .filter(r => r.searchType === "kb_search")
+                                            .flatMap(r => r.sources)
+                                            .map((source) => (
+                                                <div key={source.citationId} className="border-l-2 border-purple-500/40 pl-2">
+                                                    <SourceCard source={source} isHighlighted={highlightedSourceId === source.citationId} />
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <VirtualizedSourceCardList ragData={ragData?.filter(r => r.searchType !== "kb_search")} highlightedSourceId={highlightedSourceId} sortMode={sortMode} />
+                        </div>
                     </TabsContent>
                 </Tabs>
+            )}
+
+            {/* Sources Unavailable — shown when pipeline reports MCP failures */}
+            {pipelineErrors?.mcp_failures && pipelineErrors.mcp_failures.length > 0 && (
+                <div className="mt-4 border-t border-border/50 px-4 pt-3 pb-3 flex-shrink-0">
+                    <h3 className="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {pipelineErrors.mcp_failures.length} Source{pipelineErrors.mcp_failures.length !== 1 ? "s" : ""} Unavailable
+                    </h3>
+                    <div className="space-y-1.5">
+                        {pipelineErrors.mcp_failures.map((failure, idx) => (
+                            <div
+                                key={idx}
+                                className="flex items-start gap-2 rounded bg-amber-500/10 px-2 py-1.5 text-xs"
+                            >
+                                <span className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />
+                                <div className="min-w-0 flex-1">
+                                    <span className="block font-medium capitalize">{failure.server.replace(/_/g, " ")}</span>
+                                    <span className="text-muted-foreground block">
+                                        {failure.error_category.replace(/_/g, " ")}
+                                        {failure.is_retryable && " — retryable"}
+                                    </span>
+                                    {failure.recovery_hint && (
+                                        <span className="text-muted-foreground/80 block mt-0.5 italic">
+                                            {failure.recovery_hint}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
         </div>
     );

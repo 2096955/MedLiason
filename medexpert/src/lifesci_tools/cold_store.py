@@ -196,6 +196,18 @@ CREATE TABLE IF NOT EXISTS user_feedback (
     verification_verdict  TEXT    NOT NULL DEFAULT '',
     created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Secondary indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_session_outcomes_created ON session_outcomes(created_at);
+CREATE INDEX IF NOT EXISTS idx_session_outcomes_domain ON session_outcomes(query_domain);
+CREATE INDEX IF NOT EXISTS idx_source_reliability_domain ON source_reliability(source_name);
+CREATE INDEX IF NOT EXISTS idx_source_reliability_session ON source_reliability(session_id);
+CREATE INDEX IF NOT EXISTS idx_routing_patterns_domain ON routing_patterns(query_domain);
+CREATE INDEX IF NOT EXISTS idx_routing_patterns_agent ON routing_patterns(agent_name);
+CREATE INDEX IF NOT EXISTS idx_user_feedback_created ON user_feedback(created_at);
+CREATE INDEX IF NOT EXISTS idx_user_feedback_session ON user_feedback(session_id);
+CREATE INDEX IF NOT EXISTS idx_query_patterns_domain ON query_patterns(domain);
+CREATE INDEX IF NOT EXISTS idx_agent_coactivation_agents ON agent_coactivation(agent_a, agent_b);
 """
 
 # ---------------------------------------------------------------------------
@@ -361,6 +373,37 @@ _MIGRATIONS = [
         );
         """,
     ),
+    # M7: Add pending_calibration table for human review gate.
+    (
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_calibration'",
+        """
+        CREATE TABLE IF NOT EXISTS pending_calibration (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name       TEXT    NOT NULL,
+            domain           TEXT    NOT NULL,
+            current_weight   REAL    NOT NULL,
+            suggested_weight REAL    NOT NULL,
+            delta            REAL    NOT NULL,
+            negative_rate    REAL    NOT NULL DEFAULT 0.0,
+            sample_count     INTEGER NOT NULL DEFAULT 0,
+            action           TEXT    NOT NULL,
+            reason           TEXT    NOT NULL DEFAULT '',
+            status           TEXT    NOT NULL DEFAULT 'pending'
+                             CHECK(status IN ('pending', 'applied', 'rejected')),
+            reviewer         TEXT    NOT NULL DEFAULT '',
+            reviewed_at      TEXT,
+            created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+        """,
+    ),
+    # M8: Add report_mode and advisory_perspectives_json to session_outcomes (C2+C6).
+    (
+        "SELECT 1 FROM pragma_table_info('session_outcomes') WHERE name='report_mode'",
+        """
+        ALTER TABLE session_outcomes ADD COLUMN report_mode TEXT DEFAULT NULL;
+        ALTER TABLE session_outcomes ADD COLUMN advisory_perspectives_json TEXT DEFAULT NULL;
+        """,
+    ),
 ]
 
 
@@ -380,6 +423,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     resolved = str(path.resolve())
     if resolved not in _initialised_paths:
@@ -414,14 +458,16 @@ def write_session_outcome(
     verification_score: float = 0.0,
     revision_triggered: bool = False,
     specialists_used: list[str] | None = None,
+    report_mode: str | None = None,
+    advisory_perspectives_json: str | None = None,
 ) -> None:
     """Insert or replace a session outcome row."""
     conn.execute(
         """INSERT OR REPLACE INTO session_outcomes
            (session_id, query_domain, query_text, coverage_pct,
             verification_verdict, verification_score, revision_triggered,
-            specialists_used_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            specialists_used_json, report_mode, advisory_perspectives_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             query_domain,
@@ -431,6 +477,8 @@ def write_session_outcome(
             verification_score,
             int(revision_triggered),
             json.dumps(specialists_used or []),
+            report_mode,
+            advisory_perspectives_json,
         ),
     )
 
@@ -1523,5 +1571,248 @@ def reject_candidate(
     log.info(
         "Rejected %s v%d (reviewer: %s, reason: %s)",
         agent_name, version, reviewer or "unknown", reason or "none",
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Pending calibration helpers (human review gate)
+# ---------------------------------------------------------------------------
+
+
+def write_pending_calibration(
+    conn: sqlite3.Connection,
+    *,
+    agent_name: str,
+    domain: str,
+    current_weight: float,
+    suggested_weight: float,
+    delta: float,
+    negative_rate: float = 0.0,
+    sample_count: int = 0,
+    action: str = "",
+    reason: str = "",
+) -> int:
+    """Insert a calibration entry pending human review.
+
+    Returns the row id of the inserted (or existing) entry.
+    Deduplicates: if a pending entry already exists for the same
+    (agent_name, domain), returns the existing id without inserting.
+
+    NOTE: Caller is responsible for committing the transaction.
+    """
+    # Dedup: skip if a pending entry already exists for this agent/domain
+    existing = conn.execute(
+        "SELECT id FROM pending_calibration "
+        "WHERE agent_name = ? AND domain = ? AND status = 'pending'",
+        (agent_name, domain),
+    ).fetchone()
+    if existing:
+        log.debug(
+            "Pending calibration already exists for %s/%s (id=%d), skipping",
+            agent_name,
+            domain,
+            existing["id"],
+        )
+        return existing["id"]
+
+    cursor = conn.execute(
+        """INSERT INTO pending_calibration
+           (agent_name, domain, current_weight, suggested_weight, delta,
+            negative_rate, sample_count, action, reason)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            agent_name,
+            domain,
+            round(current_weight, 4),
+            round(suggested_weight, 4),
+            round(delta, 4),
+            round(negative_rate, 4),
+            sample_count,
+            action,
+            reason,
+        ),
+    )
+    row_id = cursor.lastrowid or 0
+    log.info(
+        "Pending calibration %d: %s/%s delta=%.3f (%s)",
+        row_id,
+        agent_name,
+        domain,
+        delta,
+        action,
+    )
+    return row_id
+
+
+def get_pending_calibrations(
+    conn: sqlite3.Connection,
+    status: str = "pending",
+) -> list[dict[str, Any]]:
+    """Fetch calibration entries by status (default: pending)."""
+    rows = conn.execute(
+        """SELECT id, agent_name, domain, current_weight, suggested_weight,
+                  delta, negative_rate, sample_count, action, reason,
+                  status, reviewer, reviewed_at, created_at
+           FROM pending_calibration
+           WHERE status = ?
+           ORDER BY created_at DESC""",
+        (status,),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "agent_name": r["agent_name"],
+            "domain": r["domain"],
+            "current_weight": r["current_weight"],
+            "suggested_weight": r["suggested_weight"],
+            "delta": r["delta"],
+            "negative_rate": r["negative_rate"],
+            "sample_count": r["sample_count"],
+            "action": r["action"],
+            "reason": r["reason"],
+            "status": r["status"],
+            "reviewer": r["reviewer"],
+            "reviewed_at": r["reviewed_at"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+def apply_pending_calibration(
+    conn: sqlite3.Connection,
+    calibration_id: int,
+    reviewer: str = "",
+) -> bool:
+    """Apply a pending calibration: write weight to learned_strategies.
+
+    Uses BEGIN IMMEDIATE to prevent TOCTOU races with concurrent
+    calibrator writes to the same domain's learned_strategies row.
+
+    Returns True if applied, False if not found or already resolved.
+    """
+    # Commit any auto-started transaction, then acquire write lock
+    # to prevent TOCTOU race with concurrent calibrator writes
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT * FROM pending_calibration WHERE id = ? AND status = 'pending'",
+            (calibration_id,),
+        ).fetchone()
+        if not row:
+            conn.execute("ROLLBACK")
+            return False
+
+        agent_name = row["agent_name"]
+        domain = row["domain"]
+        suggested = row["suggested_weight"]
+
+        # Read current strategy_json for this domain
+        existing = conn.execute(
+            """SELECT strategy_json FROM learned_strategies
+               WHERE strategy_type = 'specialist_weights' AND domain_or_key = ?""",
+            (domain,),
+        ).fetchone()
+
+        if existing:
+            try:
+                entries = json.loads(existing["strategy_json"])
+            except (json.JSONDecodeError, TypeError):
+                entries = []
+        else:
+            entries = []
+
+        # Update or insert the agent's weight
+        found = False
+        for entry in entries:
+            if entry.get("agent") == agent_name:
+                entry["weight"] = round(suggested, 3)
+                entry["current_weight"] = round(suggested, 3)
+                found = True
+                break
+        if not found:
+            entries.append({
+                "agent": agent_name,
+                "weight": round(suggested, 3),
+                "current_weight": round(suggested, 3),
+                "negative_rate": row["negative_rate"],
+                "sample_count": row["sample_count"],
+                "action": row["action"],
+                "reason": f"Applied from pending calibration #{calibration_id}",
+            })
+
+        sample_count = sum(e.get("sample_count", 0) for e in entries)
+        confidence = min(1.0, sample_count / 20)
+        conn.execute(
+            """INSERT OR REPLACE INTO learned_strategies
+               (strategy_type, domain_or_key, strategy_json, confidence,
+                sample_count, updated_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (
+                "specialist_weights",
+                domain,
+                json.dumps(entries),
+                round(confidence, 3),
+                sample_count,
+            ),
+        )
+
+        # Mark as applied
+        conn.execute(
+            """UPDATE pending_calibration
+               SET status = 'applied', reviewer = ?, reviewed_at = datetime('now')
+               WHERE id = ?""",
+            (reviewer, calibration_id),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    log.info(
+        "Applied calibration %d: %s/%s weight=%.3f (reviewer: %s)",
+        calibration_id,
+        agent_name,
+        domain,
+        suggested,
+        reviewer or "unknown",
+    )
+    return True
+
+
+def reject_pending_calibration(
+    conn: sqlite3.Connection,
+    calibration_id: int,
+    reviewer: str = "",
+    reason: str = "",
+) -> bool:
+    """Reject a pending calibration.
+
+    Returns True if rejected, False if not found or already resolved.
+    """
+    row = conn.execute(
+        "SELECT id FROM pending_calibration WHERE id = ? AND status = 'pending'",
+        (calibration_id,),
+    ).fetchone()
+    if not row:
+        return False
+
+    conn.execute(
+        """UPDATE pending_calibration
+           SET status = 'rejected', reviewer = ?, reviewed_at = datetime('now'),
+               reason = CASE WHEN ? != '' THEN ? ELSE reason END
+           WHERE id = ?""",
+        (reviewer, reason, reason, calibration_id),
+    )
+    conn.commit()
+    log.info(
+        "Rejected calibration %d (reviewer: %s, reason: %s)",
+        calibration_id,
+        reviewer or "unknown",
+        reason or "none",
     )
     return True

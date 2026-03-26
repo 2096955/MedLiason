@@ -240,6 +240,7 @@ export interface RAGSource {
     metadata: Record<string, any>;
     // MedExpert evidence quality fields
     evidenceGrade?: "High" | "Moderate" | "Low" | "Very Low";
+    publicationYear?: number;
     verificationStatus?: "verified" | "flagged" | "unverified";
 }
 
@@ -271,4 +272,67 @@ export interface RAGSearchResultEvent {
             sources: RAGSource[];
         };
     };
+}
+
+// Knowledge Graph Types
+
+export interface GraphNode {
+    id: string;
+    labels: string[];
+    name: string;
+    description?: string;
+    properties: Record<string, unknown>;
+}
+
+export type GraphEdgeType = "QUERIED" | "FOUND" | "EVIDENCED_BY" | "CITED" | "ABOUT";
+
+export interface GraphEdge {
+    id: string;
+    source: string;
+    target: string;
+    label: GraphEdgeType | string;
+}
+
+export type GraphNodeType = "Session" | "Specialist" | "Disease" | "Drug" | "Gene" | "Study";
+
+export interface SessionGraph {
+    session_id: string;
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+    total_nodes: number;
+    total_edges: number;
+}
+
+export interface GraphStats {
+    node_counts: Record<string, number>;
+    edge_counts: Record<string, number>;
+    total_nodes: number;
+    total_edges: number;
+}
+
+/** MCP server failure reported by specialists during source collection */
+export interface MCPFailure {
+    server: string;
+    error_category: string;
+    is_retryable: boolean;
+    /** User-actionable recovery suggestion (e.g., "Set NCBI_API_KEY for higher rate limit") */
+    recovery_hint?: string;
+}
+
+/** Pipeline error metadata extracted from tool_result events */
+export interface PipelineErrorData {
+    /** Overall source collection status */
+    aggregate_status?: "all_failed" | "no_evidence" | "partial" | "all_retrieved";
+    /** Individual MCP server failures */
+    mcp_failures: MCPFailure[];
+    /** Cross-reference warnings (unmatched inline refs) */
+    cross_reference_warnings: string[];
+    /** Verification status when verification was skipped */
+    verification_status?: "skipped" | "completed";
+    /** Pipeline error reason (e.g., "citation_map_empty") */
+    pipeline_error?: string;
+    /** True when no progress has been received for 60 seconds */
+    stalled?: boolean;
+    /** ISO 8601 timestamp when the stall was detected */
+    stalledAt?: string;
 }

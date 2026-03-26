@@ -2,7 +2,7 @@
 <h3 align="center">Multi-agent deep research platform for life sciences</h3>
 
 <p align="center">
-  <a href="https://medliaison-534348290993.us-central1.run.app"><strong>Live Demo</strong></a> &middot;
+  <a href="https://medexpert-v2-534348290993.us-central1.run.app"><strong>Live Demo</strong></a> &middot;
   <a href="#screenshots">Screenshots</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
@@ -12,7 +12,7 @@
 
 ---
 
-MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 13 specialized agents across a rigorous 12-step research protocol and a separate triage pipeline. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
+MedExpert is a multi-agent AI system that answers complex medical and scientific questions by coordinating 13 specialized agents across a streamlined 7-step research protocol with parallel specialist delegation, plus a separate triage pipeline. It searches PubMed, ClinicalTrials.gov, OpenFDA, CDC, genomic databases, and 10+ other biomedical sources, then synthesizes evidence-graded answers with full citations.
 
 Every answer goes through a Generator-Verifier-Reviser (GVR) loop: the orchestrator synthesizes a report, a verifier agent (using a stronger model at low temperature) fact-checks each claim against its cited sources, and a reviser corrects any issues before the answer reaches the user.
 
@@ -48,9 +48,9 @@ The right-side panel provides five tabs for inspecting research activity in real
   </tr>
 </table>
 
-### Agent Mesh
+### Agent Configs
 
-View discovered agents and experimental workflow definitions.
+View discovered agents and their configuration.
 
 <p align="center">
   <img src="docs/screenshots/07-agent-mesh.png" alt="Agent Mesh page" width="720" />
@@ -95,13 +95,13 @@ User Query
     +---> Research Pipeline (complex medical/scientific queries)
             |
             v
-        Orchestrator (12-step protocol)
+        Orchestrator (7-step protocol, parallel delegation)
             |
             +---> 8 Specialist Agents (literature, clinical trials, drug,
             |     regulatory, epidemiology, genomics, environmental, provider intel)
             |
-            +---> 15 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
-            |     SEER, EPA, ClinVar, Census SDOH, ...)
+            +---> 18 MCP Servers (PubMed, ClinicalTrials.gov, OpenFDA, CDC,
+            |     SEER, EPA, ClinVar, Census SDOH, NHS 111, BMA Library, ...)
             |
             v
         GVR Loop: Generate --> Verify --> Revise
@@ -116,22 +116,22 @@ MedExpert agents don't just call APIs — they implement structured reasoning pa
 
 **Orchestrator: Protocol-Driven Decomposition**
 
-The orchestrator uses a prescriptive 12-step protocol (not free-form chain-of-thought) to ensure systematic coverage. It decomposes complex questions into domain-routed sub-questions using keyword heuristics, delegates to specialists in priority order, then reflectively identifies gaps before synthesizing. This is closer to a research methodology than a chatbot prompt.
+The orchestrator uses a prescriptive 7-step protocol (not free-form chain-of-thought) to ensure systematic coverage. It decomposes complex questions into domain-routed sub-questions using keyword heuristics with multi-domain routing (primary + secondary specialists per sub-question), then delegates to all specialists in a single parallel batch. This is closer to a research methodology than a chatbot prompt.
 
 Key reasoning mechanisms:
-- **Query decomposition** — Breaks multi-faceted questions into domain-specific sub-questions (e.g., "What are the drug interactions and genomic factors for metformin?" becomes separate queries for DrugSpecialist and GenomicsSpecialist)
-- **Reflective gap analysis** — After collecting evidence, explicitly identifies contradictions, missing perspectives, and logical gaps before synthesis
-- **Advisory board deliberation** — Generates 6 distinct analytical perspectives (Clinical Pragmatist, Research Methodologist, Patient Advocate, Health Economist, Bioethicist, Global Health Specialist) to prevent single-perspective bias, then synthesizes consensus and dissent
+- **Multi-domain query decomposition** — Breaks multi-faceted questions into sub-questions, each routed to a primary specialist plus 1-2 secondary specialists for multi-source evidence (e.g., "What are the treatments for endometriosis?" routes to LiteratureSpecialist + ClinicalTrialsSpecialist + DrugSpecialist)
+- **Parallel specialist delegation** — All specialist agents are called in a single LLM turn, executing concurrently. This reduces LLM call overhead from ~60-80 to ~20-25 calls per research session
+- **Structured specialist responses** — Specialists return JSON-formatted summaries (findings, sources, confidence, gaps) instead of prose, reducing orchestrator context bloat
 - **Learned routing** — Seeds each session with historical intelligence from the cold store (which specialists and sources worked well for similar queries in the past, calibrated per-domain specialist weights, source reliability scores)
 
 **Specialists: Evidence-First Retrieval**
 
-Each specialist follows a strict evidence-first workflow: search external sources via MCP tools, grade the evidence using GRADE methodology, store graded evidence in the shared memory plane, then synthesize. Specialists never answer from LLM memory alone — every claim must trace to a retrieved source.
+Each specialist follows a strict evidence-first workflow: search external sources via MCP tools, grade the evidence using LLM-augmented GRADE methodology, store graded evidence in the shared memory plane, then synthesize. Specialists never answer from LLM memory alone — every claim must trace to a retrieved source.
 
 The Literature Specialist, for example:
 1. Searches PubMed for peer-reviewed articles
 2. Retrieves full abstracts for top results
-3. Grades each using evidence_grader (meta-analysis > RCT > cohort > case-control > case report)
+3. Grades each using evidence_grader — LLM contextual assessment (blinding, sample size, funding bias) with heuristic fallback
 4. Stores graded evidence in Redis memory plane
 5. Returns structured summary with PMIDs
 
@@ -158,16 +158,16 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 
 | Agent | Role | Model |
 |-------|------|-------|
-| **Orchestrator** | Coordinates 12-step protocol, hosts 6 advisory board personas | gemini-2.5-flash (temp 0.2) |
+| **Orchestrator** | Coordinates 7-step protocol with parallel delegation and GVR loop | gemini-2.5-flash (temp 0.2) |
 | **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-2.5-flash (temp 0.3) |
 | **Verifier** | Fact-checks claims against cited sources | gemini-2.5-pro (temp 0.1) |
 | **Reviser** | Surgically corrects issues flagged by verifier | gemini-2.5-flash (temp 0.3) |
 | **Triage Intake** | Symptom collection, specialist panel consultation, care routing | gemini-2.5-flash (temp 0.3) |
 | **Triage Orchestrator** | Coordinates triage evaluation, consensus building, next-best-action | gemini-2.5-flash (temp 0.2) |
 
-### Data Sources (15 MCP Servers)
+### Data Sources (18 MCP Servers)
 
-PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease surveillance, SEER cancer statistics, Census ACS (social determinants), EPA air quality, ClinVar/dbSNP genomics, CMS provider/payment data, FDA regulatory pathways, medical imaging archives, pharmacovigilance, medical society guidelines, VigiBase (WHO), knowledge graph (Neo4j).
+PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease surveillance, SEER cancer statistics, Census ACS (social determinants), EPA air quality, ClinVar/dbSNP genomics, CMS provider/payment data, FDA regulatory pathways, medical imaging archives, pharmacovigilance, medical society guidelines, VigiBase (WHO), knowledge graph (Memgraph), NHS 111 clinical pathways (Firecrawl), BMA Library guidelines (Firecrawl), OpenEvidence AI-synthesised Q&A.
 
 ### Key Components
 
@@ -179,30 +179,29 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 | MCP servers | FastMCP 2.x (SSE transport) | External API integration |
 | Memory plane | Redis | Shared state across agents per session |
 | Cold store | SQLite | Learning from past research sessions |
+| Knowledge graph | Memgraph (bolt protocol) | Biomedical entity persistence + NLQ queries |
+| Web search | Firecrawl + Brave (fallback) | Orchestrator pre-search for unknown drug/brand names |
+| LLM failover | Exponential backoff + model chains | Auto-retry on 429/5xx, flash→pro fallback |
 | Learning loops | Specialist calibrator + feedback bridge | Per-domain weight adjustment, user feedback integration |
 | Prompt evolution | Human approval gate + auto-rollback | Safe prompt improvement with regression testing |
+| LLM reasoning | 6 LLM-augmented tools | Evidence grading, coverage, synthesis, contradiction detection, narrative, uncertainty |
 | LLM abstraction | LiteLLM | Provider-agnostic model access |
 
 ---
 
 ## Research Protocol
 
-The orchestrator executes a 12-step protocol for every complex query:
+The orchestrator executes a streamlined 7-step protocol for every complex query:
 
 | Step | Name | What Happens |
 |------|------|-------------|
 | 0 | SEED | Load learned routing hints from past sessions |
-| 1 | DECOMPOSE | Break query into domain-routed sub-questions |
-| 2 | DELEGATE | Assign sub-questions to specialist agents |
-| 3 | COLLECT | Gather evidence, publish source citations |
-| 4 | REFLECT | Identify gaps, contradictions, missing perspectives |
-| 5 | RE-QUERY | Targeted follow-up queries for gaps found |
-| 6 | VALIDATE | Check research completeness (target: 70%+ coverage) |
-| 7 | ADVISORY | 6-persona advisory board deliberation |
-| 8 | SYNTHESIZE | Generate evidence-graded report with citations |
-| 9 | VERIFY | Verifier agent checks claim-citation alignment |
-| 10 | REVISE | Reviser fixes issues (skipped if verification passes) |
-| 11 | PERSIST | Save session signals to cold store for learning |
+| 1 | PLAN | Decompose query into sub-questions with primary + secondary specialist routing |
+| 2 | DELEGATE | Call ALL specialist agents in parallel (single LLM turn) |
+| 3 | COLLECT + PUBLISH | Gather evidence, publish citations, validate coverage (70%+ target) |
+| 4 | SYNTHESIZE | Generate evidence-graded report with citations |
+| 5 | VERIFY + REVISE | GVR loop: fact-check claims, revise if critical issues (max 1 cycle) |
+| 6 | PERSIST | Save session signals to cold store for learning |
 
 Symptom-based queries are routed to the **triage pipeline** instead, which runs a specialist panel consultation, clinical evaluation, consensus building, and next-best-action determination.
 
@@ -250,6 +249,34 @@ MedExpert improves over time through three learning loops:
 | **Prompt Evolution** | Rolling composite score < 0.55 | Generates improved specialist prompts via LLM metaprompt, runs regression against golden dataset. Candidates require human approval before activation. |
 | **Feedback Bridge** | Each user thumbs up/down | SAM broker flow captures gateway feedback, enriches with session context from cold store, persists for calibration and evolution signals. |
 
+### Agent Resilience (OpenClaw-inspired)
+
+MedExpert incorporates agentic resilience patterns from the OpenClaw architecture:
+
+| Feature | What It Does |
+|---------|-------------|
+| **LLM failover chains** | Auto-retry with exponential backoff on transient errors (429/500/503). Flash agents fail over to Pro; verifier has NO fallback (medical accuracy preserved). |
+| **Error recovery hints** | User-actionable hints on MCP failures ("Set NCBI_API_KEY for higher rate limits") instead of raw error codes. |
+| **Specialist-to-specialist help** | When a specialist's data source fails, it can ask a peer for help (e.g., DrugSpecialist → LiteratureSpecialist). Budget-capped (2 requests), loop-prevented. |
+| **Context compaction** | Summarization hints injected at heavy protocol steps to reduce context overflow on long research sessions. |
+| **Sync peer tool** | Blocking agent-to-agent conversations (vs fire-and-forget) for specialist help requests. |
+| **Health check CLI** | `python scripts/doctor.py` checks Redis, 18 MCP servers, cold store, env vars, Memgraph. |
+
+### LLM-Augmented Reasoning (Phase 5)
+
+Six of the seven core research tools now use LLM reasoning instead of pure heuristics. Each tool falls back to its original heuristic when the LLM call fails — never worse than before.
+
+| Tool | Before | After | LLM calls |
+|------|--------|-------|-----------|
+| **evidence_grader** | Lookup table (meta-analysis=4.5, RCT=4.0...) | LLM contextual quality assessment (blinding, sample size, funding bias) + heuristic fallback | 1 |
+| **completeness_checker** | Jaccard keyword overlap at 10% | LLM semantic coverage check — understands "drug X side effects" ≠ "Is drug X effective?" | 1 |
+| **deliberation_synthesizer** | Keyword consensus counting | LLM multi-perspective synthesis with contested points, blind spots, and resolution notes | 1 |
+| **reflection_analyzer** | 9 hardcoded antonym pairs | LLM contradiction/gap detection — finds magnitude differences, population differences, temporal changes | 1 |
+| **report_generator** | Template fill | LLM narrative synthesis — reasons about evidence, addresses contradictions, quantifies uncertainty | 1 |
+| **uncertainty_quantifier** | *(new)* | Per-claim confidence profiling with basis classification and caveats | 1 |
+
+Total additional LLM calls per session: ~6 (~8% increase over the ~50-call baseline). All use `response_mime_type="application/json"` for structured output with `extract_json_from_text` as defense-in-depth. `max_tokens` set to 8192 to accommodate Gemini Flash thinking tokens.
+
 Manage prompt candidates via CLI:
 ```bash
 python scripts/manage_prompts.py list                          # View pending candidates
@@ -279,7 +306,7 @@ This single command handles everything:
 1. Creates Python venv and installs all dependencies
 2. Generates `.env` from `.env.example` (prompts for API key if missing)
 3. Starts Redis container
-4. Starts 15 MCP servers on ports 9001-9015
+4. Starts 18 MCP servers on ports 9001-9018
 5. Starts 13 agents + gateway on http://localhost:8000
 6. Starts frontend dev server on http://localhost:3000
 
@@ -412,9 +439,9 @@ medexpert/                      # Life sciences research application
     feedback_bridge.yaml        # Feedback→cold store broker subscriber
     shared_config.yaml          # Model anchors, broker, services
   src/
-    lifesci_tools/              # 27 custom tool/module implementations
+    lifesci_tools/              # 39 custom tool/module implementations
     lifesci_common/             # Constants, config validator, utilities
-    mcp_servers/                # 15 FastMCP SSE servers
+    mcp_servers/                # 18 FastMCP SSE servers
   tests/                        # Unit, contract, integration, eval runner
   scripts/                      # Startup + management scripts
   infra/                        # Terraform, K8s, Docker
@@ -437,7 +464,9 @@ Copy `medexpert/.env.example` and fill in:
 | `NCBI_API_KEY` | Recommended | PubMed rate limit (3 -> 10 req/s) |
 | `CENSUS_API_KEY` | Optional | Census ACS SDOH data |
 | `EPA_AQS_EMAIL` / `EPA_AQS_KEY` | Optional | EPA air quality data |
-| `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Optional | Knowledge graph |
+| `FIRECRAWL_API_KEY` | Recommended | Web search (orchestrator) + NHS/BMA MCP servers |
+| `BRAVE_SEARCH_API_KEY` | Optional | Web search fallback (if Firecrawl unavailable) |
+| `MEMGRAPH_URL` | Optional | Knowledge graph (bolt://localhost:7687) |
 
 ---
 

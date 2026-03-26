@@ -402,7 +402,9 @@ async def get_app_config(
             aws_secret_key = polly_config.get("aws_secret_access_key")
             
             # Determine which providers are available
-            gemini_available = bool(gemini_key)
+            # Accept Vertex AI ADC (vertex_project) as valid auth, same as audio_service.py
+            gemini_vertex_project = gemini_config.get("vertex_project", "")
+            gemini_available = bool(gemini_key) or bool(gemini_vertex_project)
             azure_available = bool(azure_speech_key and azure_speech_region)
             polly_available = bool(aws_access_key and aws_secret_key)
             tts_configured = gemini_available or azure_available or polly_available

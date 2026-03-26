@@ -478,7 +478,7 @@ class DeepResearchReportData(BaseModel):
 
 class ResearchProtocolProgressData(BaseModel):
     """
-    Data model for MedExpert 12-step research protocol progress updates.
+    Data model for MedExpert 7-step research protocol progress updates.
     Provides structured step tracking for the orchestrator's research pipeline.
     """
 
@@ -486,13 +486,12 @@ class ResearchProtocolProgressData(BaseModel):
         "research_protocol_progress",
         description="The constant type for this data part.",
     )
-    step: int = Field(..., description="Current protocol step number (0-11)")
+    step: int = Field(..., description="Current protocol step number (0-6)")
     step_name: str = Field(
         ...,
-        description="Step name: SEED, DECOMPOSE, DELEGATE, COLLECT, REFLECT, "
-        "RE_QUERY, VALIDATE, ADVISORY, SYNTHESIZE, VERIFY, REVISE, PERSIST",
+        description="Step name: SEED, PLAN, DELEGATE, COLLECT, SYNTHESIZE, VERIFY, PERSIST",
     )
-    total_steps: int = Field(default=12, description="Total steps in the protocol")
+    total_steps: int = Field(default=7, description="Total steps in the protocol")
     detail: str = Field(..., description="Human-readable description of current activity")
     coverage_pct: Optional[float] = Field(
         None, description="Research coverage percentage (set during VALIDATE step)"
@@ -502,6 +501,14 @@ class ResearchProtocolProgressData(BaseModel):
     )
     verification_verdict: Optional[str] = Field(
         None, description="Verification result: PASS, MINOR_ISSUES, or CRITICAL_ISSUES"
+    )
+    research_path: Optional[str] = Field(
+        None,
+        description="Report mode chosen by orchestrator: quick_answer, research_brief, full_synthesis, advisory_board_report",
+    )
+    advisory_perspectives: Optional[dict] = Field(
+        None,
+        description="Deliberation synthesizer output: consensus_points, contested_points, blind_spots, synthesis, confidence_level",
     )
 
 

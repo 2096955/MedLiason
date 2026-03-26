@@ -20,7 +20,7 @@ import sys
 from fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from mcp_servers._http import resilient_get
+from mcp_servers._http import resilient_get, CircuitOpenError, RetryExhaustedError, raise_or_return_error
 from mcp_servers._security import sanitize_query
 
 log = logging.getLogger(__name__)
@@ -127,7 +127,11 @@ async def search_imaging_device_clearances(
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_510K_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_510K_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "imaging", "search_imaging_device_clearances", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA 510(k) API returned {response.status_code}",
@@ -144,6 +148,7 @@ async def search_imaging_device_clearances(
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -176,7 +181,11 @@ async def search_imaging_device_events(
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_EVENT_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_EVENT_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "imaging", "search_imaging_device_events", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA device events API returned {response.status_code}",
@@ -193,6 +202,7 @@ async def search_imaging_device_events(
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -225,7 +235,11 @@ async def search_imaging_device_classifications(
         "limit": min(max_results, 100),
     }
 
-    response = await resilient_get(OPENFDA_DEVICE_CLASS_URL, params=params)
+    try:
+        response = await resilient_get(OPENFDA_DEVICE_CLASS_URL, params=params)
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "imaging", "search_imaging_device_classifications", results=[])
+
     if response.status_code != 200:
         return {
             "error": f"OpenFDA device classification API returned {response.status_code}",
@@ -242,6 +256,7 @@ async def search_imaging_device_classifications(
     meta = data.get("meta", {}).get("results", {})
 
     return {
+        "success": True,
         "query": safe_query,
         "total_count": meta.get("total", 0),
         "returned_count": len(results),
@@ -283,10 +298,13 @@ async def get_imaging_modality_info(modality: str) -> dict:
             classifications = [
                 _parse_device_classification(r) for r in data.get("results", [])
             ]
+    except (CircuitOpenError, RetryExhaustedError) as exc:
+        return raise_or_return_error(exc, "imaging", "get_imaging_modality_info", fda_classifications=[])
     except Exception as exc:
         log.error("Failed to fetch modality classifications: %s", exc)
 
     return {
+        "success": True,
         "modality_code": modality_lower,
         "modality_name": full_name,
         "known_modality": modality_lower in IMAGING_MODALITIES,

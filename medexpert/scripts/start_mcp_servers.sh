@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start all 15 MCP servers with health check polling
+# Start all 18 MCP servers with health check polling
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -50,11 +50,21 @@ PIDS+=($!)
 python -m mcp_servers.vigibase.server &
 PIDS+=($!)
 
+# Firecrawl-backed (require FIRECRAWL_API_KEY)
+python -m mcp_servers.nhs_111.server &
+PIDS+=($!)
+python -m mcp_servers.bma_library.server &
+PIDS+=($!)
+
+# OpenEvidence (require OE_AUTH_STATE_PATH)
+python -m mcp_servers.openevidence.server &
+PIDS+=($!)
+
 echo "Started ${#PIDS[@]} MCP servers"
 
 # Health check polling
 echo "Waiting for servers to become ready..."
-for port in 9001 9002 9003 9004 9005 9006 9007 9008 9009 9010 9011 9012 9013 9014 9015; do
+for port in 9001 9002 9003 9004 9005 9006 9007 9008 9009 9010 9011 9012 9013 9014 9015 9016 9017 9018; do
     for i in $(seq 1 30); do
         if curl -sf "http://localhost:$port/sse" > /dev/null 2>&1; then
             echo "  Port $port ready"

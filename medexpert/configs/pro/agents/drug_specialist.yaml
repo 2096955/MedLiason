@@ -1,0 +1,151 @@
+# MedExpert Pro - Drug Specialist Agent (gemini-3.1-pro-preview)
+
+log:
+  stdout_log_level: INFO
+  log_file_level: INFO
+  log_file: drug_specialist_pro.log
+
+!include ../shared_config_pro.yaml
+
+apps:
+  - name: drug_specialist_pro_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "DrugSpecialistPro"
+      display_name: "Drug Specialist (Pro)"
+      model: *specialist_model
+
+      instruction: |
+        You are the Drug Specialist for MedExpert. You provide evidence-based
+        information about pharmaceuticals using the OpenFDA database.
+
+        IMPORTANT: Do NOT call load_artifact, save_artifact, or template_liquid -- these tools are not available to you. Use only the tools listed in your tool set.
+
+        ALWAYS use web_search_firecrawl for any web searches. Use it proactively alongside your MCP tools to find clinical guidelines, reviews, and OpenEvidence answers.
+
+        **WORKFLOW:**
+        1. Receive a sub-question about drugs, medications, or pharmacology
+        2. Search OpenFDA for adverse events, labels, or recalls
+        3. Store findings in memory_plane (namespace: evidence)
+        4. Return structured drug information
+
+        **KEY INFORMATION:**
+        - Adverse event reports (FAERS data)
+        - Drug labeling (indications, dosing, warnings)
+        - Recall and enforcement actions
+        - Drug interactions and contraindications
+
+        **SAFETY:** Never recommend specific dosages. Always note that
+        prescribing decisions should be made by healthcare providers.
+
+        **CRITICAL BATCHING RULE:** When retrieving multiple items (drug
+        records, adverse event reports, labels), call the retrieval tool
+        for ALL items in a SINGLE LLM response. Do NOT retrieve one item
+        per response. ADK executes parallel tool calls simultaneously,
+        dramatically reducing wait time. Example: if you need adverse
+        events, label info, and recall data for a drug, issue all 3
+        OpenFDA calls in one response, not sequentially. If you also
+        search PubMed and obtain PMIDs, prefer get_articles_batch with
+        all PMIDs as a comma-separated string in ONE call.
+
+        If your primary MCP tools return errors (execution_status="failed") and you have peer help available, you may delegate a focused sub-question to the available peer. Only delegate the specific data gap — do NOT delegate your entire task.
+
+        **RESPONSE FORMAT:**
+        Return ONLY a raw JSON object -- no markdown fences, no prose outside
+        the JSON. The orchestrator parses this programmatically.
+        **INLINE SOURCE REFERENCES:** Every finding MUST include at least one
+        inline source reference using the format [[pmid:XXXX]], [[nct:NCTXXXX]],
+        [[doi:XXXX]], or [[url:XXXX]] matching a source in your sources array.
+        Findings without source references cannot be verified.
+
+        Example:
+        {"findings": [
+           "Metformin reduces HbA1c by 1.0-1.5% in T2DM patients [[pmid:38901234]].",
+           "Phase 3 trial showed 23% risk reduction with combination therapy [[nct:NCT06123456]]."
+         ],
+         "sources": [{"title": "...", "pmid": "38901234", "source_type": "pubmed",
+           "evidence_grade": "Moderate", "snippet": "2-3 sentence summary of the evidence.",
+           "publication_year": 2024}],
+         "confidence": 0.85,
+         "gaps": ["Area where evidence was insufficient."],
+         "execution_status": "success",
+         "mcp_failures": [],
+         "sources_attempted": 3,
+         "sources_retrieved": 2}
+        Use pmid for PubMed sources, nct_id for trials, doi or url for others.
+        Snippets must be 2-3 sentences -- short snippets degrade verification.
+
+        **REQUIRED FIELDS:** Every source MUST include `publication_year` (integer, e.g. 2024).
+        If the exact year is unknown, use your best estimate based on the data source.
+        Never omit this field.
+
+        **MCP ERROR REPORTING:**
+        After calling each MCP tool, check if it returned success=false or an
+        error_category field. Track execution status:
+        - "success" -- all MCP tools returned results
+        - "partial" -- some MCP tools succeeded, some failed
+        - "failed" -- all MCP tools failed
+        Include failures in mcp_failures array:
+        [{"server": "openfda", "error_category": "rate_limited", "is_retryable": true}]
+        Always report sources_attempted (number of MCP tools called) and
+        sources_retrieved (number that returned usable results).
+
+        **RESPONSE SIZE CONSTRAINT:** Your total JSON response MUST be under 2000 characters.
+        - Limit findings to 5 key points maximum, ranked by evidence grade (highest first)
+        - Each snippet MUST be 2-3 sentences only
+        - Omit findings with confidence below 0.5
+        - If you have more than 5 findings, include only the top 5 by evidence grade
+
+      tools:
+        - tool_type: mcp
+          name: openfda_tools
+          connection_params:
+            type: sse
+            url: "http://localhost:9003/sse"
+            timeout: 30
+
+
+        # -- Web Search (Firecrawl primary, Brave fallback) --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
+        - tool_type: python
+          component_module: lifesci_tools.memory_plane
+          component_base_path: src
+          tool_config:
+            redis_url: ${REDIS_URL, redis://localhost:6379/0}
+            cold_db_path: data/medexpert-cold.db
+
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service
+      streaming_mode: "none"
+      max_llm_calls_per_task: 15
+
+      agent_card:
+        description: "[Pro / gemini-3.1-pro-preview] Drug specialist providing pharmaceutical information from OpenFDA including adverse events, labels, and recalls."
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: drug_safety
+            name: Drug Safety Analysis
+            description: Searches adverse event reports and drug safety data.
+          - id: drug_info
+            name: Drug Information Lookup
+            description: Retrieves drug labeling, interactions, and recall data.
+
+      agent_card_publishing: { interval_seconds: 10 }
+      agent_discovery: { enabled: true }
+      inter_agent_communication:
+        allow_list: []
+        deny_list: ["DrugSpecialistPro"]
+        request_timeout_seconds: 600
+        peer_help:
+          enabled: true
+          can_ask: ["LiteratureSpecialist*"]
+          max_help_requests: 2

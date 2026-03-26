@@ -1,10 +1,12 @@
 """Query sanitization and injection prevention utilities.
 
 Provides input validation for MCP servers that interact with external
-APIs using query languages (SoQL for CDC SODA, SQL for provider_intel).
+APIs using query languages (SoQL for CDC SODA, SQL for provider_intel)
+and URL validation for Firecrawl-backed scrapers.
 """
 
 import re
+import urllib.parse
 
 
 def sanitize_query(query: str, max_len: int = 500) -> str:
@@ -76,3 +78,30 @@ def validate_numeric(value: str) -> str | None:
         return value
     except (ValueError, TypeError):
         return None
+
+
+def validate_allowed_url(url: str, allowed_netloc_pattern: str) -> str | None:
+    """Validate a URL against an allowed domain pattern.
+
+    Checks that:
+    - Scheme is ``https``
+    - No embedded credentials (``user:pass@host``)
+    - Netloc matches *allowed_netloc_pattern* (anchored regex)
+
+    Returns the normalized URL or ``None`` if invalid.
+    """
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme != "https":
+        return None
+    if parsed.username or parsed.password:
+        return None
+    if not parsed.netloc:
+        return None
+    if not re.match(allowed_netloc_pattern, parsed.netloc):
+        return None
+    return parsed.geturl()

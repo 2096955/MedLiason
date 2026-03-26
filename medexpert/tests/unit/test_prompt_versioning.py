@@ -39,6 +39,7 @@ def test_schema_creates_prompt_tables(db):
         [
             "agent_coactivation",
             "learned_strategies",
+            "pending_calibration",
             "prompt_promotions",
             "prompt_scores",
             "prompt_versions",

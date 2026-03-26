@@ -30,25 +30,37 @@ log = logging.getLogger(__name__)
 
 
 async def _validate_pmid(pmid: str) -> dict:
-    """Validate a PubMed ID via esummary API."""
+    """Validate a PubMed ID via esummary API.
+
+    Returns a dict with ``failure_type``:
+    - ``"valid"`` — PMID exists
+    - ``"not_found"`` — PubMed explicitly says it doesn't exist (likely fabricated)
+    - ``"api_error"`` — transient issue (network, rate limit, 5xx)
+    """
     try:
         response = await resilient_get(
             PUBMED_ESUMMARY_URL,
             params={"db": "pubmed", "id": pmid, "retmode": "json"},
         )
+        if response.status_code >= 500:
+            return {"identifier": pmid, "valid": False, "failure_type": "api_error",
+                    "error": f"HTTP {response.status_code}"}
         if response.status_code != 200:
-            return {"identifier": pmid, "valid": False, "error": f"HTTP {response.status_code}"}
+            return {"identifier": pmid, "valid": False, "failure_type": "not_found",
+                    "error": f"HTTP {response.status_code}"}
 
         data = response.json()
         result = data.get("result", {})
         article = result.get(pmid, {})
 
         if "error" in article:
-            return {"identifier": pmid, "valid": False, "error": article["error"]}
+            return {"identifier": pmid, "valid": False, "failure_type": "not_found",
+                    "error": article["error"]}
 
         title = article.get("title", "")
         if not title:
-            return {"identifier": pmid, "valid": False, "error": "No title found"}
+            return {"identifier": pmid, "valid": False, "failure_type": "not_found",
+                    "error": "No title found"}
 
         authors = []
         for author in article.get("authors", []):
@@ -57,6 +69,7 @@ async def _validate_pmid(pmid: str) -> dict:
         return {
             "identifier": pmid,
             "valid": True,
+            "failure_type": "valid",
             "metadata": {
                 "title": title,
                 "authors": authors[:5],
@@ -66,11 +79,18 @@ async def _validate_pmid(pmid: str) -> dict:
             },
         }
     except Exception as exc:
-        return {"identifier": pmid, "valid": False, "error": str(exc)}
+        return {"identifier": pmid, "valid": False, "failure_type": "api_error",
+                "error": str(exc)}
 
 
 async def _validate_doi(doi: str) -> dict:
-    """Validate a DOI via CrossRef API."""
+    """Validate a DOI via CrossRef API.
+
+    Returns a dict with ``failure_type``:
+    - ``"valid"`` — DOI exists
+    - ``"not_found"`` — CrossRef returned 404 (likely fabricated)
+    - ``"api_error"`` — transient issue (network, rate limit, 5xx)
+    """
     try:
         url = f"{CROSSREF_WORKS_URL}/{doi}"
         response = await resilient_get(
@@ -78,9 +98,14 @@ async def _validate_doi(doi: str) -> dict:
             headers={"Accept": "application/json"},
         )
         if response.status_code == 404:
-            return {"identifier": doi, "valid": False, "error": "DOI not found"}
+            return {"identifier": doi, "valid": False, "failure_type": "not_found",
+                    "error": "DOI not found"}
+        if response.status_code >= 500:
+            return {"identifier": doi, "valid": False, "failure_type": "api_error",
+                    "error": f"HTTP {response.status_code}"}
         if response.status_code != 200:
-            return {"identifier": doi, "valid": False, "error": f"HTTP {response.status_code}"}
+            return {"identifier": doi, "valid": False, "failure_type": "not_found",
+                    "error": f"HTTP {response.status_code}"}
 
         data = response.json()
         message = data.get("message", {})
@@ -104,6 +129,7 @@ async def _validate_doi(doi: str) -> dict:
         return {
             "identifier": doi,
             "valid": True,
+            "failure_type": "valid",
             "metadata": {
                 "title": title,
                 "authors": authors,
@@ -112,7 +138,8 @@ async def _validate_doi(doi: str) -> dict:
             },
         }
     except Exception as exc:
-        return {"identifier": doi, "valid": False, "error": str(exc)}
+        return {"identifier": doi, "valid": False, "failure_type": "api_error",
+                "error": str(exc)}
 
 
 class CitationValidatorTool(DynamicTool):

@@ -90,7 +90,11 @@ async def test_intake_emergency_detection_breathing(tool, mock_ctx):
         {
             "chief_complaint": "feeling very unwell",
             "symptoms": _symptoms_json(
-                {"symptom": "difficulty breathing", "duration": "1 hour", "severity": "9"},
+                {
+                    "symptom": "difficulty breathing",
+                    "duration": "1 hour",
+                    "severity": "9",
+                },
                 {"symptom": "wheezing", "duration": "1 hour", "severity": "7"},
             ),
         },
@@ -133,3 +137,40 @@ async def test_intake_missing_severity_duration(tool, mock_ctx):
     # Should request duration/severity details
     missing = result["missing_fields"]
     assert any("duration" in f or "severity" in f for f in missing)
+
+
+@pytest.mark.asyncio
+async def test_triage_intake_sets_complete_flag_in_session_state(tool, mock_ctx):
+    """When intake returns status='complete', _triage_intake_complete is set in state."""
+    mock_ctx.state = {}
+    result = await tool._run_async_impl(
+        {
+            "chief_complaint": "extreme fatigue",
+            "symptoms": _symptoms_json(
+                {"symptom": "fatigue", "duration": "7 months", "severity": "10/10"},
+                {"symptom": "brain fog", "duration": "7 months", "severity": "8/10"},
+            ),
+        },
+        mock_ctx,
+    )
+
+    assert result["status"] == "complete"
+    assert mock_ctx.state.get("_triage_intake_complete") is True
+
+
+@pytest.mark.asyncio
+async def test_triage_intake_does_not_set_flag_on_needs_more_info(tool, mock_ctx):
+    """When intake returns needs_more_info, flag should NOT be set."""
+    mock_ctx.state = {}
+    result = await tool._run_async_impl(
+        {
+            "chief_complaint": "sore throat",
+            "symptoms": _symptoms_json(
+                {"symptom": "sore throat", "duration": "1 day", "severity": "5"},
+            ),
+        },
+        mock_ctx,
+    )
+
+    assert result["status"] == "needs_more_info"
+    assert "_triage_intake_complete" not in mock_ctx.state

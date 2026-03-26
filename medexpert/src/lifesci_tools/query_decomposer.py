@@ -1,52 +1,199 @@
 """Research Question Decomposer — breaks questions into domain-routed sub-questions.
 
-Uses keyword-based heuristics to split compound research questions and
-route each sub-question to the appropriate specialist agent.
+Uses LLM-powered decomposition (when a model is configured via ``tool_config``)
+to intelligently route questions to specialist agents, understanding implicit
+medical relationships. Falls back to keyword-based heuristics when the LLM is
+not configured or fails.
+
+Also stores the selected agent list in session state (``_selected_agents``)
+so that the protocol_step_validator callback can restrict DELEGATE-step
+peer tools to only those agents the decomposer chose.
 """
 
+import logging
 import re
 from typing import Optional
 
 from google.adk.tools import ToolContext
 from google.genai import types as adk_types
+from litellm import acompletion as _litellm_acompletion
 
 from solace_agent_mesh.agent.tools.dynamic_tool import DynamicTool
 
 from lifesci_common.constants import DOMAIN_AGENT_ROUTING
+from lifesci_common.llm_utils import json_mode_kwargs
+from lifesci_common.observability import log_tokens
+from lifesci_common.triage_utils import extract_json_from_text
+
+log = logging.getLogger(__name__)
+
+# Session state key read by protocol_step_validator to restrict peer tools
+_SELECTED_AGENTS_KEY = "_selected_agents"
+
+# Minimum character length for each fragment produced by comma-clause splitting.
+# Prevents splitting relative/dependent clauses that happen to contain a
+# question word (e.g., "for a patient with X, which plan …").
+_MIN_COMMA_SPLIT_FRAGMENT = 30
+
+# Context-setting clause openers.  When the first fragment starts with one of
+# these AND contains no question word of its own, the comma introduces a
+# *dependent* clause — not a second topic — so we must not split.
+_CONTEXT_OPENERS = (
+    "when ",
+    "for ",
+    "in ",
+    "given ",
+    "if ",
+    "regarding ",
+    "considering ",
+)
+
+# ---------------------------------------------------------------------------
+# LLM decomposition prompts
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_SYSTEM_PROMPT = """You are a medical research query router. Given a user's medical question, decompose it into focused sub-questions and route each to the most appropriate specialist agent.
+
+Available specialists:
+- LiteratureSpecialist: PubMed biomedical literature, systematic reviews, guidelines, meta-analyses
+- ClinicalTrialsSpecialist: ClinicalTrials.gov, ongoing/completed trials, trial designs, endpoints
+- DrugSpecialist: OpenFDA drug safety, labeling, interactions, dosing, pharmacology, factor replacement
+- RegulatorySpecialist: FDA regulatory pathways, device clearances, 510(k), PMA
+- EpidemiologySpecialist: CDC/SEER surveillance data, prevalence, incidence, mortality, demographics
+- GenomicsSpecialist: ClinVar/dbSNP genetic variants, mutations, pathogenicity
+- EnvironmentalSpecialist: EPA environmental health, air/water quality, toxin exposure
+- ProviderIntelSpecialist: CMS provider/payment data, hospital quality, Medicare
+
+Rules:
+1. Most questions need 2-4 specialists, not all 8
+2. Always include LiteratureSpecialist for clinical questions (it has the broadest evidence base)
+3. Consider implicit medical relationships:
+   - Haemophilia/coagulation disorders → DrugSpecialist (factor replacement) + LiteratureSpecialist
+   - Anaesthesia/surgical planning → ClinicalTrialsSpecialist + LiteratureSpecialist
+   - Drug safety questions → DrugSpecialist + LiteratureSpecialist
+   - Genetic conditions → GenomicsSpecialist + LiteratureSpecialist
+4. Do NOT split a single coherent question into fragments. Only decompose genuinely multi-part questions.
+5. Return 1-3 sub-questions maximum.
+
+Return JSON:
+{
+  "sub_questions": [
+    {
+      "question": "the sub-question text (or the full question if no decomposition needed)",
+      "target_agent": "PrimarySpecialist",
+      "secondary_agents": ["SecondarySpecialist1"]
+    }
+  ],
+  "all_agents": ["Agent1", "Agent2", "Agent3"],
+  "reasoning": "brief explanation of routing decisions"
+}"""
+
+_DECOMPOSE_USER_PROMPT = """Decompose and route this medical research question:
+
+{question}
+
+Return JSON only."""
+
+# Set of valid agent names derived from the routing map at import time
+_VALID_AGENTS = {info["agent"] for info in DOMAIN_AGENT_ROUTING.values()}
 
 
 def _score_domain(text: str, domain_info: dict) -> float:
-    """Score how well a text matches a domain based on keyword overlap."""
+    """Score how well a text matches a domain based on keyword overlap.
+
+    Short keywords (<=3 chars like 'rna', 'dna', 'snp') use word-boundary
+    matching to prevent false positives from substrings (e.g. 'alternatives'
+    matching 'rna'). Longer keywords use simple substring matching.
+    """
     text_lower = text.lower()
     keywords = domain_info["keywords"]
-    matches = sum(1 for kw in keywords if kw in text_lower)
+    matches = 0
+    for kw in keywords:
+        if len(kw) <= 3:
+            # Word-boundary match for short keywords
+            if re.search(r"\b" + re.escape(kw) + r"\b", text_lower):
+                matches += 1
+        else:
+            if kw in text_lower:
+                matches += 1
     return matches / max(len(keywords), 1)
 
 
-def _route_question(question: str) -> tuple[str, str, float]:
-    """Route a question to the best-matching domain and agent.
+def _route_question(question: str) -> list[dict]:
+    """Route a question to primary + secondary specialist agents.
 
-    Returns (domain, agent_name, confidence).
+    Returns list of dicts: [{domain, agent, confidence, role}, ...].
+    Primary = highest keyword match. Up to 2 secondary agents included
+    if they have any keyword matches, ensuring multi-source evidence.
     """
-    best_domain = "literature"
-    best_agent = "LiteratureSpecialist"
-    best_score = 0.0
-
+    scored = []
     for domain, info in DOMAIN_AGENT_ROUTING.items():
         score = _score_domain(question, info)
-        if score > best_score:
-            best_score = score
-            best_domain = domain
-            best_agent = info["agent"]
+        scored.append((domain, info["agent"], score))
 
-    # Confidence is 0-1 based on keyword match density
-    confidence = min(best_score * 5, 1.0)  # Scale up since individual scores are low
+    scored.sort(key=lambda x: x[2], reverse=True)
 
-    # If no keywords matched at all, default to literature with low confidence
-    if best_score == 0:
-        return "literature", "LiteratureSpecialist", 0.2
+    # Debug: log all domain scores for diagnosis
+    if log.isEnabledFor(logging.DEBUG):
+        top_scores = [(d, round(s, 4)) for d, _, s in scored[:5]]
+        log.debug("query_decomposer: domain scores for %r: %s", question[:80], top_scores)
 
-    return best_domain, best_agent, round(confidence, 2)
+    results = []
+
+    # Primary: best match, or literature if nothing matched
+    if scored[0][2] > 0:
+        primary = scored[0]
+    else:
+        primary = ("literature", "LiteratureSpecialist", 0.04)
+    results.append({
+        "domain": primary[0],
+        "agent": primary[1],
+        "confidence": round(min(primary[2] * 5, 1.0), 2),
+        "role": "primary",
+    })
+
+    # Secondary: up to 2 more with any keyword match
+    for domain, agent, score in scored[1:]:
+        if score > 0 and agent != results[0]["agent"] and len(results) < 3:
+            results.append({
+                "domain": domain,
+                "agent": agent,
+                "confidence": round(min(score * 5, 1.0), 2),
+                "role": "secondary",
+            })
+
+    # Always include LiteratureSpecialist if not already present
+    if not any(r["agent"] == "LiteratureSpecialist" for r in results):
+        results.append({
+            "domain": "literature",
+            "agent": "LiteratureSpecialist",
+            "confidence": 0.3,
+            "role": "secondary",
+        })
+
+    # Heuristic: if query contains capitalized words that look like drug
+    # brand names (not common English words), include DrugSpecialist
+    import re
+    words = re.findall(r"[A-Z][a-z]{2,}", question)
+    # Filter out common non-drug words
+    common = {"What", "When", "How", "Can", "Are", "The", "This", "That",
+              "Which", "Where", "Why", "Who", "Please", "Tell", "Not"}
+    potential_brands = [w for w in words if w not in common]
+    if potential_brands and not any(r["agent"] == "DrugSpecialist" for r in results):
+        log.info("query_decomposer: brand-name heuristic fired for %s → adding DrugSpecialist", potential_brands)
+        results.append({
+            "domain": "drugs",
+            "agent": "DrugSpecialist",
+            "confidence": 0.4,
+            "role": "secondary",
+        })
+
+    log.info(
+        "query_decomposer: routed %r → %s",
+        question[:60],
+        [(r["agent"], r["role"], r["confidence"]) for r in results],
+    )
+    return results
 
 
 def _split_question(question: str, max_sub: int) -> list[str]:
@@ -78,11 +225,55 @@ def _split_question(question: str, max_sub: int) -> list[str]:
             if len(parts) > 1:
                 sub_questions = [p.strip() for p in parts if p.strip()]
             else:
-                # Split on commas between clauses (only if question is long)
+                # Split on commas followed by a question word (what/how/…).
+                # Guards:
+                #  1. Length gate — only attempt on questions > 100 chars.
+                #  2. Fragment size — every fragment must be >= _MIN_COMMA_SPLIT_FRAGMENT.
+                #  3. Context-clause — if the first fragment is a context-setting
+                #     clause (starts with When/For/In/… and contains no question
+                #     word), the comma introduces a dependent clause, not a
+                #     second topic.
                 if len(question) > 100:
-                    parts = re.split(r",\s+(?:what|how|why|which|where|when|who)\s+", question, flags=re.IGNORECASE)
-                    if len(parts) > 1:
-                        sub_questions = [p.strip() for p in parts if p.strip()]
+                    parts = re.split(
+                        r",\s+(?:what|how|why|which|where|when|who)\s+",
+                        question,
+                        flags=re.IGNORECASE,
+                    )
+                    if len(parts) > 1 and all(
+                        len(p.strip()) >= _MIN_COMMA_SPLIT_FRAGMENT for p in parts
+                    ):
+                        first = parts[0].strip().lower()
+                        # Identify which opener (if any) the fragment starts with
+                        matched_opener = next(
+                            (op for op in _CONTEXT_OPENERS if first.startswith(op)),
+                            None,
+                        )
+                        if matched_opener is not None:
+                            # Strip the opener itself before searching for
+                            # question words — "When considering X" uses
+                            # "when" as a temporal conjunction, not an
+                            # interrogative.
+                            remainder = first[len(matched_opener):]
+                            # Only check the first ~3 words — interrogative question words appear
+                            # at the start ("what medication..."), while relative pronouns like
+                            # "who/which" appear mid-phrase ("patients who are...").
+                            first_words = " ".join(remainder.split()[:3])
+                            has_question_word = bool(
+                                re.search(
+                                    r"\b(?:what|how|why|which|where|when|who)\b",
+                                    first_words,
+                                )
+                            )
+                            is_context_clause = not has_question_word
+                        else:
+                            # First fragment doesn't start with a context
+                            # opener — treat as a genuine question topic.
+                            is_context_clause = False
+
+                        if not is_context_clause:
+                            sub_questions = [
+                                p.strip() for p in parts if p.strip()
+                            ]
 
     # If no splitting occurred, treat the whole question as one sub-question
     if not sub_questions:
@@ -100,7 +291,125 @@ def _split_question(question: str, max_sub: int) -> list[str]:
 
 
 class QueryDecomposerTool(DynamicTool):
-    """Decomposes research questions into domain-routed sub-questions."""
+    """Decomposes research questions into domain-routed sub-questions.
+
+    When ``tool_config`` provides a ``model`` key, uses LLM-powered
+    decomposition that understands implicit medical relationships (e.g.
+    haemophilia → factor replacement → DrugSpecialist).  Falls back to
+    keyword heuristics when no model is configured or the LLM fails.
+    """
+
+    def __init__(self, tool_config: Optional[dict] = None, **kwargs):
+        super().__init__(tool_config=tool_config, **kwargs)
+        cfg = tool_config or {}
+        raw_model = cfg.get("model")
+        if isinstance(raw_model, dict):
+            self._model: str = raw_model.get("model", "")
+            self._vertex_kwargs: dict = {
+                k: raw_model[k]
+                for k in ("vertex_project", "vertex_location")
+                if k in raw_model
+            }
+        elif raw_model:
+            self._model = raw_model
+            self._vertex_kwargs = {}
+        else:
+            self._model = ""
+            self._vertex_kwargs = {}
+        self._temperature: float = float(cfg.get("temperature", 0.1))
+
+    # ------------------------------------------------------------------
+    # Helper: agent name → domain key
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _agent_to_domain(agent_name: str) -> str:
+        """Map an agent name back to its domain key."""
+        for domain, info in DOMAIN_AGENT_ROUTING.items():
+            if info["agent"] == agent_name:
+                return domain
+        return "literature"
+
+    # ------------------------------------------------------------------
+    # LLM decomposition
+    # ------------------------------------------------------------------
+
+    async def _llm_decompose(self, question: str, max_sub: int) -> dict | None:
+        """Use LLM to decompose and route the question.
+
+        Returns a formatted result dict on success, or ``None`` on
+        parse/validation failure.  Raises on LLM transport errors — the
+        caller catches exceptions and falls back to keyword heuristics.
+        """
+        user_prompt = _DECOMPOSE_USER_PROMPT.replace("{question}", question)
+
+        response = await _litellm_acompletion(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": _DECOMPOSE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=self._temperature,
+            max_tokens=2048,
+            **json_mode_kwargs(self._model),
+            **self._vertex_kwargs,
+        )
+
+        # Token logging
+        usage = getattr(response, "usage", None)
+        if usage:
+            log_tokens(
+                session_id="",
+                model=self._model,
+                prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                completion_tokens=getattr(usage, "completion_tokens", 0),
+            )
+
+        raw = response.choices[0].message.content
+        parsed = extract_json_from_text(raw)
+
+        if not parsed or "sub_questions" not in parsed:
+            log.warning("LLM decomposition returned unparseable result")
+            return None
+
+        # Validate and normalize
+        sub_questions = parsed["sub_questions"][:max_sub]
+        all_agents = sorted(
+            {a for a in parsed.get("all_agents", []) if a in _VALID_AGENTS}
+        )
+
+        if not all_agents:
+            log.warning("LLM decomposition returned no valid agents")
+            return None
+
+        # Format sub_questions to match existing output schema
+        formatted_subs = []
+        for i, sq in enumerate(sub_questions):
+            target = sq.get("target_agent", "LiteratureSpecialist")
+            if target not in _VALID_AGENTS:
+                target = "LiteratureSpecialist"
+            secondaries = [
+                {"agent": a, "domain": self._agent_to_domain(a)}
+                for a in sq.get("secondary_agents", [])
+                if a in _VALID_AGENTS and a != target
+            ]
+            formatted_subs.append({
+                "question": sq.get("question", question),
+                "domain": self._agent_to_domain(target),
+                "target_agent": target,
+                "secondary_agents": secondaries,
+                "priority": i + 1,
+                "routing_confidence": 0.85,
+            })
+
+        return {
+            "original_question": question,
+            "sub_questions": formatted_subs,
+            "routing_confidence": 0.85,
+            "count": len(formatted_subs),
+            "all_agents": all_agents,
+            "routing_method": "llm",
+        }
 
     @property
     def tool_name(self) -> str:
@@ -110,9 +419,9 @@ class QueryDecomposerTool(DynamicTool):
     def tool_description(self) -> str:
         return (
             "Breaks down a complex research question into sub-questions, each "
-            "routed to the appropriate specialist agent based on domain keywords. "
-            "Returns the original question, sub-questions with domain/agent routing, "
-            "and an overall routing confidence score."
+            "routed to a primary specialist plus secondary specialists for "
+            "multi-source evidence. Returns sub-questions with domain/agent "
+            "routing, secondary agents, and a list of all agents to delegate to."
         )
 
     @property
@@ -133,6 +442,37 @@ class QueryDecomposerTool(DynamicTool):
             required=["question"],
         )
 
+    # ------------------------------------------------------------------
+    # Session state helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _store_selected_agents(tool_context: ToolContext, agents: list[str]) -> None:
+        """Persist selected agents in session state for the protocol validator.
+
+        The ``protocol_step_validator`` callback reads ``_selected_agents`` to
+        restrict DELEGATE-step peer tools to only those the decomposer
+        selected, reducing tool-selection noise from 10 peer tools to 3-5.
+        """
+        try:
+            inv = getattr(tool_context, "_invocation_context", None)
+            session_obj = getattr(inv, "session", None) if inv else None
+            if session_obj and hasattr(session_obj, "state"):
+                session_obj.state[_SELECTED_AGENTS_KEY] = agents
+                log.info(
+                    "[QueryDecomposer] Stored _selected_agents in session state: %s",
+                    agents,
+                )
+        except Exception:
+            # Don't break decomposition if session state is unavailable
+            log.debug(
+                "[QueryDecomposer] Could not store _selected_agents in session state"
+            )
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
     async def _run_async_impl(
         self,
         args: dict,
@@ -150,28 +490,62 @@ class QueryDecomposerTool(DynamicTool):
         elif max_sub > 10:
             max_sub = 10
 
+        # ── LLM decomposition (preferred when model is configured) ────
+        if self._model:
+            try:
+                result = await self._llm_decompose(question, max_sub)
+                if result:
+                    self._store_selected_agents(tool_context, result["all_agents"])
+                    log.info(
+                        "[QueryDecomposer] LLM routing: %s → %s",
+                        question[:60],
+                        result["all_agents"],
+                    )
+                    return result
+            except Exception as exc:
+                log.warning(
+                    "LLM decomposition failed, falling back to keywords: %s", exc
+                )
+
+        # ── Keyword fallback (no model, or LLM returned None/raised) ──
         sub_questions_text = _split_question(question, max_sub)
 
         sub_questions = []
+        all_agents: set[str] = set()
         total_confidence = 0.0
         for i, sq in enumerate(sub_questions_text):
-            domain, agent, confidence = _route_question(sq)
+            routes = _route_question(sq)
+            primary = routes[0]
+            secondaries = routes[1:]
             sub_questions.append({
                 "question": sq,
-                "domain": domain,
-                "target_agent": agent,
+                "domain": primary["domain"],
+                "target_agent": primary["agent"],
+                "secondary_agents": [
+                    {"agent": r["agent"], "domain": r["domain"]}
+                    for r in secondaries
+                ],
                 "priority": i + 1,
-                "routing_confidence": confidence,
+                "routing_confidence": primary["confidence"],
             })
-            total_confidence += confidence
+            total_confidence += primary["confidence"]
+            all_agents.add(primary["agent"])
+            for r in secondaries:
+                all_agents.add(r["agent"])
 
         avg_confidence = (
             round(total_confidence / len(sub_questions), 2) if sub_questions else 0.0
         )
+
+        sorted_agents = sorted(all_agents)
+
+        self._store_selected_agents(tool_context, sorted_agents)
 
         return {
             "original_question": question,
             "sub_questions": sub_questions,
             "routing_confidence": avg_confidence,
             "count": len(sub_questions),
+            "all_agents": sorted_agents,
+            "routing_method": "keyword",
         }
