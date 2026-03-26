@@ -1490,6 +1490,30 @@ def initialize_adk_agent(
                     component.log_identifier,
                 )
 
+        # 2.6 Triage handoff guard (TriageIntakeAgent only)
+        # Prevents premature task completion when intake is done but peer
+        # tool call is missing. Gated by triage_handoff_guard: true in app_config.
+        if (component.get_config("app_config", {}) or {}).get("triage_handoff_guard"):
+            try:
+                from lifesci_tools.triage_handoff_guard import (
+                    triage_handoff_guard_callback,
+                )
+
+                handoff_guard_cb = functools.partial(
+                    triage_handoff_guard_callback, host_component=component
+                )
+                callbacks_in_order_for_after_model.append(handoff_guard_cb)
+                log.debug(
+                    "%s Added triage_handoff_guard_callback to after_model chain.",
+                    component.log_identifier,
+                )
+            except ImportError:
+                log.warning(
+                    "%s triage_handoff_guard enabled but lifesci_tools not found. "
+                    "Handoff guard will be skipped.",
+                    component.log_identifier,
+                )
+
         # 3. Fenced Artifact Block Processing (must run before auto-continue)
         artifact_block_cb = functools.partial(
             adk_callbacks.process_artifact_blocks_callback, host_component=component

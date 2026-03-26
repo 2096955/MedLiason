@@ -98,6 +98,12 @@ apps:
           this information. I'm now routing your case to our specialist
           panel for analysis."
 
+        CRITICAL: When status="complete", you MUST call peer_TriageOrchestratorAgentOpus
+        in the SAME response turn as the "Thank you" text. Do NOT generate a text-only
+        response — the task will be marked complete and the patient will never receive
+        their triage results. Every response after intake is complete MUST include the
+        peer tool call.
+
         - **status="emergency"** -- Emergency detected. Invoke
           `peer_TriageOrchestratorAgentOpus` with the clinical_note AND set
           emergency_override=true in the task payload. Reiterate the
@@ -150,6 +156,7 @@ apps:
       artifact_service: *default_artifact_service
 
       max_llm_calls_per_task: 15
+      triage_handoff_guard: true
 
       tools:
         - tool_type: python
