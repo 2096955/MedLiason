@@ -176,7 +176,7 @@ PubMed, ClinicalTrials.gov, OpenFDA (FAERS, labels, recalls), CDC disease survei
 | Agent hosting | Google ADK + Solace AI Connector | LLM orchestration + broker connectivity |
 | Communication | A2A protocol over Solace Event Mesh | Async agent-to-agent messaging |
 | Web UI | React + Vite + SSE streaming | Chat interface with citations panel |
-| MCP servers | FastMCP 2.x (SSE transport) | External API integration |
+| MCP servers | FastMCP 3.x (SSE transport) | External API integration |
 | Memory plane | Redis | Shared state across agents per session |
 | Cold store | SQLite | Learning from past research sessions |
 | Knowledge graph | Memgraph (bolt protocol) | Biomedical entity persistence + NLQ queries |
