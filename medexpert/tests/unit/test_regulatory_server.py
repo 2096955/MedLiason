@@ -20,12 +20,12 @@ from mcp_servers.regulatory.server import (
     _build_search_query,
 )
 
-# FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-search_510k = regulatory_module.search_510k.fn
-search_pma = regulatory_module.search_pma.fn
-get_device_classification = regulatory_module.get_device_classification.fn
-search_guidance_documents = regulatory_module.search_guidance_documents.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+search_510k = regulatory_module.search_510k
+search_pma = regulatory_module.search_pma
+get_device_classification = regulatory_module.get_device_classification
+search_guidance_documents = regulatory_module.search_guidance_documents
 
 
 # ---------------------------------------------------------------------------

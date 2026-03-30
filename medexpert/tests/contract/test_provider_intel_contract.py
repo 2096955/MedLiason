@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.provider_intel import server as pi_module
 
-search_providers = pi_module.search_providers.fn
-search_open_payments = pi_module.search_open_payments.fn
+search_providers = pi_module.search_providers
+search_open_payments = pi_module.search_open_payments
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("provider_intel")]
 

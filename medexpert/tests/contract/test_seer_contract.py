@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.seer import server as seer_module
 
-get_cancer_statistics = seer_module.get_cancer_statistics.fn
+get_cancer_statistics = seer_module.get_cancer_statistics
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("seer")]
 

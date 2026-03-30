@@ -23,11 +23,11 @@ from mcp_servers.genomic.server import (
     _parse_esearch_ids,
 )
 
-# FastMCP @mcp.tool() wraps functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-_search_variants = genomic_module.search_variants.fn
-_get_variant_details = genomic_module.get_variant_details.fn
-_search_gene_info = genomic_module.search_gene_info.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+_search_variants = genomic_module.search_variants
+_get_variant_details = genomic_module.get_variant_details
+_search_gene_info = genomic_module.search_gene_info
 
 
 # ---------------------------------------------------------------------------

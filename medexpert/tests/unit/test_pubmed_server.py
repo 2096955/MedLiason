@@ -20,11 +20,11 @@ from mcp_servers.pubmed.server import (
     _parse_esummary,
 )
 
-# FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-search_pubmed = pubmed_module.search_pubmed.fn
-get_article_abstract = pubmed_module.get_article_abstract.fn
-get_article_metadata = pubmed_module.get_article_metadata.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+search_pubmed = pubmed_module.search_pubmed
+get_article_abstract = pubmed_module.get_article_abstract
+get_article_metadata = pubmed_module.get_article_metadata
 
 
 # ---------------------------------------------------------------------------

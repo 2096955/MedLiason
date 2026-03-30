@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.environmental import server as env_module
 
-get_air_quality = env_module.get_air_quality.fn
+get_air_quality = env_module.get_air_quality
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("environmental")]
 
@@ -24,6 +24,6 @@ async def test_air_quality_by_state_contract(respx_cassette):
 
 async def test_ej_data_contract(respx_cassette):
     """Verify parsing of real EPA EJScreen response."""
-    get_ej = env_module.get_environmental_justice_data.fn
+    get_ej = env_module.get_environmental_justice_data
     result = await get_ej(location="06037")
     assert isinstance(result, dict)

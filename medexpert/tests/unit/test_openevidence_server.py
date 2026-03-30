@@ -13,10 +13,10 @@ from fastmcp.exceptions import ToolError
 
 import mcp_servers.openevidence.server as oe_mod
 
-# Unwrap FastMCP FunctionTool wrappers
-ask_openevidence = oe_mod.ask_openevidence.fn
-get_openevidence_article = oe_mod.get_openevidence_article.fn
-search_openevidence_history = oe_mod.search_openevidence_history.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+ask_openevidence = oe_mod.ask_openevidence
+get_openevidence_article = oe_mod.get_openevidence_article
+search_openevidence_history = oe_mod.search_openevidence_history
 
 
 @pytest.fixture(autouse=True)

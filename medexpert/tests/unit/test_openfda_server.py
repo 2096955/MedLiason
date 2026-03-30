@@ -21,12 +21,12 @@ from mcp_servers.openfda.server import (
     _build_search_query,
 )
 
-# FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-search_drug_events = openfda_module.search_drug_events.fn
-search_drug_labels = openfda_module.search_drug_labels.fn
-search_drug_recalls = openfda_module.search_drug_recalls.fn
-search_device_events = openfda_module.search_device_events.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+search_drug_events = openfda_module.search_drug_events
+search_drug_labels = openfda_module.search_drug_labels
+search_drug_recalls = openfda_module.search_drug_recalls
+search_device_events = openfda_module.search_device_events
 
 
 # ---------------------------------------------------------------------------

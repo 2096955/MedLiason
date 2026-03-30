@@ -13,10 +13,10 @@ import pytest
 import mcp_servers.nhs_111.server as nhs_mod
 from mcp_servers._firecrawl import FirecrawlCircuitOpenError
 
-# Unwrap FastMCP FunctionTool wrappers to get the raw async callable.
-search_nhs_conditions = nhs_mod.search_nhs_conditions.fn
-get_nhs_condition_page = nhs_mod.get_nhs_condition_page.fn
-get_nhs_treatment_guidance = nhs_mod.get_nhs_treatment_guidance.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+search_nhs_conditions = nhs_mod.search_nhs_conditions
+get_nhs_condition_page = nhs_mod.get_nhs_condition_page
+get_nhs_treatment_guidance = nhs_mod.get_nhs_treatment_guidance
 
 
 @pytest.fixture(autouse=True)

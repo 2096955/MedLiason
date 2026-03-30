@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.regulatory import server as reg_module
 
-search_510k = reg_module.search_510k.fn
-search_pma = reg_module.search_pma.fn
+search_510k = reg_module.search_510k
+search_pma = reg_module.search_pma
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("regulatory")]
 

@@ -11,9 +11,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.pharmacovigilance import server as pv_module
 
-search_serious = pv_module.search_serious_adverse_events.fn
-search_deaths = pv_module.search_death_reports.fn
-get_warnings = pv_module.get_boxed_warnings.fn
+search_serious = pv_module.search_serious_adverse_events
+search_deaths = pv_module.search_death_reports
+get_warnings = pv_module.get_boxed_warnings
 
 
 # ── Fixtures ──────────────────────────────────────────────────

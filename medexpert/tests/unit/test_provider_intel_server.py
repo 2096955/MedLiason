@@ -20,11 +20,11 @@ sys.path.insert(
 )
 from mcp_servers.provider_intel import server as provider_module
 
-# FastMCP @mcp.tool() wraps functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-_search_providers = provider_module.search_providers.fn
-_get_provider_quality = provider_module.get_provider_quality.fn
-_search_open_payments = provider_module.search_open_payments.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+_search_providers = provider_module.search_providers
+_get_provider_quality = provider_module.get_provider_quality
+_search_open_payments = provider_module.search_open_payments
 
 
 # ---------------------------------------------------------------------------

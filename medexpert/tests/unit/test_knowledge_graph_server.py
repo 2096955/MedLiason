@@ -14,22 +14,31 @@ from mcp_servers.knowledge_graph.server import (
     _validate_read_only_cypher,
 )
 
-# Import tools — unwrap FastMCP wrappers
-try:
-    from mcp_servers.knowledge_graph.server import mcp
+# Import tools — FastMCP 3.x decorators return the original function,
+# so we can import them directly by name.
+from mcp_servers.knowledge_graph.server import (
+    query_knowledge_graph,
+    get_entity_relationships,
+    get_session_graph,
+    get_graph_stats,
+    natural_language_query,
+)
 
-    # Get the underlying callables from FastMCP tool wrappers
-    _tools = {t.name: t for t in mcp._tool_manager._tools.values()}
-except Exception:
-    _tools = {}
+_tools = {
+    "query_knowledge_graph": query_knowledge_graph,
+    "get_entity_relationships": get_entity_relationships,
+    "get_session_graph": get_session_graph,
+    "get_graph_stats": get_graph_stats,
+    "natural_language_query": natural_language_query,
+}
 
 
 def _get_tool_fn(name):
-    """Unwrap a FastMCP FunctionTool to its underlying async callable."""
+    """Look up a tool function by name."""
     tool = _tools.get(name)
     if tool is None:
         pytest.skip(f"Tool {name} not found in MCP server")
-    return tool.fn
+    return tool
 
 
 # ── Cypher validation tests ──────────────────────────────────

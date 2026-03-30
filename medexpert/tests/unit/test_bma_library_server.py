@@ -12,10 +12,10 @@ import pytest
 import mcp_servers.bma_library.server as bma_mod
 from mcp_servers._firecrawl import FirecrawlCircuitOpenError
 
-# Unwrap FastMCP FunctionTool wrappers to get the raw async callable.
-search_bma_guidelines = bma_mod.search_bma_guidelines.fn
-get_bma_article = bma_mod.get_bma_article.fn
-search_clinical_guidelines = bma_mod.search_clinical_guidelines.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+search_bma_guidelines = bma_mod.search_bma_guidelines
+get_bma_article = bma_mod.get_bma_article
+search_clinical_guidelines = bma_mod.search_clinical_guidelines
 
 
 @pytest.fixture(autouse=True)

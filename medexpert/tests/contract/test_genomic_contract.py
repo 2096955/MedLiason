@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.genomic import server as gen_module
 
-search_variants = gen_module.search_variants.fn
-search_gene_info = gen_module.search_gene_info.fn
+search_variants = gen_module.search_variants
+search_gene_info = gen_module.search_gene_info
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("genomic")]
 

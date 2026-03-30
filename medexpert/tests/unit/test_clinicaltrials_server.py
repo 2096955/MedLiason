@@ -18,12 +18,12 @@ from mcp_servers.clinicaltrials.server import (
     _parse_study_list,
 )
 
-# FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-search_trials = clinicaltrials_module.search_trials.fn
-get_trial_details = clinicaltrials_module.get_trial_details.fn
-search_by_condition = clinicaltrials_module.search_by_condition.fn
-search_by_intervention = clinicaltrials_module.search_by_intervention.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+search_trials = clinicaltrials_module.search_trials
+get_trial_details = clinicaltrials_module.get_trial_details
+search_by_condition = clinicaltrials_module.search_by_condition
+search_by_intervention = clinicaltrials_module.search_by_intervention
 
 
 # ---------------------------------------------------------------------------

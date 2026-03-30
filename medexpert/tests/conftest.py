@@ -6,15 +6,13 @@ import pytest
 
 
 def unwrap_mcp_tool(tool_or_fn):
-    """Unwrap a FastMCP FunctionTool to get the underlying async callable.
+    """Return the underlying async callable from an MCP tool.
 
-    FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-    Tests need the original function to call it directly.
+    FastMCP 3.x decorators return the original function unchanged, so this
+    is now essentially a no-op.  Kept for backward compatibility with any
+    test that still calls it.
     """
-    # If it's already a plain function/coroutine, return as-is
-    if callable(tool_or_fn) and not hasattr(tool_or_fn, "fn"):
-        return tool_or_fn
-    # FastMCP FunctionTool has a .fn attribute
+    # FastMCP 2.x wrapped in FunctionTool with .fn; 3.x returns raw function
     if hasattr(tool_or_fn, "fn"):
         return tool_or_fn.fn
     return tool_or_fn

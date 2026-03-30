@@ -11,10 +11,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.imaging import server as imaging_module
 
-search_clearances = imaging_module.search_imaging_device_clearances.fn
-search_events = imaging_module.search_imaging_device_events.fn
-search_classifications = imaging_module.search_imaging_device_classifications.fn
-get_modality = imaging_module.get_imaging_modality_info.fn
+search_clearances = imaging_module.search_imaging_device_clearances
+search_events = imaging_module.search_imaging_device_events
+search_classifications = imaging_module.search_imaging_device_classifications
+get_modality = imaging_module.get_imaging_modality_info
 
 
 # ── Fixtures ──────────────────────────────────────────────────

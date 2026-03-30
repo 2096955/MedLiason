@@ -19,26 +19,26 @@ sys.path.insert(
     os.path.join(os.path.dirname(__file__), "..", "..", "src"),
 )
 
-# FastMCP @mcp.tool() wraps functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
 
 # Knowledge Graph
 from mcp_servers.knowledge_graph import server as kg_module
 
-_query_knowledge_graph = kg_module.query_knowledge_graph.fn
-_get_entity_relationships = kg_module.get_entity_relationships.fn
+_query_knowledge_graph = kg_module.query_knowledge_graph
+_get_entity_relationships = kg_module.get_entity_relationships
 
 # Societies
 from mcp_servers.societies import server as soc_module
 
-_search_society_guidelines = soc_module.search_society_guidelines.fn
-_get_guideline_recommendations = soc_module.get_guideline_recommendations.fn
+_search_society_guidelines = soc_module.search_society_guidelines
+_get_guideline_recommendations = soc_module.get_guideline_recommendations
 
 # VigiBase
 from mcp_servers.vigibase import server as vigi_module
 
-_search_adverse_reactions = vigi_module.search_adverse_reactions.fn
-_get_signal_data = vigi_module.get_signal_data.fn
+_search_adverse_reactions = vigi_module.search_adverse_reactions
+_get_signal_data = vigi_module.get_signal_data
 
 
 def _mock_response(status_code: int, data=None) -> MagicMock:

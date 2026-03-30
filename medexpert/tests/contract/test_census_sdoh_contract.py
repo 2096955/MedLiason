@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.census_sdoh import server as census_module
 
-get_sdoh_indicators = census_module.get_sdoh_indicators.fn
+get_sdoh_indicators = census_module.get_sdoh_indicators
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("census_sdoh")]
 

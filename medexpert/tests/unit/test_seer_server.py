@@ -21,10 +21,10 @@ sys.path.insert(
 from mcp_servers.seer import server as seer_module
 from mcp_servers.seer.server import _parse_cancer_record
 
-# FastMCP @mcp.tool() wraps functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-_get_cancer_statistics = seer_module.get_cancer_statistics.fn
-_search_cancer_incidence = seer_module.search_cancer_incidence.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+_get_cancer_statistics = seer_module.get_cancer_statistics
+_search_cancer_incidence = seer_module.search_cancer_incidence
 
 
 # ---------------------------------------------------------------------------

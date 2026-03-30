@@ -15,12 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from mcp_servers.cdc import server as cdc_module
 from mcp_servers.cdc.server import DATASET_IDS
 
-# FastMCP 2.x wraps @mcp.tool() decorated functions in FunctionTool objects.
-# Access the underlying async function via the .fn attribute.
-search_disease_data = cdc_module.search_disease_data.fn
-get_mortality_data = cdc_module.get_mortality_data.fn
-get_vaccination_data = cdc_module.get_vaccination_data.fn
-get_surveillance_data = cdc_module.get_surveillance_data.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+# Import tool functions directly from the server module.
+search_disease_data = cdc_module.search_disease_data
+get_mortality_data = cdc_module.get_mortality_data
+get_vaccination_data = cdc_module.get_vaccination_data
+get_surveillance_data = cdc_module.get_surveillance_data
 
 
 # ---------------------------------------------------------------------------

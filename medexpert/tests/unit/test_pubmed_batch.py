@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from mcp_servers.pubmed import server as pubmed_module
 from mcp_servers.pubmed.server import _parse_batch_xml
 
-# Unwrap the FastMCP FunctionTool wrapper to get the underlying async callable
-get_articles_batch = pubmed_module.get_articles_batch.fn
+# FastMCP 3.x: @mcp.tool() returns the original function directly.
+get_articles_batch = pubmed_module.get_articles_batch
 
 
 # ---------------------------------------------------------------------------

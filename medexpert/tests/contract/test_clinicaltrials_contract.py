@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from mcp_servers.clinicaltrials import server as ct_module
 
-search_trials = ct_module.search_trials.fn
-get_trial_details = ct_module.get_trial_details.fn
+search_trials = ct_module.search_trials
+get_trial_details = ct_module.get_trial_details
 
 pytestmark = [pytest.mark.contract, pytest.mark.cassette_server("clinicaltrials")]
 
