@@ -5,9 +5,11 @@ import type { ImperativePanelHandle } from "react-resizable-panels";
 
 import { Header } from "@/lib/components/header";
 import { useChatContext, useTaskContext, useThemeContext, useTitleAnimation, useConfigContext } from "@/lib/hooks";
+import { useIsMobile } from "@/lib/hooks/useMobile";
 import { useProjectContext } from "@/lib/providers";
 import type { TextPart } from "@/lib/types";
 import { ChatInputArea, ChatMessage, ChatSessionDialog, ChatSessionDeleteDialog, ChatSidePanel, LoadingMessageRow, ProjectBadge, SessionSidePanel, WelcomeScreen } from "@/lib/components/chat";
+import { MobileWelcomeScreen, MobileCitationSheet, MobileTriageView } from "@/lib/components/mobile";
 import { Button, ChatMessageList, CHAT_STYLES, ResizablePanelGroup, ResizablePanel, ResizableHandle, Spinner, Tooltip, TooltipContent, TooltipTrigger } from "@/lib/components/ui";
 import type { ChatMessageListRef } from "@/lib/components/ui/chat/chat-message-list";
 
@@ -38,6 +40,7 @@ export function ChatPage() {
         sessionId,
         sessionName,
         messages,
+        ragData,
         isSidePanelCollapsed,
         setIsSidePanelCollapsed,
         openSidePanelTab,
@@ -51,8 +54,11 @@ export function ChatPage() {
         currentTaskId,
     } = useChatContext();
     const { isTaskMonitorConnected, isTaskMonitorConnecting, taskMonitorSseError, connectTaskMonitorStream } = useTaskContext();
+    const isMobile = useIsMobile();
     const [isSessionSidePanelCollapsed, setIsSessionSidePanelCollapsed] = useState(true);
     const [isSidePanelTransitioning, setIsSidePanelTransitioning] = useState(false);
+    const [mobileSourcesOpen, setMobileSourcesOpen] = useState(false);
+    const [mobileTriageOpen, setMobileTriageOpen] = useState(false);
 
     // Refs for resizable panel state
     const chatMessageListRef = useRef<ChatMessageListRef>(null);
@@ -284,7 +290,7 @@ export function ChatPage() {
                                     ) : (
                                         <>
                                             {messages.every(m => m.metadata?.sessionId === "") && !isResponding ? (
-                                                <WelcomeScreen />
+                                                isMobile ? <MobileWelcomeScreen /> : <WelcomeScreen />
                                             ) : (
                                                 <ChatMessageList className="text-base" ref={chatMessageListRef}>
                                                     {messages.map((message, index) => {
@@ -327,6 +333,22 @@ export function ChatPage() {
                 </div>
             </div>
             <ChatSessionDeleteDialog open={!!sessionToDelete} onCancel={closeSessionDeleteModal} onConfirm={confirmSessionDelete} sessionName={sessionToDelete?.name || ""} />
+
+            {/* Mobile sheets */}
+            {isMobile && (
+                <>
+                    <MobileCitationSheet
+                        open={mobileSourcesOpen}
+                        onClose={() => setMobileSourcesOpen(false)}
+                        sources={ragData?.flatMap(r => r.sources || []) || []}
+                    />
+                    <MobileTriageView
+                        open={mobileTriageOpen}
+                        onClose={() => setMobileTriageOpen(false)}
+                        progress={null}
+                    />
+                </>
+            )}
         </div>
     );
 }
