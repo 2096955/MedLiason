@@ -146,6 +146,11 @@ apps:
             url: "http://localhost:9018/sse"
             timeout: 180
 
+        # -- Web Search (Firecrawl primary, Brave fallback) --
+        - tool_type: python
+          component_module: lifesci_tools.web_search_firecrawl
+          component_base_path: src
+
         - tool_type: python
           component_module: lifesci_tools.memory_plane
           component_base_path: src
