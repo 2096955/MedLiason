@@ -79,9 +79,15 @@ This starts all 11 agents + the gateway in one process. MCP servers are separate
 
 To send queries via CLI (bypasses frontend SSE issues): `sam task send "Your question" --agent OrchestratorAgent`
 
-### LLM configuration (OpenRouter + Gemini 3.7 Flash)
+### LLM configuration (OpenRouter + Gemini 3.7 Flash via AI Studio BYOK)
 
-All agents use `openrouter/google/gemini-3.7-flash` via OpenRouter's OpenAI-compatible API. Set `OPENROUTER_API_KEY` in your `.env` file. No Vertex AI or Google AI Studio credentials are needed.
+All agents use `openrouter/google/gemini-3.7-flash` routed through **Google AI Studio BYOK only** (not Vertex -- Vertex burns OpenRouter credits). Every LLM call includes `extra_body.provider: { only: ["google-ai-studio"], allow_fallbacks: false }`.
+
+Required OpenRouter account setup:
+1. Get an API key at https://openrouter.ai/keys → set as `OPENROUTER_API_KEY`
+2. Link a **Google AI Studio** key at https://openrouter.ai/settings/integrations (use https://aistudio.google.com/apikey -- NOT Vertex AI)
+3. Allow Google to see prompts at https://openrouter.ai/settings/privacy (off = every model 404s)
+4. Verify activity log shows **Google AI Studio / BYOK**, not Vertex or Credits/OR
 
 ### Known pre-existing issues
 

@@ -7,9 +7,20 @@ shared_config:
       broker_vpn: ${SOLACE_BROKER_VPN, default}
       temporary_queue: ${USE_TEMPORARY_QUEUES, true}
 
-  # Temperature-tiered model anchors using Gemini 3.7 Flash via OpenRouter.
-  # Set OPENROUTER_API_KEY in your .env file.
-  # No Gemini 3.7 Pro exists yet; the verifier uses 3.7 Flash at low temp.
+  # ── LLM: Gemini 3.7 Flash via OpenRouter (Google AI Studio BYOK) ──
+  # Set OPENROUTER_API_KEY in .env. Link a Google AI Studio key in
+  # OpenRouter integrations — NOT Vertex (Vertex burns OR credits).
+  # Privacy: allow Google to see prompts at openrouter.ai/settings/privacy.
+  #
+  # The extra_body.provider block pins every call to AI Studio BYOK.
+  # Do NOT remove it or add allow_fallbacks: true.
+
+  - openrouter_provider: &openrouter_provider
+      provider:
+        only:
+          - "google-ai-studio"
+        allow_fallbacks: false
+
   - models:
     orchestrator: &orchestrator_model
       model: "openrouter/google/gemini-3.7-flash"
@@ -17,6 +28,8 @@ shared_config:
       max_tokens: 32000
       parallel_tool_calls: true
       num_retries: 3
+      extra_body:
+        <<: *openrouter_provider
 
     specialist: &specialist_model
       model: "openrouter/google/gemini-3.7-flash"
@@ -25,12 +38,16 @@ shared_config:
       parallel_tool_calls: true
       stream: false
       num_retries: 4
+      extra_body:
+        <<: *openrouter_provider
 
     advisory: &advisory_model
       model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.7
       max_tokens: 12000
       num_retries: 2
+      extra_body:
+        <<: *openrouter_provider
 
     # Verifier intentionally has NO fallback — verification must use the
     # strongest available model for factual accuracy. On failure, the GVR
@@ -42,22 +59,30 @@ shared_config:
       temperature: 0.1
       max_tokens: 8000
       num_retries: 3
+      extra_body:
+        <<: *openrouter_provider
 
     reviser: &reviser_model
       model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.3
       max_tokens: 12000
       num_retries: 2
+      extra_body:
+        <<: *openrouter_provider
 
     # Backward-compatible aliases for gateway and legacy configs
     general: &general_model
       model: "openrouter/google/gemini-3.7-flash"
+      extra_body:
+        <<: *openrouter_provider
 
     planning: &planning_model
       model: "openrouter/google/gemini-3.7-flash"
       parallel_tool_calls: true
       max_tokens: ${MAX_TOKENS, 16000}
       temperature: 0.1
+      extra_body:
+        <<: *openrouter_provider
 
   - services:
     session_service: &default_session_service
