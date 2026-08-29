@@ -7,77 +7,82 @@ shared_config:
       broker_vpn: ${SOLACE_BROKER_VPN, default}
       temporary_queue: ${USE_TEMPORARY_QUEUES, true}
 
-  # Temperature-tiered model anchors — all versions pinned to -001 to
-  # prevent silent behaviour changes when Google updates the model.
-  # cache_strategy: "none" disables Google AI Studio's CreateCachedContent
-  # API calls, which return 400 errors when using a standard API key
-  # Vertex AI ADC — project and location for LiteLLM vertex_ai/ provider.
-  # On Cloud Run, ADC uses the service account identity automatically.
-  - vertex_ai:
-    vertex_project: "gbg-neuro"
-    vertex_location: "us-central1"
+  # ── LLM: Gemini 3.7 Flash via OpenRouter (Google AI Studio BYOK) ──
+  # Set OPENROUTER_API_KEY in .env. Link a Google AI Studio key in
+  # OpenRouter integrations — NOT Vertex (Vertex burns OR credits).
+  # Privacy: allow Google to see prompts at openrouter.ai/settings/privacy.
+  #
+  # The extra_body.provider block pins every call to AI Studio BYOK.
+  # Do NOT remove it or add allow_fallbacks: true.
+
+  - openrouter_provider: &openrouter_provider
+      provider:
+        only:
+          - "google-ai-studio"
+        allow_fallbacks: false
 
   - models:
     orchestrator: &orchestrator_model
-      model: "vertex_ai/gemini-2.5-flash"
+      model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.2
       max_tokens: 32000
       parallel_tool_calls: true
-      cache_strategy: "none"
       num_retries: 3
-      fallbacks:
-        - "vertex_ai/gemini-2.5-pro"
+      extra_body:
+        <<: *openrouter_provider
 
     specialist: &specialist_model
-      model: "vertex_ai/gemini-2.5-flash"
+      model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.3
       max_tokens: 12000
       parallel_tool_calls: true
-      cache_strategy: "none"
       stream: false
       num_retries: 4
-      fallbacks:
-        - "vertex_ai/gemini-2.5-pro"
+      extra_body:
+        <<: *openrouter_provider
 
     advisory: &advisory_model
-      model: "vertex_ai/gemini-2.5-flash"
+      model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.7
       max_tokens: 12000
-      cache_strategy: "none"
       num_retries: 2
-      fallbacks:
-        - "vertex_ai/gemini-2.5-pro"
+      extra_body:
+        <<: *openrouter_provider
 
     # Verifier intentionally has NO fallback — verification must use the
-    # stronger model for factual accuracy. On failure, the GVR loop treats
-    # verification_status: "skipped" as MINOR_ISSUES (safe degradation).
+    # strongest available model for factual accuracy. On failure, the GVR
+    # loop treats verification_status: "skipped" as MINOR_ISSUES (safe
+    # degradation). Using 3.7 Flash at very low temperature for maximum
+    # determinism until a 3.7 Pro model becomes available.
     verifier: &verifier_model
-      model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, vertex_ai/gemini-2.5-pro}
+      model: ${LLM_SERVICE_VERIFIER_MODEL_NAME, openrouter/google/gemini-3.7-flash}
       temperature: 0.1
       max_tokens: 8000
-      cache_strategy: "none"
       num_retries: 3
+      extra_body:
+        <<: *openrouter_provider
 
     reviser: &reviser_model
-      model: "vertex_ai/gemini-2.5-flash"
+      model: "openrouter/google/gemini-3.7-flash"
       temperature: 0.3
       max_tokens: 12000
-      cache_strategy: "none"
       num_retries: 2
-      fallbacks:
-        - "vertex_ai/gemini-2.5-pro"
+      extra_body:
+        <<: *openrouter_provider
 
     # Backward-compatible aliases for gateway and legacy configs
     general: &general_model
-      model: "vertex_ai/gemini-2.5-flash"
-      cache_strategy: "none"
+      model: "openrouter/google/gemini-3.7-flash"
+      extra_body:
+        <<: *openrouter_provider
 
     planning: &planning_model
-      model: "vertex_ai/gemini-2.5-flash"
+      model: "openrouter/google/gemini-3.7-flash"
       parallel_tool_calls: true
       max_tokens: ${MAX_TOKENS, 16000}
       temperature: 0.1
-      cache_strategy: "none"
+      extra_body:
+        <<: *openrouter_provider
 
   - services:
     session_service: &default_session_service

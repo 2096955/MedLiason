@@ -1,7 +1,7 @@
 export const MODEL_OPTIONS = [
-  { value: "flash", label: "Gemini 2.5 Flash", shortLabel: "Flash", suffix: "" },
-  { value: "pro", label: "Gemini 3.1 Pro", shortLabel: "Pro", suffix: "Pro" },
-  { value: "opus", label: "Claude Opus 4.6", shortLabel: "Opus", suffix: "Opus" },
+  { value: "flash", label: "Gemini 3.7 Flash", shortLabel: "Flash", suffix: "" },
+  { value: "pro", label: "Gemini 3.7 Flash (Pro)", shortLabel: "Pro", suffix: "Pro" },
+  { value: "opus", label: "Gemini 3.7 Flash (Opus)", shortLabel: "Opus", suffix: "Opus" },
 ] as const;
 
 export const MODE_OPTIONS = [

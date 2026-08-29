@@ -20,6 +20,7 @@ export default defineConfig({
                 "react-dom",
                 "react/jsx-runtime",
                 "react-router-dom",
+                "virtual:pwa-register/react",
                 "@radix-ui/react-accordion",
                 "@radix-ui/react-avatar",
                 "@radix-ui/react-dialog",

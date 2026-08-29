@@ -137,7 +137,7 @@ The Literature Specialist, for example:
 
 **Verifier: Independent Fact-Checking**
 
-The verifier uses a stronger model (gemini-2.5-pro) at very low temperature (0.1) to independently assess the draft report. Its reasoning is three-stage:
+The verifier uses gemini-3.7-flash at very low temperature (0.1) to independently assess the draft report. Its reasoning is three-stage:
 
 1. **Structural validation** — Checks that every `[[cite:X]]` marker points to an actual source in the citation list
 2. **Entailment analysis** — For each claim, uses LLM-based entailment classification (ENTAILS / CONTRADICTS / NEUTRAL) to assess whether the cited source actually supports the claim
@@ -158,12 +158,12 @@ All agents share a Redis-backed memory plane scoped by session. This creates a s
 
 | Agent | Role | Model |
 |-------|------|-------|
-| **Orchestrator** | Coordinates 7-step protocol with parallel delegation and GVR loop | gemini-2.5-flash (temp 0.2) |
-| **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-2.5-flash (temp 0.3) |
-| **Verifier** | Fact-checks claims against cited sources | gemini-2.5-pro (temp 0.1) |
-| **Reviser** | Surgically corrects issues flagged by verifier | gemini-2.5-flash (temp 0.3) |
-| **Triage Intake** | Symptom collection, specialist panel consultation, care routing | gemini-2.5-flash (temp 0.3) |
-| **Triage Orchestrator** | Coordinates triage evaluation, consensus building, next-best-action | gemini-2.5-flash (temp 0.2) |
+| **Orchestrator** | Coordinates 7-step protocol with parallel delegation and GVR loop | gemini-3.7-flash (temp 0.2) |
+| **8 Specialists** | Domain-specific research (literature, drugs, trials, etc.) | gemini-3.7-flash (temp 0.3) |
+| **Verifier** | Fact-checks claims against cited sources | gemini-3.7-flash (temp 0.1) |
+| **Reviser** | Surgically corrects issues flagged by verifier | gemini-3.7-flash (temp 0.3) |
+| **Triage Intake** | Symptom collection, specialist panel consultation, care routing | gemini-3.7-flash (temp 0.3) |
+| **Triage Orchestrator** | Coordinates triage evaluation, consensus building, next-best-action | gemini-3.7-flash (temp 0.2) |
 
 ### Data Sources (18 MCP Servers)
 
@@ -214,7 +214,7 @@ Orchestrator (SYNTHESIZE)
     |
     | Draft report with [[cite:...]] markers
     v
-Verifier Agent (gemini-2.5-pro, temp 0.1)
+Verifier Agent (gemini-3.7-flash, temp 0.1)
     |
     |--- For each claim:
     |      1. Does the cited source exist? (structural)
@@ -458,7 +458,7 @@ Copy `medexpert/.env.example` and fill in:
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `GEMINI_API_KEY` | Yes (or another LLM key) | LLM provider API key |
+| `OPENROUTER_API_KEY` | Yes | OpenRouter API key (get one at [openrouter.ai/keys](https://openrouter.ai/keys)) |
 | `REDIS_URL` | Yes | Memory plane backend |
 | `SESSION_SECRET_KEY` | Yes (production) | Session cookie signing |
 | `NCBI_API_KEY` | Recommended | PubMed rate limit (3 -> 10 req/s) |
