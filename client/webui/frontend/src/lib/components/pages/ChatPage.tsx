@@ -7,7 +7,7 @@ import { Header } from "@/lib/components/header";
 import { useChatContext, useTaskContext, useThemeContext, useTitleAnimation, useConfigContext } from "@/lib/hooks";
 import { useProjectContext } from "@/lib/providers";
 import type { TextPart } from "@/lib/types";
-import { ChatInputArea, ChatMessage, ChatSessionDialog, ChatSessionDeleteDialog, ChatSidePanel, LoadingMessageRow, ProjectBadge, SessionSidePanel } from "@/lib/components/chat";
+import { ChatInputArea, ChatMessage, ChatSessionDialog, ChatSessionDeleteDialog, ChatSidePanel, LoadingMessageRow, ProjectBadge, SessionSidePanel, WelcomeScreen } from "@/lib/components/chat";
 import { Button, ChatMessageList, CHAT_STYLES, ResizablePanelGroup, ResizablePanel, ResizableHandle, Spinner, Tooltip, TooltipContent, TooltipTrigger } from "@/lib/components/ui";
 import type { ChatMessageListRef } from "@/lib/components/ui/chat/chat-message-list";
 
@@ -283,15 +283,19 @@ export function ChatPage() {
                                         </div>
                                     ) : (
                                         <>
-                                            <ChatMessageList className="text-base" ref={chatMessageListRef}>
-                                                {messages.map((message, index) => {
-                                                    const isLastWithTaskId = !!(message.taskId && lastMessageIndexByTaskId.get(message.taskId) === index);
-                                                    const messageKey = message.metadata?.messageId || `temp-${index}`;
-                                                    const isLastMessage = index === messages.length - 1;
-                                                    const shouldStream = isLastMessage && isResponding && !message.isUser;
-                                                    return <ChatMessage message={message} key={messageKey} isLastWithTaskId={isLastWithTaskId} isStreaming={shouldStream} />;
-                                                })}
-                                            </ChatMessageList>
+                                            {messages.every(m => m.metadata?.sessionId === "") && !isResponding ? (
+                                                <WelcomeScreen />
+                                            ) : (
+                                                <ChatMessageList className="text-base" ref={chatMessageListRef}>
+                                                    {messages.map((message, index) => {
+                                                        const isLastWithTaskId = !!(message.taskId && lastMessageIndexByTaskId.get(message.taskId) === index);
+                                                        const messageKey = message.metadata?.messageId || `temp-${index}`;
+                                                        const isLastMessage = index === messages.length - 1;
+                                                        const shouldStream = isLastMessage && isResponding && !message.isUser;
+                                                        return <ChatMessage message={message} key={messageKey} isLastWithTaskId={isLastWithTaskId} isStreaming={shouldStream} />;
+                                                    })}
+                                                </ChatMessageList>
+                                            )}
                                             <div style={CHAT_STYLES}>
                                                 {isResponding && <LoadingMessageRow statusText={(backendStatusText || latestStatusText.current) ?? undefined} onViewWorkflow={handleViewProgressClick} />}
                                                 <ChatInputArea scrollToBottom={chatMessageListRef.current?.scrollToBottom} />
